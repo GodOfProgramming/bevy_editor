@@ -1,0 +1,17 @@
+[package]
+name = "bevy_editor"
+version = "0.1.0"
+edition = "2021"
+
+[profile.dev]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[dependencies]
+bevy = "0.14.0"
+bevy_egui = "0.28.0"
+bevy-inspector-egui = "0.25.1"
+egui_dock = "0.13.0"
+transform-gizmo-egui = "0.3.0"

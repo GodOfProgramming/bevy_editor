@@ -129,17 +129,26 @@ where
     }
   }
 
+  fn remove_raycast_targets(
+    mut commands: Commands,
+    q_targets: Query<Entity, With<RaycastPickable>>,
+  ) {
+    for target in q_targets.iter() {
+      commands.entity(target).remove::<RaycastPickable>();
+    }
+  }
+
   fn handle_pick_events(
     mut ui_state: ResMut<ui::State<C>>,
     mut click_events: EventReader<Pointer<Click>>,
     mut q_egui: Query<&mut EguiContext>,
-    egui_entity: Query<&EguiPointer>,
+    q_egui_entity: Query<&EguiPointer>,
   ) {
     let mut egui = q_egui.single_mut();
     let egui_context = egui.get_mut();
 
     for click in click_events.read() {
-      if egui_entity.get(click.target()).is_ok() {
+      if q_egui_entity.get(click.target()).is_ok() {
         continue;
       };
 
@@ -167,6 +176,7 @@ where
       .insert_state(EditorState::Active)
       .insert_resource(Hotkeys::default())
       .insert_resource(ui::State::<C>::new())
+      .add_systems(OnEnter(EditorState::Inactive), Self::remove_raycast_targets)
       .add_systems(
         Update,
         (

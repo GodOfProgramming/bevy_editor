@@ -13,5 +13,10 @@ opt-level = 3
 bevy = "0.14.0"
 bevy_egui = "0.28.0"
 bevy-inspector-egui = "0.25.1"
+bevy_mod_picking = { version = "0.20.1", features = [
+  "backend_raycast",
+  "backend_egui",
+  "backend_sprite",
+] }
 egui_dock = "0.13.0"
 transform-gizmo-egui = "0.3.0"

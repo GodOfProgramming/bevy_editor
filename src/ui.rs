@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::render::camera::CameraProjection;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
   reflect::TypeRegistry,
@@ -14,8 +13,6 @@ use bevy_inspector_egui::bevy_inspector::{
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
 use std::marker::PhantomData;
-use transform_gizmo_egui::mint::RowMatrix4;
-use transform_gizmo_egui::{EnumSet, Gizmo, GizmoExt, GizmoMode, GizmoOrientation};
 
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {
@@ -65,10 +62,6 @@ impl FileDialog {
     }
   }
 
-  fn access(&self, f: impl FnOnce(&egui_file_dialog::FileDialog)) {
-    f(&self.dialog.lock());
-  }
-
   fn access_mut(&mut self, f: impl FnOnce(&mut egui_file_dialog::FileDialog)) {
     f(&mut self.dialog.lock());
   }
@@ -77,7 +70,6 @@ impl FileDialog {
 #[derive(Resource)]
 pub(crate) struct State<C: Component> {
   pub(crate) viewport_rect: egui::Rect,
-  pub(crate) gizmo_mode: GizmoMode,
   pub(crate) selected_entities: SelectedEntities,
   dock_state: DockState<Tabs>,
   selection: InspectorSelection,
@@ -97,7 +89,6 @@ where
 
     Self {
       viewport_rect: egui::Rect::NOTHING,
-      gizmo_mode: GizmoMode::TranslateView,
       selected_entities: SelectedEntities::default(),
       dock_state: state,
       selection: InspectorSelection::Entities,
@@ -111,7 +102,6 @@ where
       viewport_rect: &mut self.viewport_rect,
       selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
-      gizmo_mode: self.gizmo_mode,
       cam_component: default(),
     };
     DockArea::new(&mut self.dock_state)
@@ -135,7 +125,6 @@ struct TabViewer<'a, C: Component> {
   selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
-  gizmo_mode: GizmoMode,
   cam_component: PhantomData<C>,
 }
 
@@ -143,82 +132,6 @@ impl<C> TabViewer<'_, C>
 where
   C: Component,
 {
-  fn draw_gizmo(&mut self, ui: &mut egui::Ui) {
-    if self.selected_entities.len() != 1 {
-      return;
-    }
-
-    let (cam_transform, projection) = self
-      .world
-      .query_filtered::<(&GlobalTransform, &Projection), With<C>>()
-      .single(self.world);
-
-    let view_matrix = Mat4::from(cam_transform.affine().inverse());
-    let projection_matrix = projection.get_clip_from_view();
-
-    let Some(selected) = self.selected_entities.iter().next() else {
-      return;
-    };
-
-    let Some(transform) = self.world.get::<Transform>(selected) else {
-      return;
-    };
-
-    let mut gizmo = Gizmo::new(transform_gizmo_egui::GizmoConfig {
-      view_matrix: RowMatrix4::<f64>::from(view_matrix.to_cols_array().map(f64::from)),
-      projection_matrix: RowMatrix4::<f64>::from(projection_matrix.to_cols_array().map(f64::from)),
-      orientation: GizmoOrientation::Local,
-      modes: EnumSet::from(self.gizmo_mode),
-      ..Default::default()
-    });
-
-    let Some(results) = gizmo
-      .interact(
-        ui,
-        &[transform_gizmo_egui::math::Transform {
-          translation: transform_gizmo_egui::mint::Vector3::<f64>::from(
-            transform.translation.to_array().map(f64::from),
-          ),
-          rotation: transform_gizmo_egui::mint::Quaternion::<f64>::from(
-            transform.rotation.to_array().map(f64::from),
-          ),
-          scale: transform_gizmo_egui::mint::Vector3::<f64>::from(
-            transform.scale.to_array().map(f64::from),
-          ),
-        }],
-      )
-      .map(|(_, res)| res)
-    else {
-      return;
-    };
-
-    let Some(result) = results.iter().next() else {
-      return;
-    };
-
-    let mut transform = self.world.get_mut::<Transform>(selected).unwrap();
-    *transform = Transform {
-      translation: Vec3::new(
-        result.translation.x as f32,
-        result.translation.y as f32,
-        result.translation.z as f32,
-      ),
-      rotation: Quat::from_axis_angle(
-        Vec3::new(
-          result.rotation.v.x as f32,
-          result.rotation.v.y as f32,
-          result.rotation.v.z as f32,
-        ),
-        result.rotation.s as f32,
-      ),
-      scale: Vec3::new(
-        result.scale.x as f32,
-        result.scale.y as f32,
-        result.scale.z as f32,
-      ),
-    };
-  }
-
   fn select_resource(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
     let mut resources: Vec<_> = type_registry
       .iter()
@@ -317,8 +230,6 @@ where
     match tab {
       Tabs::GameView => {
         *self.viewport_rect = ui.clip_rect();
-
-        self.draw_gizmo(ui);
       }
       Tabs::Options => self.options_ui(ui),
       Tabs::Hierarchy => {

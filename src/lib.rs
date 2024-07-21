@@ -3,17 +3,17 @@ mod ui;
 mod util;
 mod view;
 
-use backends::raycast::RaycastPickable;
+use backends::egui::EguiPointer;
+use backends::raycast::{RaycastBackendSettings, RaycastPickable};
 use bevy::prelude::*;
 use bevy::state::state::FreelyMutableState;
 use bevy::transform::TransformSystem;
 use bevy::{render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::{EguiContext, EguiSet};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use bevy_mod_picking::backends::egui::EguiPointer;
 use bevy_mod_picking::prelude::*;
+use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
 use std::marker::PhantomData;
-use transform_gizmo_egui::GizmoMode;
 use ui::UiPlugin;
 
 pub use input::Hotkeys;
@@ -72,25 +72,24 @@ where
         bevy_egui::EguiPlugin,
         DefaultInspectorConfigPlugin,
         bevy_mod_picking::DefaultPickingPlugins,
+        TransformGizmoPlugin::new(Quat::default()),
         UiPlugin::<C>::default(),
       ))
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
       .insert_state(self.config.editor_state)
-      .add_systems(OnEnter(self.config.editor_state), Self::enable_mouse)
-      .add_systems(
-        OnExit(self.config.editor_state),
-        Self::remove_raycast_targets,
-      )
+      .add_systems(Startup, Self::startup)
+      .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
+      .add_systems(OnExit(self.config.editor_state), Self::on_exit)
       .add_systems(
         Update,
         (
           Self::handle_input,
           (
             (
-              Self::auto_add_raycast_target,
-              Self::set_gizmo_mode,
+              Self::auto_register_camera,
+              Self::auto_register_targets,
               Self::handle_pick_events,
             ),
             ((view::movement_system, view::orbit), view::cam_free_fly)
@@ -134,21 +133,26 @@ where
     self
   }
 
-  fn set_gizmo_mode(
-    hotkeys: Res<Hotkeys>,
-    input: Res<ButtonInput<KeyCode>>,
-    mut ui_state: ResMut<ui::State<C>>,
-  ) where
-    C: Component,
-  {
-    for (key, mode) in [
-      (hotkeys.scale_gizmo, GizmoMode::ScaleUniform),
-      (hotkeys.rotate_gizmo, GizmoMode::RotateView),
-      (hotkeys.translate_gizmo, GizmoMode::TranslateView),
-    ] {
-      if input.just_pressed(key) {
-        ui_state.gizmo_mode = mode;
-      }
+  fn startup(mut raycast_settings: ResMut<RaycastBackendSettings>) {
+    raycast_settings.require_markers = true;
+  }
+
+  fn on_enter(mut q_windows: Query<&mut Window>) {
+    for mut window in q_windows.iter_mut() {
+      show_cursor(&mut window);
+    }
+  }
+
+  fn on_exit(
+    mut commands: Commands,
+    q_targets: Query<Entity, (With<RaycastPickable>, Without<Camera>)>,
+  ) {
+    for target in q_targets.iter() {
+      commands
+        .entity(target)
+        .remove::<RaycastPickable>()
+        .remove::<GizmoTransformable>()
+        .remove::<PickableBundle>();
     }
   }
 
@@ -203,52 +207,29 @@ where
     }
   }
 
-  fn auto_add_raycast_target(
+  fn auto_register_camera(
+    mut commands: Commands,
+    q_cam: Query<Entity, (Without<RaycastPickable>, With<C>)>,
+  ) {
+    for cam in &q_cam {
+      debug!("added raycast to camera");
+      commands
+        .entity(cam)
+        .insert((RaycastPickable, GizmoPickSource::default()));
+    }
+  }
+
+  fn auto_register_targets(
     mut commands: Commands,
     query: Query<Entity, (Without<RaycastPickable>, With<Handle<Mesh>>)>,
   ) {
     for entity in &query {
-      commands
-        .entity(entity)
-        .insert((RaycastPickable::default(), PickableBundle::default()));
-    }
-  }
-
-  fn remove_raycast_targets(
-    mut commands: Commands,
-    q_targets: Query<Entity, With<RaycastPickable>>,
-  ) {
-    for target in q_targets.iter() {
-      commands.entity(target).remove::<RaycastPickable>();
-    }
-  }
-
-  fn handle_pick_events(
-    mut ui_state: ResMut<ui::State<C>>,
-    mut click_events: EventReader<Pointer<Click>>,
-    mut q_egui: Query<&mut EguiContext>,
-    q_egui_entity: Query<&EguiPointer>,
-  ) {
-    let mut egui = q_egui.single_mut();
-    let egui_context = egui.get_mut();
-
-    for click in click_events.read() {
-      if q_egui_entity.get(click.target()).is_ok() {
-        continue;
-      };
-
-      let modifiers = egui_context.input(|i| i.modifiers);
-      let add = modifiers.ctrl || modifiers.shift;
-
-      ui_state
-        .selected_entities
-        .select_maybe_add(click.target(), add);
-    }
-  }
-
-  fn enable_mouse(mut q_windows: Query<&mut Window>) {
-    for mut window in q_windows.iter_mut() {
-      show_cursor(&mut window);
+      debug!("added raycast to target {}", entity);
+      commands.entity(entity).insert((
+        RaycastPickable,
+        PickableBundle::default(),
+        GizmoTransformable,
+      ));
     }
   }
 
@@ -280,6 +261,31 @@ where
 
     if input.just_pressed(hotkeys.play_current_level) {
       next_game_state.set(config.gameplay_state);
+    }
+  }
+
+  fn handle_pick_events(
+    mut ui_state: ResMut<ui::State<C>>,
+    mut click_events: EventReader<Pointer<Click>>,
+    mut q_egui: Query<&mut EguiContext>,
+    q_egui_entity: Query<&EguiPointer>,
+    q_raycast_pickables: Query<&RaycastPickable>,
+  ) {
+    let mut egui = q_egui.single_mut();
+    let egui_context = egui.get_mut();
+
+    for click in click_events.read() {
+      if q_egui_entity.get(click.target()).is_ok() {
+        continue;
+      };
+
+      let modifiers = egui_context.input(|i| i.modifiers);
+      let add = modifiers.ctrl || modifiers.shift;
+
+      let target = click.target();
+      if q_raycast_pickables.get(target).is_ok() {
+        ui_state.selected_entities.select_maybe_add(target, add);
+      }
     }
   }
 

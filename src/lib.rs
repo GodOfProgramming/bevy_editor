@@ -1,10 +1,11 @@
 mod input;
 mod ui;
+mod util;
+mod view;
 
 use backends::raycast::RaycastPickable;
-pub use input::Hotkeys;
-
 use bevy::prelude::*;
+use bevy::state::state::FreelyMutableState;
 use bevy::transform::TransformSystem;
 use bevy::{render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::{EguiContext, EguiSet};
@@ -14,36 +15,119 @@ use bevy_mod_picking::prelude::*;
 use std::marker::PhantomData;
 use transform_gizmo_egui::GizmoMode;
 
+pub use input::Hotkeys;
+pub use util::*;
+pub use view::EditorCameraBundle;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
-pub enum EditorState {
-  Active,
-  Inactive,
+enum EditorState {
+  Editing,
+  Inspecting,
 }
 
-pub struct EditorPlugin<C>
+#[derive(Resource, Clone)]
+pub struct EditorConfig<C, S>
 where
-  C: Component,
+  C: Component + Clone,
+  S: FreelyMutableState + Copy,
 {
-  hotkeys: Hotkeys,
-  cam_component: PhantomData<C>,
+  editor_state: S,
+  gameplay_state: S,
+  _phantom_data: PhantomData<C>,
 }
 
-impl<C> Default for EditorPlugin<C>
+impl<C, S> EditorConfig<C, S>
 where
-  C: Component,
+  C: Component + Clone,
+  S: FreelyMutableState + Copy,
 {
-  fn default() -> Self {
+  pub fn new(active_editor_state: S, gameplay_state: S) -> Self {
     Self {
-      hotkeys: default(),
-      cam_component: default(),
+      editor_state: active_editor_state,
+      gameplay_state,
+      _phantom_data: default(),
     }
   }
 }
 
-impl<C> EditorPlugin<C>
+pub struct EditorPlugin<C, A>
 where
-  C: Component,
+  C: Component + Clone,
+  A: FreelyMutableState + Copy,
 {
+  config: EditorConfig<C, A>,
+  hotkeys: Hotkeys,
+  cam_component: PhantomData<C>,
+}
+
+impl<C, A> Plugin for EditorPlugin<C, A>
+where
+  C: Component + Clone,
+  A: FreelyMutableState + Copy,
+{
+  fn build(&self, app: &mut App) {
+    app
+      .add_plugins((
+        bevy_egui::EguiPlugin,
+        DefaultInspectorConfigPlugin,
+        bevy_mod_picking::DefaultPickingPlugins,
+      ))
+      .insert_resource(self.hotkeys.clone())
+      .insert_resource(ui::State::<C>::new())
+      .insert_resource(self.config.clone())
+      .insert_state(EditorState::Editing)
+      .insert_state(self.config.editor_state)
+      .add_systems(OnEnter(self.config.editor_state), Self::enable_mouse)
+      .add_systems(
+        OnExit(self.config.editor_state),
+        Self::remove_raycast_targets,
+      )
+      .add_systems(
+        Update,
+        (
+          Self::handle_input,
+          (
+            (
+              Self::auto_add_raycast_target,
+              Self::set_gizmo_mode,
+              Self::handle_pick_events,
+            ),
+            ((view::movement_system, view::orbit), view::cam_free_fly)
+              .chain()
+              .run_if(in_state(EditorState::Inspecting)),
+          ),
+        )
+          .chain()
+          .run_if(Self::in_editor_state),
+      )
+      .add_systems(
+        PostUpdate,
+        (
+          Self::show_ui_system
+            .before(EguiSet::ProcessOutput)
+            .before(TransformSystem::TransformPropagate),
+          Self::set_camera_viewport,
+        )
+          .chain(),
+      )
+      .register_type::<Option<Handle<Image>>>()
+      .register_type::<AlphaMode>();
+  }
+}
+
+impl<C, S> EditorPlugin<C, S>
+where
+  C: Component + Clone,
+  S: FreelyMutableState + Copy,
+{
+  pub fn new(config: EditorConfig<C, S>) -> Self {
+    Self {
+      config,
+      hotkeys: default(),
+      cam_component: default(),
+    }
+  }
+
   pub fn with_hotkeys(mut self, hotkeys: Hotkeys) -> Self {
     self.hotkeys = hotkeys;
     self
@@ -160,43 +244,45 @@ where
         .select_maybe_add(click.target(), add);
     }
   }
-}
 
-impl<C> Plugin for EditorPlugin<C>
-where
-  C: Component,
-{
-  fn build(&self, app: &mut App) {
-    app
-      .add_plugins((
-        bevy_egui::EguiPlugin,
-        DefaultInspectorConfigPlugin,
-        bevy_mod_picking::DefaultPickingPlugins,
-      ))
-      .insert_state(EditorState::Active)
-      .insert_resource(Hotkeys::default())
-      .insert_resource(ui::State::<C>::new())
-      .add_systems(OnEnter(EditorState::Inactive), Self::remove_raycast_targets)
-      .add_systems(
-        Update,
-        (
-          Self::set_gizmo_mode,
-          Self::auto_add_raycast_target,
-          Self::handle_pick_events,
-        )
-          .run_if(in_state(EditorState::Active)),
-      )
-      .add_systems(
-        PostUpdate,
-        (
-          Self::show_ui_system
-            .before(EguiSet::ProcessOutput)
-            .before(TransformSystem::TransformPropagate),
-          Self::set_camera_viewport,
-        )
-          .chain(),
-      )
-      .register_type::<Option<Handle<Image>>>()
-      .register_type::<AlphaMode>();
+  fn enable_mouse(mut q_windows: Query<&mut Window>) {
+    for mut window in q_windows.iter_mut() {
+      show_cursor(&mut window);
+    }
+  }
+
+  fn handle_input(
+    config: Res<EditorConfig<C, S>>,
+    hotkeys: Res<Hotkeys>,
+    input: Res<ButtonInput<KeyCode>>,
+    mut windows: Query<&mut Window>,
+    mut next_editor_state: ResMut<NextState<EditorState>>,
+    mut next_game_state: ResMut<NextState<S>>,
+  ) {
+    if input.just_pressed(hotkeys.move_cam) {
+      let Ok(mut window) = windows.get_single_mut() else {
+        return;
+      };
+
+      hide_cursor(&mut window);
+      next_editor_state.set(EditorState::Inspecting);
+    }
+
+    if input.just_released(hotkeys.move_cam) {
+      let Ok(mut window) = windows.get_single_mut() else {
+        return;
+      };
+
+      show_cursor(&mut window);
+      next_editor_state.set(EditorState::Editing);
+    }
+
+    if input.just_pressed(hotkeys.play_current_level) {
+      next_game_state.set(config.gameplay_state);
+    }
+  }
+
+  fn in_editor_state(config: Res<EditorConfig<C, S>>, state: Res<State<S>>) -> bool {
+    config.editor_state == **state
   }
 }

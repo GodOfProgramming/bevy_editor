@@ -19,4 +19,5 @@ bevy_mod_picking = { version = "0.20.1", features = [
   "backend_sprite",
 ] }
 egui_dock = "0.13.0"
+egui-file-dialog = "0.6.0"
 transform-gizmo-egui = "0.3.0"

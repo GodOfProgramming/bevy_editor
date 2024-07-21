@@ -5,6 +5,7 @@ use bevy::{
   reflect::TypeRegistry,
 };
 use bevy_egui::egui;
+use bevy_egui::egui::mutex::Mutex;
 use bevy_inspector_egui::bevy_inspector::{
   self,
   hierarchy::{hierarchy_ui, SelectedEntities},
@@ -21,6 +22,56 @@ enum InspectorSelection {
   Entities,
   Resource(TypeId, String),
   Asset(TypeId, String, UntypedAssetId),
+}
+
+pub struct UiPlugin<C>
+where
+  C: Component,
+{
+  _cam_component: PhantomData<C>,
+}
+
+impl<C> Default for UiPlugin<C>
+where
+  C: Component,
+{
+  fn default() -> Self {
+    Self {
+      _cam_component: default(),
+    }
+  }
+}
+
+impl<C> Plugin for UiPlugin<C>
+where
+  C: Component,
+{
+  fn build(&self, app: &mut App) {
+    app
+      .insert_resource(State::<C>::new())
+      .insert_resource(FileDialog::new());
+  }
+}
+
+#[derive(Resource)]
+struct FileDialog {
+  dialog: Mutex<egui_file_dialog::FileDialog>,
+}
+
+impl FileDialog {
+  fn new() -> Self {
+    Self {
+      dialog: Mutex::new(egui_file_dialog::FileDialog::new()),
+    }
+  }
+
+  fn access(&self, f: impl FnOnce(&egui_file_dialog::FileDialog)) {
+    f(&self.dialog.lock());
+  }
+
+  fn access_mut(&mut self, f: impl FnOnce(&mut egui_file_dialog::FileDialog)) {
+    f(&mut self.dialog.lock());
+  }
 }
 
 #[derive(Resource)]
@@ -41,7 +92,7 @@ where
     let mut state = DockState::new(vec![Tabs::GameView]);
     let tree = state.main_surface_mut();
     let [game, _inspector] = tree.split_right(NodeIndex::root(), 0.75, vec![Tabs::Inspector]);
-    let [game, _hierarchy] = tree.split_left(game, 0.2, vec![Tabs::Hierarchy]);
+    let [game, _hierarchy] = tree.split_left(game, 0.2, vec![Tabs::Hierarchy, Tabs::Options]);
     let [_game, _bottom] = tree.split_below(game, 0.8, vec![Tabs::Resources, Tabs::Assets]);
 
     Self {
@@ -76,6 +127,7 @@ enum Tabs {
   Resources,
   Assets,
   Inspector,
+  Options,
 }
 
 struct TabViewer<'a, C: Component> {
@@ -227,6 +279,21 @@ where
       });
     }
   }
+
+  fn options_ui(&mut self, ui: &mut egui_dock::egui::Ui) {
+    let mut fd = self.world.resource_mut::<FileDialog>();
+
+    if ui.button("Open Map").clicked() {
+      fd.access_mut(|dlg| dlg.select_file());
+    }
+
+    fd.access_mut(|dlg| {
+      dlg.update(ui.ctx());
+      if let Some(path) = dlg.take_selected() {
+        debug!("selected {}", path.display());
+      }
+    })
+  }
 }
 
 impl<C> egui_dock::TabViewer for TabViewer<'_, C>
@@ -243,16 +310,17 @@ where
     !matches!(window, Tabs::GameView)
   }
 
-  fn ui(&mut self, ui: &mut egui_dock::egui::Ui, window: &mut Self::Tab) {
+  fn ui(&mut self, ui: &mut egui_dock::egui::Ui, tab: &mut Self::Tab) {
     let type_registry = self.world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();
 
-    match window {
+    match tab {
       Tabs::GameView => {
         *self.viewport_rect = ui.clip_rect();
 
         self.draw_gizmo(ui);
       }
+      Tabs::Options => self.options_ui(ui),
       Tabs::Hierarchy => {
         let selected = hierarchy_ui(self.world, ui, self.selected_entities);
         if selected {

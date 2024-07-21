@@ -14,6 +14,7 @@ use bevy_mod_picking::backends::egui::EguiPointer;
 use bevy_mod_picking::prelude::*;
 use std::marker::PhantomData;
 use transform_gizmo_egui::GizmoMode;
+use ui::UiPlugin;
 
 pub use input::Hotkeys;
 pub use util::*;
@@ -71,9 +72,9 @@ where
         bevy_egui::EguiPlugin,
         DefaultInspectorConfigPlugin,
         bevy_mod_picking::DefaultPickingPlugins,
+        UiPlugin::<C>::default(),
       ))
       .insert_resource(self.hotkeys.clone())
-      .insert_resource(ui::State::<C>::new())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
       .insert_state(self.config.editor_state)

@@ -14,7 +14,7 @@ use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_mod_picking::prelude::*;
 use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
 use std::marker::PhantomData;
-use ui::UiPlugin;
+use ui::{SpawnFn, UiPlugin};
 
 pub use input::Hotkeys;
 pub use util::*;
@@ -58,6 +58,7 @@ where
 {
   config: EditorConfig<C, A>,
   hotkeys: Hotkeys,
+  spawners: Vec<(String, SpawnFn)>,
   cam_component: PhantomData<C>,
 }
 
@@ -73,7 +74,7 @@ where
         DefaultInspectorConfigPlugin,
         bevy_mod_picking::DefaultPickingPlugins,
         TransformGizmoPlugin::new(Quat::default()),
-        UiPlugin::<C>::default(),
+        UiPlugin::<C>::new(self.spawners.clone()),
       ))
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
@@ -124,8 +125,14 @@ where
     Self {
       config,
       hotkeys: default(),
+      spawners: default(),
       cam_component: default(),
     }
+  }
+
+  pub fn with_spawner(mut self, name: impl Into<String>, f: SpawnFn) -> Self {
+    self.spawners.push((name.into(), f));
+    self
   }
 
   pub fn with_hotkeys(mut self, hotkeys: Hotkeys) -> Self {

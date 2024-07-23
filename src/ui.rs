@@ -14,6 +14,8 @@ use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
 use std::marker::PhantomData;
 
+pub(crate) type SpawnFn = fn(&mut World);
+
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {
   Entities,
@@ -21,11 +23,24 @@ enum InspectorSelection {
   Asset(TypeId, String, UntypedAssetId),
 }
 
-pub struct UiPlugin<C>
+pub(crate) struct UiPlugin<C>
 where
   C: Component,
 {
+  spawners: Vec<(String, SpawnFn)>,
   _cam_component: PhantomData<C>,
+}
+
+impl<C> UiPlugin<C>
+where
+  C: Component,
+{
+  pub fn new(spawners: Vec<(String, SpawnFn)>) -> Self {
+    Self {
+      spawners,
+      _cam_component: default(),
+    }
+  }
 }
 
 impl<C> Default for UiPlugin<C>
@@ -34,6 +49,7 @@ where
 {
   fn default() -> Self {
     Self {
+      spawners: default(),
       _cam_component: default(),
     }
   }
@@ -45,7 +61,7 @@ where
 {
   fn build(&self, app: &mut App) {
     app
-      .insert_resource(State::<C>::new())
+      .insert_resource(State::<C>::new(self.spawners.clone()))
       .insert_resource(FileDialog::new());
   }
 }
@@ -74,16 +90,18 @@ pub(crate) struct State<C: Component> {
   dock_state: DockState<Tabs>,
   selection: InspectorSelection,
   cam_component: PhantomData<C>,
+  spawners: Vec<(String, SpawnFn)>,
 }
 
 impl<C> State<C>
 where
   C: Component,
 {
-  pub fn new() -> Self {
+  pub fn new(spawners: Vec<(String, SpawnFn)>) -> Self {
     let mut state = DockState::new(vec![Tabs::GameView]);
     let tree = state.main_surface_mut();
-    let [game, _inspector] = tree.split_right(NodeIndex::root(), 0.75, vec![Tabs::Inspector]);
+    let [game, _inspector] =
+      tree.split_right(NodeIndex::root(), 0.75, vec![Tabs::Inspector, Tabs::Spawn]);
     let [game, _hierarchy] = tree.split_left(game, 0.2, vec![Tabs::Hierarchy, Tabs::Options]);
     let [_game, _bottom] = tree.split_below(game, 0.8, vec![Tabs::Resources, Tabs::Assets]);
 
@@ -93,6 +111,7 @@ where
       dock_state: state,
       selection: InspectorSelection::Entities,
       cam_component: default(),
+      spawners,
     }
   }
 
@@ -102,6 +121,7 @@ where
       viewport_rect: &mut self.viewport_rect,
       selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
+      spawners: &mut self.spawners,
       cam_component: default(),
     };
     DockArea::new(&mut self.dock_state)
@@ -114,10 +134,11 @@ where
 enum Tabs {
   GameView,
   Hierarchy,
+  Options,
   Resources,
   Assets,
   Inspector,
-  Options,
+  Spawn,
 }
 
 struct TabViewer<'a, C: Component> {
@@ -125,6 +146,7 @@ struct TabViewer<'a, C: Component> {
   selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
+  spawners: &'a Vec<(String, SpawnFn)>,
   cam_component: PhantomData<C>,
 }
 
@@ -254,6 +276,13 @@ where
           bevy_inspector::by_type_id::ui_for_asset(self.world, type_id, handle, ui, &type_registry);
         }
       },
+      Tabs::Spawn => {
+        for (name, spawn_func) in self.spawners.iter() {
+          if ui.button(name).clicked() {
+            spawn_func(self.world);
+          }
+        }
+      }
     }
   }
 }

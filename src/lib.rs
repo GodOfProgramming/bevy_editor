@@ -139,16 +139,14 @@ where
     }
   }
 
-  pub fn with_spawner<O, M>(
-    self,
-    name: impl Into<String>,
-    into_sys: impl IntoSystem<(), O, M>,
-  ) -> Self
+  pub fn with_spawner<O, M>(self, into_sys: impl IntoSystem<(), O, M>) -> Self
   where
     O: Bundle,
   {
     let mut sys = IntoSystem::into_system(into_sys);
     let mut initialized = false;
+
+    let name = sys.name();
 
     let f = move |world: &mut World| {
       if !initialized {

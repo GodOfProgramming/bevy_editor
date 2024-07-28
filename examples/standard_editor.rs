@@ -15,7 +15,7 @@ fn main() {
         GameState::Editor,
         GameState::Gameplay,
       ))
-      .with_spawner("Plane", spawn_plane),
+      .with_spawner(spawn_plane),
     ))
     .add_systems(Startup, startup)
     .run();

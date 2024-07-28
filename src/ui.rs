@@ -4,7 +4,6 @@ use bevy::{
   reflect::TypeRegistry,
 };
 use bevy_egui::egui;
-use bevy_egui::egui::mutex::Mutex;
 use bevy_inspector_egui::bevy_inspector::{
   self,
   hierarchy::{hierarchy_ui, SelectedEntities},
@@ -12,9 +11,11 @@ use bevy_inspector_egui::bevy_inspector::{
 };
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
+use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::sync::Mutex;
 
-pub(crate) type SpawnFn = fn(&mut World);
+pub(crate) type SpawnFn = Box<dyn FnMut(&mut World) + Send + Sync + 'static>;
 
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {
@@ -27,7 +28,7 @@ pub(crate) struct UiPlugin<C>
 where
   C: Component,
 {
-  spawners: Vec<(String, SpawnFn)>,
+  spawners: Mutex<RefCell<Vec<(String, SpawnFn)>>>,
   _cam_component: PhantomData<C>,
 }
 
@@ -37,19 +38,7 @@ where
 {
   pub fn new(spawners: Vec<(String, SpawnFn)>) -> Self {
     Self {
-      spawners,
-      _cam_component: default(),
-    }
-  }
-}
-
-impl<C> Default for UiPlugin<C>
-where
-  C: Component,
-{
-  fn default() -> Self {
-    Self {
-      spawners: default(),
+      spawners: Mutex::new(RefCell::new(spawners)),
       _cam_component: default(),
     }
   }
@@ -60,21 +49,28 @@ where
   C: Component,
 {
   fn build(&self, app: &mut App) {
+    let Ok(spawners_mx) = self.spawners.lock() else {
+      error!("failed to acquire spawner mutex when building editor ui");
+      return;
+    };
+
+    let spawners = spawners_mx.borrow_mut().drain(..).collect();
+
     app
-      .insert_resource(State::<C>::new(self.spawners.clone()))
+      .insert_resource(State::<C>::new(spawners))
       .insert_resource(FileDialog::new());
   }
 }
 
 #[derive(Resource)]
 struct FileDialog {
-  dialog: Mutex<egui_file_dialog::FileDialog>,
+  dialog: egui::mutex::Mutex<egui_file_dialog::FileDialog>,
 }
 
 impl FileDialog {
   fn new() -> Self {
     Self {
-      dialog: Mutex::new(egui_file_dialog::FileDialog::new()),
+      dialog: egui::mutex::Mutex::new(egui_file_dialog::FileDialog::new()),
     }
   }
 
@@ -146,7 +142,7 @@ struct TabViewer<'a, C: Component> {
   selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
-  spawners: &'a Vec<(String, SpawnFn)>,
+  spawners: &'a mut Vec<(String, SpawnFn)>,
   cam_component: PhantomData<C>,
 }
 
@@ -277,8 +273,8 @@ where
         }
       },
       Tabs::Spawn => {
-        for (name, spawn_func) in self.spawners.iter() {
-          if ui.button(name).clicked() {
+        for (name, spawn_func) in self.spawners.iter_mut() {
+          if ui.button(name.as_str()).clicked() {
             spawn_func(self.world);
           }
         }

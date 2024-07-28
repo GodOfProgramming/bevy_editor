@@ -13,7 +13,9 @@ use bevy_egui::{EguiContext, EguiSet};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_mod_picking::prelude::*;
 use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
+use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::sync::Mutex;
 use ui::{SpawnFn, UiPlugin};
 
 pub use input::Hotkeys;
@@ -58,7 +60,7 @@ where
 {
   config: EditorConfig<C, A>,
   hotkeys: Hotkeys,
-  spawners: Vec<(String, SpawnFn)>,
+  spawners: Mutex<RefCell<Vec<(String, SpawnFn)>>>,
   cam_component: PhantomData<C>,
 }
 
@@ -68,13 +70,20 @@ where
   A: FreelyMutableState + Copy,
 {
   fn build(&self, app: &mut App) {
+    let Ok(spawners_mx) = self.spawners.lock() else {
+      error!("could not acquire spawners list when building the editor");
+      return;
+    };
+    let mut spawners = spawners_mx.borrow_mut();
+    let spawners = spawners.drain(..).collect();
+
     app
       .add_plugins((
         bevy_egui::EguiPlugin,
         DefaultInspectorConfigPlugin,
         bevy_mod_picking::DefaultPickingPlugins,
         TransformGizmoPlugin::new(Quat::default()),
-        UiPlugin::<C>::new(self.spawners.clone()),
+        UiPlugin::<C>::new(spawners),
       ))
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
@@ -130,8 +139,35 @@ where
     }
   }
 
-  pub fn with_spawner(mut self, name: impl Into<String>, f: SpawnFn) -> Self {
-    self.spawners.push((name.into(), f));
+  pub fn with_spawner<O, M>(
+    self,
+    name: impl Into<String>,
+    into_sys: impl IntoSystem<(), O, M>,
+  ) -> Self
+  where
+    O: Bundle,
+  {
+    let mut sys = IntoSystem::into_system(into_sys);
+    let mut initialized = false;
+
+    let f = move |world: &mut World| {
+      if !initialized {
+        initialized = true;
+        sys.initialize(world);
+      }
+      let bundle = sys.run((), world);
+      world.spawn(bundle);
+    };
+
+    {
+      let Ok(spawners_mx) = self.spawners.lock() else {
+        error!("could not acquire spawner lock when adding spawn fn");
+        return self;
+      };
+
+      spawners_mx.borrow_mut().push((name.into(), Box::new(f)));
+    }
+
     self
   }
 

@@ -82,7 +82,7 @@ impl FileDialog {
 #[derive(Resource)]
 pub(crate) struct State<C: Component> {
   pub(crate) viewport_rect: egui::Rect,
-  pub(crate) selected_entities: SelectedEntities,
+  selected_entities: SelectedEntities,
   dock_state: DockState<Tabs>,
   selection: InspectorSelection,
   cam_component: PhantomData<C>,
@@ -109,6 +109,10 @@ where
       cam_component: default(),
       spawners,
     }
+  }
+
+  pub fn add_selected(&mut self, entity: Entity, add: bool) {
+    self.selected_entities.select_maybe_add(entity, add);
   }
 
   pub(crate) fn ui(&mut self, world: &mut World, ctx: &mut egui::Context) {

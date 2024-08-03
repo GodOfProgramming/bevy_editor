@@ -18,6 +18,7 @@ use std::marker::PhantomData;
 use std::sync::Mutex;
 use ui::{SpawnFn, UiPlugin};
 
+pub use bevy;
 pub use input::Hotkeys;
 pub use util::*;
 pub use view::EditorCameraBundle;
@@ -75,7 +76,7 @@ where
       return;
     };
     let mut spawners = spawners_mx.borrow_mut();
-    let spawners = spawners.drain(..).collect();
+    let spawners = std::mem::take(spawners.as_mut());
 
     app
       .add_plugins((
@@ -119,9 +120,7 @@ where
           Self::set_camera_viewport,
         )
           .chain(),
-      )
-      .register_type::<Option<Handle<Image>>>()
-      .register_type::<AlphaMode>();
+      );
   }
 }
 
@@ -144,16 +143,15 @@ where
     O: Bundle,
   {
     let mut sys = IntoSystem::into_system(into_sys);
-    let mut initialized = false;
-
     let name = sys.name();
 
+    let mut initialized = false;
     let f = move |world: &mut World| {
       if !initialized {
         initialized = true;
         sys.initialize(world);
       }
-      let bundle = sys.run((), world);
+      let bundle: O = sys.run((), world);
       world.spawn(bundle);
     };
 
@@ -316,16 +314,16 @@ where
     let egui_context = egui.get_mut();
 
     for click in click_events.read() {
-      if q_egui_entity.get(click.target()).is_ok() {
+      let target = click.target();
+
+      if q_egui_entity.get(target).is_ok() {
         continue;
       };
 
       let modifiers = egui_context.input(|i| i.modifiers);
-      let add = modifiers.ctrl || modifiers.shift;
 
-      let target = click.target();
       if q_raycast_pickables.get(target).is_ok() {
-        ui_state.selected_entities.select_maybe_add(target, add);
+        ui_state.add_selected(target, modifiers.ctrl);
       }
     }
   }

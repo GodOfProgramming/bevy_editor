@@ -15,8 +15,7 @@ fn main() {
         GameState::Editor,
         GameState::Gameplay,
       ))
-      .with_spawner(spawn_plane)
-      .with_spawner(spawn_cube_raw),
+      .with_spawner(spawn_plane),
     ))
     .add_systems(Startup, startup)
     .run();
@@ -41,7 +40,7 @@ fn spawn_plane(
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<StandardMaterial>>,
 ) -> impl Bundle {
-  (
+  return (
     Name::new("ground"),
     PbrBundle {
       mesh: meshes.add(Plane3d::default()),
@@ -53,23 +52,4 @@ fn spawn_plane(
       ..default()
     },
   );
-}
-
-fn spawn_cube_raw(world: &mut World) {
-  world.resource_scope::<Assets<Mesh>, ()>(|world, mut meshes| {
-    world.resource_scope::<Assets<StandardMaterial>, ()>(|world, mut materials| {
-      world.spawn((
-        Name::new("cube"),
-        PbrBundle {
-          mesh: meshes.add(Cuboid::new(1.0, 1.0, 1.0)),
-          material: materials.add(StandardMaterial {
-            base_color: Color::linear_rgb(1.0, 1.0, 1.0),
-            ..default()
-          }),
-          transform: Transform::default().with_translation(Vec3::Z / 2.0),
-          ..default()
-        },
-      ));
-    });
-  });
 }

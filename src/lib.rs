@@ -13,10 +13,8 @@ use bevy_egui::{EguiContext, EguiSet};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_mod_picking::prelude::*;
 use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::sync::Mutex;
-use ui::{SpawnFn, UiPlugin};
+use ui::UiPlugin;
 
 pub use bevy;
 pub use input::Hotkeys;
@@ -61,7 +59,6 @@ where
 {
   config: EditorConfig<C, A>,
   hotkeys: Hotkeys,
-  spawners: Mutex<RefCell<Vec<(String, SpawnFn)>>>,
   cam_component: PhantomData<C>,
 }
 
@@ -71,21 +68,15 @@ where
   A: FreelyMutableState + Copy,
 {
   fn build(&self, app: &mut App) {
-    let Ok(spawners_mx) = self.spawners.lock() else {
-      error!("could not acquire spawners list when building the editor");
-      return;
-    };
-    let mut spawners = spawners_mx.borrow_mut();
-    let spawners = std::mem::take(spawners.as_mut());
-
     app
       .add_plugins((
         bevy_egui::EguiPlugin,
         DefaultInspectorConfigPlugin,
         bevy_mod_picking::DefaultPickingPlugins,
         TransformGizmoPlugin::new(Quat::default()),
-        UiPlugin::<C>::new(spawners),
+        UiPlugin::<C>::new(),
       ))
+      .add_event::<SaveEvent>()
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
@@ -97,6 +88,7 @@ where
         Update,
         (
           Self::handle_input,
+          Self::check_for_saves,
           (
             (
               Self::auto_register_camera,
@@ -133,38 +125,8 @@ where
     Self {
       config,
       hotkeys: default(),
-      spawners: default(),
       cam_component: default(),
     }
-  }
-
-  pub fn with_spawner<O, M>(self, into_sys: impl IntoSystem<(), O, M>) -> Self
-  where
-    O: Bundle,
-  {
-    let mut sys = IntoSystem::into_system(into_sys);
-    let name = sys.name();
-
-    let mut initialized = false;
-    let f = move |world: &mut World| {
-      if !initialized {
-        initialized = true;
-        sys.initialize(world);
-      }
-      let bundle: O = sys.run((), world);
-      world.spawn(bundle);
-    };
-
-    {
-      let Ok(spawners_mx) = self.spawners.lock() else {
-        error!("could not acquire spawner lock when adding spawn fn");
-        return self;
-      };
-
-      spawners_mx.borrow_mut().push((name.into(), Box::new(f)));
-    }
-
-    self
   }
 
   pub fn with_hotkeys(mut self, hotkeys: Hotkeys) -> Self {
@@ -272,6 +234,12 @@ where
     }
   }
 
+  fn check_for_saves(mut save_events: EventReader<SaveEvent>) {
+    save_events.read().for_each(|_| {
+      info!("saving level");
+    });
+  }
+
   fn handle_input(
     config: Res<EditorConfig<C, S>>,
     hotkeys: Res<Hotkeys>,
@@ -332,3 +300,6 @@ where
     config.editor_state == **state
   }
 }
+
+#[derive(Event)]
+struct SaveEvent;

@@ -11,11 +11,9 @@ use bevy_inspector_egui::bevy_inspector::{
 };
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
-use std::cell::RefCell;
 use std::marker::PhantomData;
-use std::sync::Mutex;
 
-pub(crate) type SpawnFn = Box<dyn FnMut(&mut World) + Send + Sync + 'static>;
+use crate::SaveEvent;
 
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {
@@ -28,7 +26,6 @@ pub(crate) struct UiPlugin<C>
 where
   C: Component,
 {
-  spawners: Mutex<RefCell<Vec<(String, SpawnFn)>>>,
   _cam_component: PhantomData<C>,
 }
 
@@ -36,9 +33,8 @@ impl<C> UiPlugin<C>
 where
   C: Component,
 {
-  pub fn new(spawners: Vec<(String, SpawnFn)>) -> Self {
+  pub fn new() -> Self {
     Self {
-      spawners: Mutex::new(RefCell::new(spawners)),
       _cam_component: default(),
     }
   }
@@ -49,15 +45,8 @@ where
   C: Component,
 {
   fn build(&self, app: &mut App) {
-    let Ok(spawners_mx) = self.spawners.lock() else {
-      error!("failed to acquire spawner mutex when building editor ui");
-      return;
-    };
-
-    let spawners = spawners_mx.borrow_mut().drain(..).collect();
-
     app
-      .insert_resource(State::<C>::new(spawners))
+      .insert_resource(State::<C>::new())
       .insert_resource(FileDialog::new());
   }
 }
@@ -86,20 +75,21 @@ pub(crate) struct State<C: Component> {
   dock_state: DockState<Tabs>,
   selection: InspectorSelection,
   cam_component: PhantomData<C>,
-  spawners: Vec<(String, SpawnFn)>,
 }
 
 impl<C> State<C>
 where
   C: Component,
 {
-  pub fn new(spawners: Vec<(String, SpawnFn)>) -> Self {
+  pub fn new() -> Self {
     let mut state = DockState::new(vec![Tabs::GameView]);
     let tree = state.main_surface_mut();
-    let [game, _inspector] =
-      tree.split_right(NodeIndex::root(), 0.75, vec![Tabs::Inspector, Tabs::Spawn]);
-    let [game, _hierarchy] = tree.split_left(game, 0.2, vec![Tabs::Hierarchy, Tabs::Options]);
-    let [_game, _bottom] = tree.split_below(game, 0.8, vec![Tabs::Resources, Tabs::Assets]);
+    let [game_view, _menu_bar] = tree.split_above(NodeIndex::root(), 0.1, vec![Tabs::MenuBar]);
+    let [game_view, _inspector] =
+      tree.split_right(game_view, 0.75, vec![Tabs::Inspector, Tabs::Spawn]);
+    let [game_view, _level_info] = tree.split_left(game_view, 0.2, vec![Tabs::Hierarchy]);
+    let [_game, _game_object_tray] =
+      tree.split_below(game_view, 0.8, vec![Tabs::Resources, Tabs::Assets]);
 
     Self {
       viewport_rect: egui::Rect::NOTHING,
@@ -107,7 +97,6 @@ where
       dock_state: state,
       selection: InspectorSelection::Entities,
       cam_component: default(),
-      spawners,
     }
   }
 
@@ -121,9 +110,9 @@ where
       viewport_rect: &mut self.viewport_rect,
       selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
-      spawners: &mut self.spawners,
       cam_component: default(),
     };
+
     DockArea::new(&mut self.dock_state)
       .style(Style::from_egui(ctx.style().as_ref()))
       .show(ctx, &mut tab_viewer);
@@ -132,9 +121,9 @@ where
 
 #[derive(Debug)]
 enum Tabs {
+  MenuBar,
   GameView,
   Hierarchy,
-  Options,
   Resources,
   Assets,
   Inspector,
@@ -146,7 +135,6 @@ struct TabViewer<'a, C: Component> {
   selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
-  spawners: &'a mut Vec<(String, SpawnFn)>,
   cam_component: PhantomData<C>,
 }
 
@@ -215,19 +203,27 @@ where
     }
   }
 
-  fn options_ui(&mut self, ui: &mut egui_dock::egui::Ui) {
-    let mut fd = self.world.resource_mut::<FileDialog>();
+  fn menu_bar_ui(&mut self, ui: &mut egui_dock::egui::Ui) {
+    self.world.resource_scope(|world, mut fd: Mut<FileDialog>| {
+      ui.horizontal(|ui| {
+        ui.menu_button("File", |ui| {
+          if ui.button("Save").clicked() {
+            world.send_event(SaveEvent);
+          }
 
-    if ui.button("Open Map").clicked() {
-      fd.access_mut(|dlg| dlg.select_file());
-    }
+          if ui.button("Open Map").clicked() {
+            fd.access_mut(|dlg| dlg.select_file());
+          }
+        });
+      });
 
-    fd.access_mut(|dlg| {
-      dlg.update(ui.ctx());
-      if let Some(path) = dlg.take_selected() {
-        debug!("selected {}", path.display());
-      }
-    })
+      fd.access_mut(|dlg| {
+        dlg.update(ui.ctx());
+        if let Some(path) = dlg.take_selected() {
+          info!("selected {}", path.display());
+        }
+      })
+    });
   }
 }
 
@@ -250,10 +246,12 @@ where
     let type_registry = type_registry.read();
 
     match tab {
+      Tabs::MenuBar => {
+        self.menu_bar_ui(ui);
+      }
       Tabs::GameView => {
         *self.viewport_rect = ui.clip_rect();
       }
-      Tabs::Options => self.options_ui(ui),
       Tabs::Hierarchy => {
         let selected = hierarchy_ui(self.world, ui, self.selected_entities);
         if selected {
@@ -277,11 +275,7 @@ where
         }
       },
       Tabs::Spawn => {
-        for (name, spawn_func) in self.spawners.iter_mut() {
-          if ui.button(name.as_str()).clicked() {
-            spawn_func(self.world);
-          }
-        }
+        ui.label("TODO");
       }
     }
   }

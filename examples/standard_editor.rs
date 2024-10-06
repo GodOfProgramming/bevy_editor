@@ -14,8 +14,7 @@ fn main() {
       EditorPlugin::<MainCamera, GameState>::new(EditorConfig::new(
         GameState::Editor,
         GameState::Gameplay,
-      ))
-      .with_spawner(spawn_plane),
+      )),
     ))
     .add_systems(Startup, startup)
     .run();
@@ -24,7 +23,11 @@ fn main() {
 #[derive(Component, Clone)]
 struct MainCamera;
 
-fn startup(mut commands: Commands) {
+fn startup(
+  mut commands: Commands,
+  meshes: ResMut<Assets<Mesh>>,
+  materials: ResMut<Assets<StandardMaterial>>,
+) {
   commands.spawn((
     Name::new("Main Camera"),
     MainCamera,
@@ -34,6 +37,8 @@ fn startup(mut commands: Commands) {
       settings: default(),
     },
   ));
+
+  commands.spawn(spawn_plane(meshes, materials));
 }
 
 fn spawn_plane(

@@ -12,8 +12,9 @@ use bevy_inspector_egui::bevy_inspector::{
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
 use std::marker::PhantomData;
+use std::path::PathBuf;
 
-use crate::SaveEvent;
+use crate::{LoadEvent, SaveEvent};
 
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {
@@ -53,12 +54,14 @@ where
 
 #[derive(Resource)]
 struct FileDialog {
+  path: Option<PathBuf>,
   dialog: egui::mutex::Mutex<egui_file_dialog::FileDialog>,
 }
 
 impl FileDialog {
   fn new() -> Self {
     Self {
+      path: None,
       dialog: egui::mutex::Mutex::new(egui_file_dialog::FileDialog::new()),
     }
   }
@@ -208,7 +211,9 @@ where
       ui.horizontal(|ui| {
         ui.menu_button("File", |ui| {
           if ui.button("Save").clicked() {
-            world.send_event(SaveEvent);
+            if let Some(path) = &fd.path {
+              world.send_event(SaveEvent(path.clone()));
+            }
           }
 
           if ui.button("Open Map").clicked() {
@@ -220,7 +225,7 @@ where
       fd.access_mut(|dlg| {
         dlg.update(ui.ctx());
         if let Some(path) = dlg.take_selected() {
-          info!("selected {}", path.display());
+          world.send_event(LoadEvent(path));
         }
       })
     });

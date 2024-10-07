@@ -6,14 +6,18 @@ mod view;
 use backends::egui::EguiPointer;
 use backends::raycast::{RaycastBackendSettings, RaycastPickable};
 use bevy::prelude::*;
+use bevy::reflect::ReflectKind;
 use bevy::state::state::FreelyMutableState;
 use bevy::transform::TransformSystem;
+use bevy::utils::HashMap;
 use bevy::{render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::{EguiContext, EguiSet};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_mod_picking::prelude::*;
 use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
+use std::any::Any;
 use std::marker::PhantomData;
+use std::path::PathBuf;
 use ui::UiPlugin;
 
 pub use bevy;
@@ -77,6 +81,7 @@ where
         UiPlugin::<C>::new(),
       ))
       .add_event::<SaveEvent>()
+      .add_event::<LoadEvent>()
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
@@ -234,9 +239,46 @@ where
     }
   }
 
-  fn check_for_saves(mut save_events: EventReader<SaveEvent>) {
-    save_events.read().for_each(|_| {
-      info!("saving level");
+  fn check_for_saves(world: &mut World) {
+    world.resource_scope(|world, save_events: Mut<Events<SaveEvent>>| {
+      save_events.get_reader().read(&save_events).for_each(|e| {
+        e.handler(world);
+      });
+    });
+  }
+
+  fn check_for_loads(world: &mut World) {
+    world.resource_scope(|world, load_events: Mut<Events<LoadEvent>>| {
+      load_events.get_reader().read(&load_events).for_each(|e| {
+        let type_registry = world.resource::<AppTypeRegistry>().0.clone();
+        let type_registry = type_registry.read();
+
+        let desc = MapDescriptor::from(e.file().clone());
+
+        for obj in &desc.objects {
+          for component in &obj.components {
+            if let Some(c) = type_registry.get_with_type_path(&component.name) {
+              let Some(reflect_default) = c.data::<ReflectDefault>() else {
+                error!("failed to load {}", component.name);
+                return;
+              };
+
+              let instance: Box<dyn Reflect> = reflect_default.default();
+
+              match instance.reflect_kind() {
+                ReflectKind::Struct => todo!(),
+                ReflectKind::TupleStruct => todo!(),
+                ReflectKind::Tuple => todo!(),
+                ReflectKind::List => todo!(),
+                ReflectKind::Array => todo!(),
+                ReflectKind::Map => todo!(),
+                ReflectKind::Enum => todo!(),
+                ReflectKind::Value => todo!(),
+              }
+            }
+          }
+        }
+      });
     });
   }
 
@@ -302,4 +344,48 @@ where
 }
 
 #[derive(Event)]
-struct SaveEvent;
+struct SaveEvent(PathBuf);
+
+impl SaveEvent {
+  pub fn file(&self) -> &PathBuf {
+    &self.0
+  }
+
+  pub fn handler(&self, world: &mut World) {
+    // let children = world
+    //   .get::<Children>(entity)
+    //   .map(|children| children.iter().copied().collect::<Vec<_>>());
+  }
+}
+
+#[derive(Event)]
+struct LoadEvent(PathBuf);
+
+impl LoadEvent {
+  pub fn file(&self) -> &PathBuf {
+    &self.0
+  }
+}
+
+pub fn load_map() -> Entity {
+  Entity::PLACEHOLDER
+}
+
+struct MapDescriptor {
+  objects: Vec<ObjectDescriptor>,
+}
+
+struct ObjectDescriptor {
+  components: Vec<ComponentDescriptor>,
+}
+
+struct ComponentDescriptor {
+  name: String,
+  fields: HashMap<String, Box<dyn Any>>,
+}
+
+impl From<PathBuf> for MapDescriptor {
+  fn from(value: PathBuf) -> Self {
+    todo!();
+  }
+}

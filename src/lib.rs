@@ -6,7 +6,7 @@ mod view;
 use backends::egui::EguiPointer;
 use backends::raycast::{RaycastBackendSettings, RaycastPickable};
 use bevy::prelude::*;
-use bevy::reflect::ReflectKind;
+use bevy::reflect::{GetTypeRegistration, ReflectKind};
 use bevy::state::state::FreelyMutableState;
 use bevy::transform::TransformSystem;
 use bevy::utils::HashMap;
@@ -15,15 +15,85 @@ use bevy_egui::{EguiContext, EguiSet};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_mod_picking::prelude::*;
 use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
+use serde::Serialize;
 use std::any::Any;
+use std::fs;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use ui::UiPlugin;
 
 pub use bevy;
 pub use input::Hotkeys;
+pub use serde;
 pub use util::*;
 pub use view::EditorCameraBundle;
+
+pub struct Editor {
+  app: App,
+  hashmap: HashMap<String, u64>,
+  cache_dir: PathBuf,
+}
+
+impl Editor {
+  pub fn new<C, S>(mut app: App, config: EditorConfig<C, S>) -> Self
+  where
+    C: Component + Clone,
+    S: FreelyMutableState + Copy,
+  {
+    app.add_plugins(EditorPlugin::new(config));
+
+    let mut cache_dir = std::env::current_exe()
+      .unwrap()
+      .parent()
+      .unwrap()
+      .to_path_buf();
+
+    cache_dir.push("cache");
+
+    Self {
+      app,
+      hashmap: default(),
+      cache_dir,
+    }
+  }
+
+  pub fn register_type<T>(&mut self) -> &mut Self
+  where
+    T: GetTypeRegistration + Default + ?Sized + Serialize,
+  {
+    let registration = T::get_type_registration();
+    let path = registration.type_info().type_path();
+
+    let default_value = T::default();
+    let ron_value = ron::to_string(&default_value).unwrap();
+    let hash_value = ron_value.hash_value();
+
+    let old_hash = self.hashmap.insert(path.to_string(), hash_value);
+
+    if old_hash.map(|oh| hash_value != oh).unwrap_or(true) {
+      let file_path = PathBuf::from(&path.replace("::", "/"));
+
+      let mut output_path = self.cache_dir.clone();
+
+      output_path.push(file_path);
+
+      if let Some(dir_path) = output_path.parent() {
+        fs::create_dir_all(dir_path).unwrap();
+      }
+
+      println!("writing {} to {}", path, output_path.display());
+      fs::write(output_path, ron_value).unwrap();
+    }
+
+    self.app.register_type::<T>();
+
+    self
+  }
+
+  pub fn run(&mut self) -> AppExit {
+    self.app.run()
+  }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 enum EditorState {
@@ -56,7 +126,7 @@ where
   }
 }
 
-pub struct EditorPlugin<C, A>
+struct EditorPlugin<C, A>
 where
   C: Component + Clone,
   A: FreelyMutableState + Copy,
@@ -126,17 +196,12 @@ where
   C: Component + Clone,
   S: FreelyMutableState + Copy,
 {
-  pub fn new(config: EditorConfig<C, S>) -> Self {
+  fn new(config: EditorConfig<C, S>) -> Self {
     Self {
       config,
       hotkeys: default(),
       cam_component: default(),
     }
-  }
-
-  pub fn with_hotkeys(mut self, hotkeys: Hotkeys) -> Self {
-    self.hotkeys = hotkeys;
-    self
   }
 
   fn startup(mut raycast_settings: ResMut<RaycastBackendSettings>) {

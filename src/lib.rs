@@ -1,3 +1,4 @@
+mod cache;
 mod input;
 mod ui;
 mod util;
@@ -15,6 +16,7 @@ use bevy_egui::{EguiContext, EguiSet};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_mod_picking::prelude::*;
 use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
+use cache::Cache;
 use serde::Serialize;
 use std::any::Any;
 use std::fs;
@@ -30,8 +32,7 @@ pub use view::EditorCameraBundle;
 
 pub struct Editor {
   app: App,
-  hashmap: HashMap<String, u64>,
-  cache_dir: PathBuf,
+  cache: Cache,
 }
 
 impl Editor {
@@ -42,19 +43,17 @@ impl Editor {
   {
     app.add_plugins(EditorPlugin::new(config));
 
-    let mut cache_dir = std::env::current_exe()
+    let mut cache_path = std::env::current_exe()
       .unwrap()
       .parent()
       .unwrap()
       .to_path_buf();
 
-    cache_dir.push("cache");
+    cache_path.push("cache.sqlite");
 
-    Self {
-      app,
-      hashmap: default(),
-      cache_dir,
-    }
+    let cache = Cache::connect(cache_path).unwrap();
+
+    Self { app, cache }
   }
 
   pub fn register_type<T>(&mut self) -> &mut Self
@@ -65,24 +64,11 @@ impl Editor {
     let path = registration.type_info().type_path();
 
     let default_value = T::default();
-    let ron_value = ron::to_string(&default_value).unwrap();
-    let hash_value = ron_value.hash_value();
+    let default_prefab = ron::to_string(&default_value).unwrap();
+    let registered_prefab = self.cache.component_prefab(path).unwrap();
 
-    let old_hash = self.hashmap.insert(path.to_string(), hash_value);
-
-    if old_hash.map(|oh| hash_value != oh).unwrap_or(true) {
-      let file_path = PathBuf::from(&path.replace("::", "/"));
-
-      let mut output_path = self.cache_dir.clone();
-
-      output_path.push(file_path);
-
-      if let Some(dir_path) = output_path.parent() {
-        fs::create_dir_all(dir_path).unwrap();
-      }
-
-      println!("writing {} to {}", path, output_path.display());
-      fs::write(output_path, ron_value).unwrap();
+    if default_prefab != registered_prefab {
+      self.cache.register_type_prefab(path, &default_prefab);
     }
 
     self.app.register_type::<T>();

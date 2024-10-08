@@ -18,7 +18,7 @@ impl Cache {
     Ok(cache)
   }
 
-  pub fn component_prefab(&self, name: &str) -> Result<String, CacheError> {
+  pub fn component_prefab(&self, name: &str) -> Result<Option<String>, CacheError> {
     Components::get(&self.db, name)
   }
 
@@ -47,9 +47,15 @@ trait Table {
 struct Components;
 
 impl Components {
-  fn get(db: &Connection, name: impl AsRef<str>) -> Result<String, CacheError> {
+  fn get(db: &Connection, name: impl AsRef<str>) -> Result<Option<String>, CacheError> {
     const SQL: &str = include_str!("sql/component_get.sql");
-    let prefab = db.query_row(SQL, [name.as_ref()], |row| row.get(0))?;
+    let prefab = db
+      .query_row(SQL, [name.as_ref()], |row| row.get(0))
+      .map(Some)
+      .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        e => Err(e),
+      })?;
     Ok(prefab)
   }
 

@@ -1,4 +1,4 @@
-CREATE TABLE components IF NOT EXISTS (
+CREATE TABLE IF NOT EXISTS components (
   datatype text,
   prefab varchar(65535)
 )

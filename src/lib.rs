@@ -67,7 +67,10 @@ impl Editor {
     let default_prefab = ron::to_string(&default_value).unwrap();
     let registered_prefab = self.cache.component_prefab(path).unwrap();
 
-    if default_prefab != registered_prefab {
+    if registered_prefab
+      .map(|p| p != default_prefab)
+      .unwrap_or(true)
+    {
       self.cache.register_type_prefab(path, &default_prefab);
     }
 

@@ -1,16 +1,20 @@
+use bevy::prelude::*;
 use rusqlite::Connection;
-use std::{error::Error, path::Path};
+use std::{any::TypeId, error::Error, path::Path, sync::Mutex};
+
+use crate::Prefab;
 
 type CacheError = Box<dyn Error>;
 
+#[derive(Resource)]
 pub struct Cache {
-  db: Connection,
+  db: Mutex<Connection>,
 }
 
 impl Cache {
   pub fn connect(db: impl AsRef<Path>) -> Result<Self, CacheError> {
     let mut cache = Self {
-      db: Connection::open(db)?,
+      db: Mutex::new(Connection::open(db)?),
     };
 
     cache.initial_setup()?;
@@ -18,12 +22,19 @@ impl Cache {
     Ok(cache)
   }
 
+  pub fn list_prefabs(&self) -> Result<Vec<Prefab>, CacheError> {
+    let db = self.db.lock().unwrap();
+    Components::get_all(&db)
+  }
+
   pub fn component_prefab(&self, name: &str) -> Result<Option<String>, CacheError> {
-    Components::get(&self.db, name)
+    let db = self.db.lock().unwrap();
+    Components::get(&db, name)
   }
 
   pub fn register_type_prefab(&self, type_path: &str, prefab: impl ToString) {
-    Components::insert(&self.db, type_path, prefab.to_string()).unwrap();
+    let db = self.db.lock().unwrap();
+    Components::insert(&db, type_path, prefab.to_string()).unwrap();
   }
 
   fn initial_setup(&mut self) -> Result<(), CacheError> {
@@ -35,7 +46,8 @@ impl Cache {
   where
     T: Table,
   {
-    self.db.execute(T::CREATE_TABLE_SQL, ())?;
+    let db = self.db.lock().unwrap();
+    db.execute(T::CREATE_TABLE_SQL, ())?;
     Ok(())
   }
 }
@@ -47,6 +59,19 @@ trait Table {
 struct Components;
 
 impl Components {
+  fn get_all(db: &Connection) -> Result<Vec<Prefab>, CacheError> {
+    const SQL: &str = include_str!("sql/component_get_all.sql");
+    let mut stmt = db.prepare(SQL)?;
+    let iter = stmt.query_map((), |row| {
+      Ok(Prefab {
+        datatype: row.get(0)?,
+        ron_repr: row.get(1)?,
+      })
+    })?;
+
+    Ok(iter.map(|x| x.unwrap()).collect())
+  }
+
   fn get(db: &Connection, name: impl AsRef<str>) -> Result<Option<String>, CacheError> {
     const SQL: &str = include_str!("sql/component_get.sql");
     let prefab = db

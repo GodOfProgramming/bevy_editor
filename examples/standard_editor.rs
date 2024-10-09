@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy_editor::{Editor, EditorConfig};
+use serde::Serialize;
 
 #[derive(States, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum GameState {
@@ -11,12 +12,13 @@ fn main() {
   let mut app = App::new();
   app
     .add_plugins(DefaultPlugins)
-    .add_systems(Startup, startup)
-    .run();
+    .add_systems(Startup, startup);
 
   let config = EditorConfig::<MainCamera, GameState>::new(GameState::Editor, GameState::Gameplay);
 
   let mut editor = Editor::new(app, config);
+
+  editor.register_type::<SpawnableComponent>();
 
   editor.run();
 }
@@ -58,4 +60,9 @@ fn spawn_plane(
       ..default()
     },
   );
+}
+
+#[derive(Default, Component, Reflect, Serialize)]
+struct SpawnableComponent {
+  life: i32,
 }

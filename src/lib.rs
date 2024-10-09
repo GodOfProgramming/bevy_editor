@@ -79,8 +79,10 @@ impl Editor {
     self
   }
 
-  pub fn run(&mut self) -> AppExit {
-    self.app.run()
+  pub fn run(self) -> AppExit {
+    let Self { mut app, cache } = self;
+    app.insert_resource(cache);
+    app.run()
   }
 }
 
@@ -442,4 +444,9 @@ impl From<PathBuf> for MapDescriptor {
   fn from(value: PathBuf) -> Self {
     todo!();
   }
+}
+
+struct Prefab {
+  pub datatype: String,
+  pub ron_repr: String,
 }

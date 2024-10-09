@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::scene::SceneLoader;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
   reflect::TypeRegistry,
@@ -14,6 +15,7 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
+use crate::cache::Cache;
 use crate::{LoadEvent, SaveEvent};
 
 #[derive(Eq, PartialEq)]
@@ -88,11 +90,13 @@ where
     let mut state = DockState::new(vec![Tabs::GameView]);
     let tree = state.main_surface_mut();
     let [game_view, _menu_bar] = tree.split_above(NodeIndex::root(), 0.1, vec![Tabs::MenuBar]);
-    let [game_view, _inspector] =
-      tree.split_right(game_view, 0.75, vec![Tabs::Inspector, Tabs::Spawn]);
+    let [game_view, _inspector] = tree.split_right(game_view, 0.75, vec![Tabs::Inspector]);
     let [game_view, _level_info] = tree.split_left(game_view, 0.2, vec![Tabs::Hierarchy]);
-    let [_game, _game_object_tray] =
-      tree.split_below(game_view, 0.8, vec![Tabs::Resources, Tabs::Assets]);
+    let [_game, _game_object_tray] = tree.split_below(
+      game_view,
+      0.8,
+      vec![Tabs::Prefabs, Tabs::Resources, Tabs::Assets],
+    );
 
     Self {
       viewport_rect: egui::Rect::NOTHING,
@@ -127,10 +131,10 @@ enum Tabs {
   MenuBar,
   GameView,
   Hierarchy,
+  Prefabs,
   Resources,
   Assets,
   Inspector,
-  Spawn,
 }
 
 struct TabViewer<'a, C: Component> {
@@ -206,7 +210,7 @@ where
     }
   }
 
-  fn menu_bar_ui(&mut self, ui: &mut egui_dock::egui::Ui) {
+  fn menu_bar_ui(&mut self, ui: &mut egui::Ui) {
     self.world.resource_scope(|world, mut fd: Mut<FileDialog>| {
       ui.horizontal(|ui| {
         ui.menu_button("File", |ui| {
@@ -230,6 +234,24 @@ where
       })
     });
   }
+
+  fn prefab_ui(&mut self, ui: &mut egui::Ui) {
+    self.world.resource_scope(|world, cache: Mut<Cache>| {
+      let prefabs = match cache.list_prefabs() {
+        Ok(prefabs) => prefabs,
+        Err(e) => {
+          error!("could not render prefab ui: {e}");
+          return;
+        }
+      };
+
+      for prefab in prefabs {
+        if ui.button(&prefab.datatype).clicked() {
+          info!("spawning {}\n{}", prefab.datatype, prefab.ron_repr);
+        }
+      }
+    });
+  }
 }
 
 impl<C> egui_dock::TabViewer for TabViewer<'_, C>
@@ -238,7 +260,7 @@ where
 {
   type Tab = Tabs;
 
-  fn title(&mut self, window: &mut Self::Tab) -> egui_dock::egui::WidgetText {
+  fn title(&mut self, window: &mut Self::Tab) -> egui::WidgetText {
     format!("{window:?}").into()
   }
 
@@ -246,7 +268,7 @@ where
     !matches!(window, Tabs::GameView)
   }
 
-  fn ui(&mut self, ui: &mut egui_dock::egui::Ui, tab: &mut Self::Tab) {
+  fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
     let type_registry = self.world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();
 
@@ -279,8 +301,8 @@ where
           bevy_inspector::by_type_id::ui_for_asset(self.world, type_id, handle, ui, &type_registry);
         }
       },
-      Tabs::Spawn => {
-        ui.label("TODO");
+      Tabs::Prefabs => {
+        self.prefab_ui(ui);
       }
     }
   }

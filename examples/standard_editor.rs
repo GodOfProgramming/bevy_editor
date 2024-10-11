@@ -18,7 +18,7 @@ fn main() {
 
   let mut editor = Editor::new(app, config);
 
-  editor.register_type::<SpawnableComponent>();
+  editor.register_type("basic", Plane::basic);
 
   editor.run();
 }
@@ -26,11 +26,7 @@ fn main() {
 #[derive(Component, Clone)]
 struct MainCamera;
 
-fn startup(
-  mut commands: Commands,
-  meshes: ResMut<Assets<Mesh>>,
-  materials: ResMut<Assets<StandardMaterial>>,
-) {
+fn startup(mut commands: Commands) {
   commands.spawn((
     Name::new("Main Camera"),
     MainCamera,
@@ -40,29 +36,44 @@ fn startup(
       settings: default(),
     },
   ));
-
-  commands.spawn(spawn_plane(meshes, materials));
 }
 
-fn spawn_plane(
-  mut meshes: ResMut<Assets<Mesh>>,
-  mut materials: ResMut<Assets<StandardMaterial>>,
-) -> impl Bundle {
-  return (
-    Name::new("ground"),
-    PbrBundle {
-      mesh: meshes.add(Plane3d::default()),
-      transform: Transform::default().with_scale(Vec3::splat(100.0)),
-      material: materials.add(StandardMaterial {
-        base_color: Color::linear_rgb(0.3, 0.2, 0.7),
+#[derive(Reflect, Clone, Bundle)]
+struct Plane {
+  name: Name,
+  mesh_bundle: StandardMaterialMeshBundle,
+}
+
+impl Plane {
+  fn basic(
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+  ) -> Self {
+    Self {
+      name: Name::new("ground"),
+      mesh_bundle: StandardMaterialMeshBundle {
+        mesh: meshes.add(Plane3d::default()),
+        transform: Transform::default().with_scale(Vec3::splat(100.0)),
+        material: materials.add(StandardMaterial {
+          base_color: Color::linear_rgb(0.3, 0.2, 0.7),
+          ..default()
+        }),
         ..default()
-      }),
-      ..default()
-    },
-  );
+      },
+    }
+  }
 }
 
-#[derive(Default, Component, Reflect, Serialize)]
-struct SpawnableComponent {
-  life: i32,
+#[derive(Default, Reflect, Clone, Bundle)]
+struct StandardMaterialMeshBundle {
+  pub mesh: Handle<Mesh>,
+  pub material: Handle<StandardMaterial>,
+  pub transform: Transform,
+  pub global_transform: GlobalTransform,
+  /// User indication of whether an entity is visible
+  pub visibility: Visibility,
+  /// Inherited visibility of an entity.
+  pub inherited_visibility: InheritedVisibility,
+  /// Algorithmically-computed indication of whether an entity is visible and should be extracted for rendering
+  pub view_visibility: ViewVisibility,
 }

@@ -7,8 +7,9 @@ mod view;
 use backends::egui::EguiPointer;
 use backends::raycast::{RaycastBackendSettings, RaycastPickable};
 use bevy::prelude::*;
-use bevy::reflect::{GetTypeRegistration, ReflectKind};
+use bevy::reflect::{GetTypeRegistration, TypeRegistryArc};
 use bevy::state::state::FreelyMutableState;
+use bevy::tasks::IoTaskPool;
 use bevy::transform::TransformSystem;
 use bevy::utils::HashMap;
 use bevy::{render::camera::Viewport, window::PrimaryWindow};
@@ -17,11 +18,11 @@ use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use bevy_mod_picking::prelude::*;
 use bevy_transform_gizmo::{GizmoPickSource, GizmoTransformable, TransformGizmoPlugin};
 use cache::Cache;
-use serde::Serialize;
-use std::any::Any;
-use std::fs;
+use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use ui::UiPlugin;
 
 pub use bevy;
@@ -33,6 +34,8 @@ pub use view::EditorCameraBundle;
 pub struct Editor {
   app: App,
   cache: Cache,
+  scene_type_registry: SceneTypeRegistry,
+  entity_types: MapEntityRegistrar,
 }
 
 impl Editor {
@@ -53,36 +56,61 @@ impl Editor {
 
     let cache = Cache::connect(cache_path).unwrap();
 
-    Self { app, cache }
+    Self {
+      app,
+      cache,
+      scene_type_registry: default(),
+      entity_types: default(),
+    }
   }
 
-  pub fn register_type<T>(&mut self) -> &mut Self
+  pub fn register_type_default<T>(&mut self) -> &mut Self
   where
-    T: GetTypeRegistration + Default + ?Sized + Serialize,
+    T: Bundle + GetTypeRegistration + Clone + Default,
+  {
+    self.register_type_internal(None, || T::default())
+  }
+
+  pub fn register_type<F, T, M>(&mut self, variant: impl Into<String>, sys: F) -> &mut Self
+  where
+    F: IntoSystem<(), T, M>,
+    T: Bundle + GetTypeRegistration + Clone,
+  {
+    self.register_type_internal(Some(variant.into()), sys)
+  }
+
+  pub fn run(self) -> AppExit {
+    let Self {
+      mut app,
+      cache,
+      scene_type_registry,
+      entity_types,
+    } = self;
+
+    app.insert_resource(scene_type_registry);
+    app.insert_resource(entity_types);
+    app.insert_resource(cache);
+
+    app.run()
+  }
+
+  fn register_type_internal<F, T, M>(&mut self, variant: Option<String>, sys: F) -> &mut Self
+  where
+    F: IntoSystem<(), T, M>,
+    T: Bundle + GetTypeRegistration + Clone,
   {
     let registration = T::get_type_registration();
     let path = registration.type_info().type_path();
+    let id = variant
+      .map(|v| format!("{path}#{v}"))
+      .unwrap_or_else(|| path.into());
 
-    let default_value = T::default();
-    let default_prefab = ron::to_string(&default_value).unwrap();
-    let registered_prefab = self.cache.component_prefab(path).unwrap();
-
-    if registered_prefab
-      .map(|p| p != default_prefab)
-      .unwrap_or(true)
-    {
-      self.cache.register_type_prefab(path, &default_prefab);
-    }
+    self.scene_type_registry.write().register::<T>();
+    self.entity_types.register(id, sys);
 
     self.app.register_type::<T>();
 
     self
-  }
-
-  pub fn run(self) -> AppExit {
-    let Self { mut app, cache } = self;
-    app.insert_resource(cache);
-    app.run()
   }
 }
 
@@ -147,7 +175,7 @@ where
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
       .insert_state(self.config.editor_state)
-      .add_systems(Startup, Self::startup)
+      .add_systems(Startup, (Self::startup, Self::initialize_types))
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
       .add_systems(OnExit(self.config.editor_state), Self::on_exit)
       .add_systems(
@@ -155,6 +183,7 @@ where
         (
           Self::handle_input,
           Self::check_for_saves,
+          Self::check_for_loads,
           (
             (
               Self::auto_register_camera,
@@ -197,6 +226,14 @@ where
 
   fn startup(mut raycast_settings: ResMut<RaycastBackendSettings>) {
     raycast_settings.require_markers = true;
+  }
+
+  fn initialize_types(world: &mut World) {
+    let Some(registrar) = world.remove_resource::<MapEntityRegistrar>() else {
+      return;
+    };
+    let entities = MapEntities::new_from(world, registrar);
+    world.insert_resource(entities);
   }
 
   fn on_enter(mut q_windows: Query<&mut Window>) {
@@ -303,37 +340,15 @@ where
     });
   }
 
-  fn check_for_loads(world: &mut World) {
-    world.resource_scope(|world, load_events: Mut<Events<LoadEvent>>| {
-      load_events.get_reader().read(&load_events).for_each(|e| {
-        let type_registry = world.resource::<AppTypeRegistry>().0.clone();
-        let type_registry = type_registry.read();
-
-        let desc = MapDescriptor::from(e.file().clone());
-
-        for obj in &desc.objects {
-          for component in &obj.components {
-            if let Some(c) = type_registry.get_with_type_path(&component.name) {
-              let Some(reflect_default) = c.data::<ReflectDefault>() else {
-                error!("failed to load {}", component.name);
-                return;
-              };
-
-              let instance: Box<dyn Reflect> = reflect_default.default();
-
-              match instance.reflect_kind() {
-                ReflectKind::Struct => todo!(),
-                ReflectKind::TupleStruct => todo!(),
-                ReflectKind::Tuple => todo!(),
-                ReflectKind::List => todo!(),
-                ReflectKind::Array => todo!(),
-                ReflectKind::Map => todo!(),
-                ReflectKind::Enum => todo!(),
-                ReflectKind::Value => todo!(),
-              }
-            }
-          }
-        }
+  fn check_for_loads(
+    mut commands: Commands,
+    mut load_events: EventReader<LoadEvent>,
+    asset_server: Res<AssetServer>,
+  ) {
+    load_events.read().for_each(|e| {
+      commands.spawn(DynamicSceneBundle {
+        scene: asset_server.load(e.file().clone()),
+        ..default()
       });
     });
   }
@@ -408,9 +423,74 @@ impl SaveEvent {
   }
 
   pub fn handler(&self, world: &mut World) {
-    // let children = world
-    //   .get::<Children>(entity)
-    //   .map(|children| children.iter().copied().collect::<Vec<_>>());
+    let mut scene_world = World::new();
+    scene_world.insert_resource(world.resource::<AppTypeRegistry>().clone());
+    let scene_type_registry = world.resource::<SceneTypeRegistry>().clone();
+    let type_registry = scene_type_registry.read();
+
+    let mut entities_to_copy = world.query_filtered::<Entity, With<SceneMarker>>();
+
+    for entity in entities_to_copy.iter(world) {
+      let new_entity = scene_world.spawn_empty().id();
+
+      for architype in world.archetypes().iter() {
+        if architype
+          .entities()
+          .into_iter()
+          .map(|ae| ae.id())
+          .any(|e| e == entity)
+        {
+          for comp_id in architype.components() {
+            let components = world.components();
+            let Some(comp_info) = components.get_info(comp_id) else {
+              error!("failed to get component info for {}", comp_id.index());
+              return;
+            };
+
+            let Some(comp_type_id) = comp_info.type_id() else {
+              error!("failed to get comp type id of {}", comp_info.name());
+              return;
+            };
+
+            let Some(comp_type) = type_registry.get(comp_type_id) else {
+              // assume if the type is not present in the type registry it is not meant to be saved
+              continue;
+            };
+
+            let Some(comp_ref) = comp_type.data::<ReflectComponent>() else {
+              error!("failed to get reflect component of {}", comp_info.name());
+              return;
+            };
+
+            comp_ref.copy(world, &mut scene_world, entity, new_entity, &type_registry);
+          }
+        }
+      }
+    }
+
+    let scene = DynamicScene::from_world(&scene_world);
+
+    let serialization = scene.serialize(&type_registry).unwrap();
+    let filename = self.file().clone();
+    IoTaskPool::get()
+      .spawn(async move {
+        let printable_filename = filename.display().to_string();
+
+        info!("saving scene to {}...", printable_filename);
+        if let Some(parent) = filename.parent() {
+          if let Err(err) = async_std::fs::create_dir_all(parent).await {
+            error!("failed to create directory '{}': {err}", parent.display());
+          }
+        }
+
+        if let Err(err) = async_std::fs::write(filename, serialization).await {
+          error!("failed to save scene to '{}': {err}", printable_filename);
+          return;
+        }
+
+        info!("finished saving");
+      })
+      .detach();
   }
 }
 
@@ -427,26 +507,102 @@ pub fn load_map() -> Entity {
   Entity::PLACEHOLDER
 }
 
-struct MapDescriptor {
-  objects: Vec<ObjectDescriptor>,
+#[derive(Default, Resource)]
+struct MapEntityRegistrar {
+  mapping: Mutex<HashMap<String, Box<dyn FnOnce(String, &mut World, &mut MapEntities) + Send>>>,
 }
 
-struct ObjectDescriptor {
-  components: Vec<ComponentDescriptor>,
-}
-
-struct ComponentDescriptor {
-  name: String,
-  fields: HashMap<String, Box<dyn Any>>,
-}
-
-impl From<PathBuf> for MapDescriptor {
-  fn from(value: PathBuf) -> Self {
-    todo!();
+impl MapEntityRegistrar {
+  pub fn register<F, T, M>(&mut self, name: String, sys: F)
+  where
+    F: IntoSystem<(), T, M>,
+    T: Bundle + GetTypeRegistration + Clone,
+  {
+    let mut sys = IntoSystem::into_system(sys);
+    self.mapping.lock().unwrap().insert(
+      name,
+      Box::new(move |name, world, entities| {
+        sys.initialize(world);
+        let bundle: T = sys.run((), world);
+        entities.register(name, bundle);
+      }),
+    );
   }
 }
 
-struct Prefab {
-  pub datatype: String,
-  pub ron_repr: String,
+#[derive(Default, Resource)]
+struct MapEntities {
+  mapping: Mutex<HashMap<String, Box<dyn Fn(&mut World) + Send>>>,
+  key_cache: Mutex<RefCell<ValueCache<Vec<String>>>>,
+}
+
+impl MapEntities {
+  pub fn new_from(world: &mut World, registrar: MapEntityRegistrar) -> Self {
+    let mut entities = Self::default();
+    let mapping = registrar.mapping.into_inner().unwrap();
+
+    for (k, v) in mapping.into_iter() {
+      (v)(k, world, &mut entities);
+    }
+
+    entities
+  }
+
+  pub fn register<T>(&mut self, id: impl Into<String>, value: T)
+  where
+    T: Bundle + Clone,
+  {
+    self.key_cache.lock().unwrap().borrow_mut().dirty();
+    self.mapping.lock().unwrap().insert(
+      id.into(),
+      Box::new(move |world| {
+        world.spawn((SceneMarker, value.clone()));
+      }),
+    );
+  }
+
+  pub fn ids(&self) -> Vec<String> {
+    let key_cache = self.key_cache.lock().unwrap();
+    let mut key_cache = key_cache.borrow_mut();
+
+    if key_cache.is_dirty() {
+      let values = self.mapping.lock().unwrap().keys().cloned().collect();
+      key_cache.emplace(values);
+    }
+
+    key_cache.value().clone()
+  }
+
+  pub fn spawn(&self, id: impl AsRef<str>, world: &mut World) {
+    let Ok(mapping) = self.mapping.lock() else {
+      return;
+    };
+
+    let Some(spawn_fn) = mapping.get(id.as_ref()) else {
+      return;
+    };
+
+    spawn_fn(world);
+  }
+}
+
+#[derive(Component)]
+struct SceneMarker;
+
+#[derive(Default, Clone, Resource)]
+struct SceneTypeRegistry {
+  type_registry: TypeRegistryArc,
+}
+
+impl Deref for SceneTypeRegistry {
+  type Target = TypeRegistryArc;
+  fn deref(&self) -> &Self::Target {
+    &self.type_registry
+  }
+}
+
+impl DerefMut for SceneTypeRegistry {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.type_registry
+  }
 }

@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-use bevy::scene::SceneLoader;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
   reflect::TypeRegistry,
@@ -15,8 +14,7 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
-use crate::cache::Cache;
-use crate::{LoadEvent, SaveEvent};
+use crate::{LoadEvent, MapEntities, SaveEvent};
 
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {
@@ -56,14 +54,12 @@ where
 
 #[derive(Resource)]
 struct FileDialog {
-  path: Option<PathBuf>,
   dialog: egui::mutex::Mutex<egui_file_dialog::FileDialog>,
 }
 
 impl FileDialog {
   fn new() -> Self {
     Self {
-      path: None,
       dialog: egui::mutex::Mutex::new(egui_file_dialog::FileDialog::new()),
     }
   }
@@ -80,6 +76,7 @@ pub(crate) struct State<C: Component> {
   dock_state: DockState<Tabs>,
   selection: InspectorSelection,
   cam_component: PhantomData<C>,
+  on_file_select: Option<fn(&mut World, PathBuf)>,
 }
 
 impl<C> State<C>
@@ -104,6 +101,7 @@ where
       dock_state: state,
       selection: InspectorSelection::Entities,
       cam_component: default(),
+      on_file_select: None,
     }
   }
 
@@ -118,6 +116,7 @@ where
       selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
       cam_component: default(),
+      on_file_select: &mut self.on_file_select,
     };
 
     DockArea::new(&mut self.dock_state)
@@ -143,6 +142,7 @@ struct TabViewer<'a, C: Component> {
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
   cam_component: PhantomData<C>,
+  on_file_select: &'a mut Option<fn(&mut World, PathBuf)>,
 }
 
 impl<C> TabViewer<'_, C>
@@ -215,13 +215,13 @@ where
       ui.horizontal(|ui| {
         ui.menu_button("File", |ui| {
           if ui.button("Save").clicked() {
-            if let Some(path) = &fd.path {
-              world.send_event(SaveEvent(path.clone()));
-            }
+            fd.access_mut(|dlg| dlg.save_file());
+            *self.on_file_select = Some(Self::on_save);
           }
 
           if ui.button("Open Map").clicked() {
             fd.access_mut(|dlg| dlg.select_file());
+            *self.on_file_select = Some(Self::on_load);
           }
         });
       });
@@ -229,28 +229,32 @@ where
       fd.access_mut(|dlg| {
         dlg.update(ui.ctx());
         if let Some(path) = dlg.take_selected() {
-          world.send_event(LoadEvent(path));
+          if let Some(on_file_select) = self.on_file_select.take() {
+            (on_file_select)(world, path);
+          }
         }
       })
     });
   }
 
-  fn prefab_ui(&mut self, ui: &mut egui::Ui) {
-    self.world.resource_scope(|world, cache: Mut<Cache>| {
-      let prefabs = match cache.list_prefabs() {
-        Ok(prefabs) => prefabs,
-        Err(e) => {
-          error!("could not render prefab ui: {e}");
-          return;
-        }
-      };
+  fn on_save(world: &mut World, path: PathBuf) {
+    world.send_event(SaveEvent(path));
+  }
 
-      for prefab in prefabs {
-        if ui.button(&prefab.datatype).clicked() {
-          info!("spawning {}\n{}", prefab.datatype, prefab.ron_repr);
+  fn on_load(world: &mut World, path: PathBuf) {
+    world.send_event(LoadEvent(path));
+  }
+
+  fn prefab_ui(&mut self, ui: &mut egui::Ui) {
+    self
+      .world
+      .resource_scope(|world, entities: Mut<MapEntities>| {
+        for id in entities.ids() {
+          if ui.button(&id).clicked() {
+            entities.spawn(id, world);
+          }
         }
-      }
-    });
+      });
   }
 }
 

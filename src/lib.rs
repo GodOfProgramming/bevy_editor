@@ -63,14 +63,14 @@ impl Editor {
     }
   }
 
-  pub fn register_static_prefab_default<T>(&mut self) -> &mut Self
+  pub fn register_prefab_default<T>(&mut self) -> &mut Self
   where
     T: Bundle + GetTypeRegistration + Clone + Default,
   {
     self.register_static_prefab_internal(None, T::default)
   }
 
-  pub fn register_static_prefab<F, T, M>(&mut self, variant: impl Into<String>, sys: F) -> &mut Self
+  pub fn register_prefab<F, T, M>(&mut self, variant: impl Into<String>, sys: F) -> &mut Self
   where
     F: IntoSystem<(), T, M> + 'static,
     T: Bundle + GetTypeRegistration + Clone,
@@ -78,7 +78,7 @@ impl Editor {
     self.register_static_prefab_internal(Some(variant.into()), sys)
   }
 
-  pub fn register_prefab<T>(&mut self) -> &mut Self
+  pub fn load_prefabs<T>(&mut self) -> &mut Self
   where
     T: Prefab,
   {

@@ -14,7 +14,7 @@ use std::any::TypeId;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 
-use crate::{LoadEvent, MapEntities, SaveEvent};
+use crate::scenes::{LoadEvent, MapEntities, SaveEvent};
 
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {
@@ -238,11 +238,11 @@ where
   }
 
   fn on_save(world: &mut World, path: PathBuf) {
-    world.send_event(SaveEvent(path));
+    world.send_event(SaveEvent::new(path));
   }
 
   fn on_load(world: &mut World, path: PathBuf) {
-    world.send_event(LoadEvent(path));
+    world.send_event(LoadEvent::new(path));
   }
 
   fn prefab_ui(&mut self, ui: &mut egui::Ui) {

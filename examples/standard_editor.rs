@@ -18,7 +18,7 @@ fn main() {
 
   let mut editor = Editor::new(app, config);
 
-  editor.register_type("basic", Plane::basic);
+  editor.register_static_prefab("basic", Plane::basic);
 
   editor.run();
 }

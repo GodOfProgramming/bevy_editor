@@ -4,20 +4,20 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-async-std = "1.13.0"
-bevy = { version = "0.14.2", features = ["default", "serialize"] }
-bevy-inspector-egui = "0.26.0"
-bevy_egui = "0.29.0"
-bevy_mod_picking = { version = "0.20.1", features = [
+async-std = "1.13"
+bevy = { version = "0.14", features = ["default", "serialize"] }
+bevy-inspector-egui = "0.26"
+bevy_egui = "0.29"
+bevy_mod_picking = { version = "0.20", features = [
   "backend_raycast",
   "backend_egui",
   "backend_sprite",
 ] }
-bevy_transform_gizmo = "0.12.0"
-const_format = "0.2.33"
-egui_dock = "0.13.0"
-egui-file-dialog = "0.6.0"
-ron = "0.8.1"
-rusqlite = { version = "0.32.1", features = ["bundled"] }
-serde = { version = "1.0.210", features = ["derive"] }
-thiserror = "1.0.64"
+bevy_transform_gizmo = "0.12"
+const_format = "0.2"
+egui_dock = "0.13"
+egui-file-dialog = "0.6"
+ron = "0.8"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "2.0"

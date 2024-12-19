@@ -6,22 +6,14 @@ use bevy::{
   render::camera::Viewport,
   window::PrimaryWindow,
 };
-use bevy_mod_picking::backends::raycast::RaycastPickable;
-use bevy_transform_gizmo::GizmoPickSource;
 
 use crate::ui;
 
 const UP: Vec3 = Vec3::Y;
 
-#[derive(Bundle, Default)]
-pub struct EditorCameraBundle<B>
-where
-  B: Bundle,
-{
-  pub camera_bundle: B,
-  pub state: CameraState,
-  pub settings: CameraSettings,
-}
+#[derive(Component, Default)]
+#[require(Camera3d, CameraState, CameraSettings)]
+pub struct EditorCamera;
 
 #[derive(Component)]
 pub struct CameraState {
@@ -201,14 +193,20 @@ pub fn cam_look_at_target<T>(
 pub fn set_camera_viewport<C>(
   ui_state: Res<ui::State<C>>,
   primary_window: Query<&mut Window, With<PrimaryWindow>>,
-  egui_settings: Res<bevy_egui::EguiSettings>,
+  q_egui_settings: Query<&bevy_egui::EguiSettings>,
   mut cameras: Query<&mut Camera, With<C>>,
 ) where
   C: Component,
 {
-  let mut cam = cameras.single_mut();
+  let Ok(mut cam) = cameras.get_single_mut() else {
+    return;
+  };
 
   let Ok(window) = primary_window.get_single() else {
+    return;
+  };
+
+  let Ok(egui_settings) = q_egui_settings.get_single() else {
     return;
   };
 
@@ -230,19 +228,5 @@ pub fn set_camera_viewport<C>(
       physical_size,
       depth: 0.0..1.0,
     });
-  }
-}
-
-pub fn auto_register_camera<C>(
-  mut commands: Commands,
-  q_cam: Query<Entity, (Without<RaycastPickable>, With<C>)>,
-) where
-  C: Component,
-{
-  for cam in &q_cam {
-    debug!("added raycast to camera");
-    commands
-      .entity(cam)
-      .insert((RaycastPickable, GizmoPickSource::default()));
   }
 }

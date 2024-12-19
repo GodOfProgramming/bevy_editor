@@ -3,13 +3,13 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use bevy::{prelude::*, window::CursorGrabMode};
 
 pub fn show_cursor(window: &mut Window) {
-  window.cursor.visible = true;
-  window.cursor.grab_mode = CursorGrabMode::None;
+  window.cursor_options.visible = true;
+  window.cursor_options.grab_mode = CursorGrabMode::None;
 }
 
 pub fn hide_cursor(window: &mut Window) {
-  window.cursor.visible = false;
-  window.cursor.grab_mode = CursorGrabMode::Locked;
+  window.cursor_options.visible = false;
+  window.cursor_options.grab_mode = CursorGrabMode::Locked;
 }
 
 pub trait HashValue {

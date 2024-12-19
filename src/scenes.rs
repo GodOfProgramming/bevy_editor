@@ -1,6 +1,6 @@
 use crate::ValueCache;
 use bevy::{
-  asset::{AssetPath, ReflectAsset, ReflectHandle},
+  asset::ReflectHandle,
   ecs::system::SystemId,
   prelude::*,
   reflect::{GetTypeRegistration, TypeRegistryArc},

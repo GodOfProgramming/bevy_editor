@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use bevy::{
-  asset::{AssetLoader, AsyncReadExt, LoadedFolder},
+  asset::{io::Reader, AssetLoader, LoadContext, LoadedFolder},
   prelude::*,
   reflect::GetTypeRegistration,
   utils::hashbrown::{hash_map, HashMap},
@@ -130,11 +130,11 @@ where
 
   type Error = std::io::Error;
 
-  async fn load<'a>(
-    &'a self,
-    reader: &'a mut bevy::asset::io::Reader<'_>,
-    _settings: &'a Self::Settings,
-    _load_context: &'a mut bevy::asset::LoadContext<'_>,
+  async fn load(
+    &self,
+    reader: &mut dyn Reader,
+    _settings: &Self::Settings,
+    _load_context: &mut LoadContext<'_>,
   ) -> Result<Self::Asset, Self::Error> {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes).await?;

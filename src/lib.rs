@@ -7,8 +7,6 @@ mod util;
 mod view;
 
 use assets::{LoadPrefabEvent, Manifest, Prefab, PrefabFolder};
-use backends::egui::EguiPointer;
-use backends::raycast::{RaycastBackendSettings, RaycastPickable};
 use bevy::asset::LoadedFolder;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
@@ -17,8 +15,6 @@ use bevy::transform::TransformSystem;
 use bevy::window::PrimaryWindow;
 use bevy_egui::{EguiContext, EguiSet};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use bevy_mod_picking::prelude::*;
-use bevy_transform_gizmo::{GizmoTransformable, TransformGizmoPlugin};
 use cache::Cache;
 use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
 use std::marker::PhantomData;
@@ -28,7 +24,7 @@ pub use bevy;
 pub use input::Hotkeys;
 pub use serde;
 pub use util::*;
-pub use view::EditorCameraBundle;
+pub use view::EditorCamera;
 
 pub struct Editor {
   app: App,
@@ -244,8 +240,6 @@ where
       .add_plugins((
         bevy_egui::EguiPlugin,
         DefaultInspectorConfigPlugin,
-        bevy_mod_picking::DefaultPickingPlugins,
-        TransformGizmoPlugin::new(Quat::default()),
         UiPlugin::<C>::new(),
       ))
       .add_event::<SaveEvent>()
@@ -254,25 +248,17 @@ where
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
       .insert_state(self.config.editor_state)
-      .add_systems(Startup, (Self::startup, Self::initialize_types))
+      .add_systems(Startup, (Self::initialize_types))
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
-      .add_systems(OnExit(self.config.editor_state), Self::on_exit)
       .add_systems(
         Update,
         (
           Self::handle_input,
           Self::check_for_saves,
           Self::check_for_loads,
-          (
-            (
-              view::auto_register_camera::<C>,
-              Self::auto_register_targets,
-              Self::handle_pick_events,
-            ),
-            ((view::movement_system, view::orbit), view::cam_free_fly)
-              .chain()
-              .run_if(in_state(EditorState::Inspecting)),
-          ),
+          ((view::movement_system, view::orbit), view::cam_free_fly)
+            .chain()
+            .run_if(in_state(EditorState::Inspecting)),
         )
           .chain()
           .run_if(Self::in_editor_state),
@@ -303,10 +289,6 @@ where
     }
   }
 
-  fn startup(mut raycast_settings: ResMut<RaycastBackendSettings>) {
-    raycast_settings.require_markers = true;
-  }
-
   fn initialize_types(world: &mut World) {
     let Some(registrar) = world.remove_resource::<MapEntityRegistrar>() else {
       return;
@@ -318,19 +300,6 @@ where
   fn on_enter(mut q_windows: Query<&mut Window>) {
     for mut window in q_windows.iter_mut() {
       show_cursor(&mut window);
-    }
-  }
-
-  fn on_exit(
-    mut commands: Commands,
-    q_targets: Query<Entity, (With<RaycastPickable>, Without<Camera>)>,
-  ) {
-    for target in q_targets.iter() {
-      commands
-        .entity(target)
-        .remove::<RaycastPickable>()
-        .remove::<GizmoTransformable>()
-        .remove::<PickableBundle>();
     }
   }
 
@@ -351,20 +320,6 @@ where
     });
   }
 
-  fn auto_register_targets(
-    mut commands: Commands,
-    query: Query<Entity, (Without<RaycastPickable>, With<Handle<Mesh>>)>,
-  ) {
-    for entity in &query {
-      debug!("added raycast to target {}", entity);
-      commands.entity(entity).insert((
-        RaycastPickable,
-        PickableBundle::default(),
-        GizmoTransformable,
-      ));
-    }
-  }
-
   fn check_for_saves(world: &mut World) {
     world.resource_scope(|world, save_events: Mut<Events<SaveEvent>>| {
       save_events.get_reader().read(&save_events).for_each(|e| {
@@ -379,10 +334,7 @@ where
     asset_server: Res<AssetServer>,
   ) {
     load_events.read().for_each(|e| {
-      commands.spawn(DynamicSceneBundle {
-        scene: asset_server.load(e.file().clone()),
-        ..default()
-      });
+      commands.spawn(DynamicSceneRoot(asset_server.load(e.file().clone())));
     });
   }
 
@@ -414,31 +366,6 @@ where
 
     if input.just_pressed(hotkeys.play_current_level) {
       next_game_state.set(config.gameplay_state);
-    }
-  }
-
-  fn handle_pick_events(
-    mut ui_state: ResMut<ui::State<C>>,
-    mut click_events: EventReader<Pointer<Click>>,
-    mut q_egui: Query<&mut EguiContext>,
-    q_egui_entity: Query<&EguiPointer>,
-    q_raycast_pickables: Query<&RaycastPickable>,
-  ) {
-    let mut egui = q_egui.single_mut();
-    let egui_context = egui.get_mut();
-
-    for click in click_events.read() {
-      let target = click.target();
-
-      if q_egui_entity.get(target).is_ok() {
-        continue;
-      };
-
-      let modifiers = egui_context.input(|i| i.modifiers);
-
-      if q_raycast_pickables.get(target).is_ok() {
-        ui_state.add_selected(target, modifiers.ctrl);
-      }
     }
   }
 

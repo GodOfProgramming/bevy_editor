@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_editor::{Editor, EditorConfig};
+use bevy_editor::Editor;
 
 #[derive(States, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum GameState {
@@ -13,9 +13,7 @@ fn main() {
     .add_plugins(DefaultPlugins)
     .add_systems(Startup, startup);
 
-  let config = EditorConfig::new(GameState::Editor, GameState::Gameplay);
-
-  let editor = Editor::new(app, config);
+  let editor = Editor::new(app, GameState::Editor, GameState::Gameplay);
 
   editor.run();
 }

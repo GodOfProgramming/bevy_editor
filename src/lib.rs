@@ -29,10 +29,12 @@ pub struct Editor {
 }
 
 impl Editor {
-  pub fn new<S>(mut app: App, config: EditorConfig<S>) -> Self
+  pub fn new<S>(mut app: App, active_state: S, gameplay_state: S) -> Self
   where
     S: FreelyMutableState + Copy,
   {
+    let config = EditorConfig::new(active_state, gameplay_state);
+
     app.add_plugins(EditorPlugin::new(config));
 
     Self {
@@ -177,7 +179,7 @@ enum EditorState {
 }
 
 #[derive(Resource, Clone)]
-pub struct EditorConfig<S>
+struct EditorConfig<S>
 where
   S: FreelyMutableState + Copy,
 {

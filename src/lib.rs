@@ -15,13 +15,12 @@ use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
 use ui::UiPlugin;
-use view::{CameraSettings, CameraState};
 
 pub use bevy;
 pub use input::Hotkeys;
 pub use serde;
 pub use util::*;
-pub use view::EditorCamera;
+use view::View3dPlugin;
 
 pub struct Editor {
   app: App,
@@ -214,19 +213,19 @@ where
 {
   fn build(&self, app: &mut App) {
     app
-      .add_plugins((MeshPickingPlugin, DefaultInspectorConfigPlugin, UiPlugin))
-      .register_type::<CameraState>()
-      .register_type::<CameraSettings>()
+      .add_plugins((
+        View3dPlugin,
+        MeshPickingPlugin,
+        DefaultInspectorConfigPlugin,
+        UiPlugin,
+      ))
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
       .insert_state(self.config.gameplay_state)
-      .add_systems(
-        Startup,
-        (Self::startup, Self::spawn_camera, Self::initialize_types),
-      )
+      .add_systems(Startup, (Self::startup, Self::initialize_types))
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
       .add_systems(OnExit(self.config.editor_state), Self::on_exit)
       .add_systems(
@@ -237,23 +236,15 @@ where
             input::handle_input,
             scenes::check_for_saves,
             scenes::check_for_loads,
-            (
-              view::auto_register_camera,
-              Self::auto_register_targets,
-              Self::handle_pick_events,
-              Self::draw_mesh_intersections,
-            ),
-            ((view::movement_system, view::look), view::cam_free_fly)
-              .chain()
-              .run_if(in_state(EditorState::Inspecting)),
+            Self::auto_register_targets,
+            Self::handle_pick_events,
+            Self::draw_mesh_intersections,
           )
-            .chain()
             .run_if(in_state(self.config.editor_state)),
           ui::render,
         )
           .chain(),
-      )
-      .add_systems(PostUpdate, view::set_camera_viewport);
+      );
   }
 }
 
@@ -270,10 +261,6 @@ where
 
   fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
     picking_settings.require_markers = true;
-  }
-
-  fn spawn_camera(mut commands: Commands) {
-    commands.spawn(EditorCamera);
   }
 
   fn initialize_types(world: &mut World) {

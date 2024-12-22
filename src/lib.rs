@@ -46,7 +46,7 @@ impl Editor {
 
   pub fn register_prefab_default<T>(&mut self) -> &mut Self
   where
-    T: Bundle + GetTypeRegistration + Clone + Default,
+    T: Component + GetTypeRegistration + Clone + Default,
   {
     self.register_static_prefab_internal(None, T::default)
   }
@@ -54,7 +54,7 @@ impl Editor {
   pub fn register_prefab<F, T, M>(&mut self, variant: impl Into<String>, sys: F) -> &mut Self
   where
     F: IntoSystem<(), T, M> + 'static,
-    T: Bundle + GetTypeRegistration + Clone,
+    T: Component + GetTypeRegistration + Clone,
   {
     self.register_static_prefab_internal(Some(variant.into()), sys)
   }
@@ -147,7 +147,7 @@ impl Editor {
   ) -> &mut Self
   where
     F: IntoSystem<(), T, M> + 'static,
-    T: Bundle + GetTypeRegistration + Clone,
+    T: Component + GetTypeRegistration + Clone,
   {
     self.register_type::<T>();
 

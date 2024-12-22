@@ -1,3 +1,4 @@
+use super::ViewPlugin;
 use crate::{ui, EditorState};
 use bevy::{
   input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
@@ -11,6 +12,8 @@ const UP: Vec3 = Vec3::Y;
 
 pub struct View3dPlugin;
 
+impl ViewPlugin for View3dPlugin {}
+
 impl Plugin for View3dPlugin {
   fn build(&self, app: &mut App) {
     app
@@ -19,7 +22,7 @@ impl Plugin for View3dPlugin {
       .add_systems(Startup, Self::spawn_camera)
       .add_systems(
         Update,
-        ((movement_system, look), cam_free_fly)
+        ((movement_system, look_system), cam_free_fly)
           .chain()
           .run_if(in_state(EditorState::Inspecting)),
       )
@@ -34,7 +37,7 @@ impl View3dPlugin {
 }
 
 #[derive(Component, Default)]
-#[require(Camera3d, CameraState, CameraSettings, RayCastPickable)]
+#[require(Camera3d, CameraState, CameraSettings)]
 pub struct EditorCamera;
 
 #[derive(Component, Reflect)]
@@ -79,7 +82,7 @@ impl Default for CameraSettings {
   }
 }
 
-pub fn movement_system(
+fn movement_system(
   keyboard_input: Res<ButtonInput<KeyCode>>,
   time: Res<Time>,
   mut query: Query<(&CameraState, &mut Transform), With<Camera>>,
@@ -110,7 +113,7 @@ pub fn movement_system(
   }
 }
 
-pub fn look(
+fn look_system(
   mut mouse_motion: EventReader<MouseMotion>,
   mut q_cam: Query<(&CameraSettings, &mut CameraState), With<Camera>>,
 ) {
@@ -146,7 +149,7 @@ pub fn look(
   state.face = Vec3::new(pitch_cos * yaw_cos, pitch_sin, -pitch_cos * yaw_sin).normalize();
 }
 
-pub fn apply_scroll_effect(
+fn apply_scroll_effect(
   mut mouse_scroll: EventReader<MouseWheel>,
   mut query: Query<(&CameraSettings, &mut CameraState), With<Camera>>,
 ) {
@@ -177,7 +180,7 @@ pub fn apply_scroll_effect(
   cam_state.zoom += total_zoom.exp();
 }
 
-pub fn cam_free_fly(mut q_cam: Query<(&mut Transform, &CameraState), With<Camera>>) {
+fn cam_free_fly(mut q_cam: Query<(&mut Transform, &CameraState), With<Camera>>) {
   let (mut cam_transform, cam_state) = q_cam.single_mut();
 
   cam_transform.translation += cam_state.face * cam_state.zoom;
@@ -187,7 +190,7 @@ pub fn cam_free_fly(mut q_cam: Query<(&mut Transform, &CameraState), With<Camera
   cam_transform.look_at(cam_target, UP);
 }
 
-pub fn cam_look_at_target<T>(
+fn cam_look_at_target<T>(
   mut query: ParamSet<(
     Query<(&mut Transform, &CameraState), With<Camera>>,
     Query<&Transform, With<T>>,
@@ -215,7 +218,7 @@ pub fn cam_look_at_target<T>(
 }
 
 // make camera only render to view not obstructed by UI
-pub fn set_camera_viewport(
+fn set_camera_viewport(
   ui_state: Res<ui::State>,
   primary_window: Query<&mut Window, With<PrimaryWindow>>,
   q_egui_settings: Query<&bevy_egui::EguiSettings>,

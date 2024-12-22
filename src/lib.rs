@@ -5,7 +5,7 @@ mod ui;
 mod util;
 mod view;
 
-use assets::{LoadPrefabEvent, Manifest, Prefab, PrefabFolder};
+use assets::{LoadPrefabEvent, Manifest, Prefab, PrefabFolder, PrefabPlugin};
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
@@ -45,6 +45,15 @@ where
       scene_type_registry: default(),
       entity_types: default(),
     }
+  }
+
+  pub fn on_enter_editor_hook<System, M>(&mut self, system: System)
+  where
+    System: IntoSystem<(), (), M>,
+  {
+    self
+      .app
+      .add_systems(OnEnter(self.config.editor_state), system);
   }
 
   pub fn swap_camera_on_gameplay<C>(&mut self)
@@ -103,66 +112,7 @@ where
     T: Prefab,
   {
     self.register_type::<T>();
-
-    self
-      .app
-      .init_asset::<T::Descriptor>()
-      .insert_resource(Manifest::<T>::default())
-      .add_event::<LoadPrefabEvent<T>>()
-      .register_asset_loader(assets::Loader::<T>::default())
-      .add_systems(
-        Startup,
-        |assets: ResMut<AssetServer>, mut commands: Commands| {
-          let folders = assets.load_folder(T::DIR);
-          commands.insert_resource(PrefabFolder::<T>::new(folders));
-          info!(
-            "Started folder load for {}",
-            T::get_type_registration().type_info().type_path()
-          );
-        },
-      )
-      .add_systems(
-        Update,
-        (
-          |mut event_reader: EventReader<AssetEvent<LoadedFolder>>,
-           folders: Res<PrefabFolder<T>>,
-           loaded_folders: Res<Assets<LoadedFolder>>,
-           mut event_writer: EventWriter<LoadPrefabEvent<T>>| {
-            for event in event_reader.read() {
-              info!(
-                "Loaded folder for {}",
-                T::get_type_registration().type_info().type_path()
-              );
-              if event.is_loaded_with_dependencies(folders.folder()) {
-                let folders = loaded_folders.get(folders.folder()).unwrap();
-                for handle in folders.handles.iter() {
-                  let id = handle.id().typed_unchecked::<T::Descriptor>();
-                  event_writer.send(LoadPrefabEvent::<T>::new(id));
-                }
-              }
-            }
-          },
-          |mut event_reader: EventReader<LoadPrefabEvent<T>>,
-           descriptors: Res<Assets<T::Descriptor>>,
-           mut manifest: ResMut<Manifest<T>>,
-           mut map_entities: ResMut<MapEntities>,
-           assets: Res<AssetServer>| {
-            for event in event_reader.read() {
-              info!(
-                "Received prefab load event for {}",
-                T::get_type_registration().type_info().type_path()
-              );
-              let Some(desc) = descriptors.get(event.id) else {
-                warn!("asset id did not resolve to a descriptor asset");
-                return;
-              };
-              let prefab = T::transform(desc, &assets);
-              map_entities.register(prefab.name().to_string(), prefab.clone());
-              manifest.register(prefab);
-            }
-          },
-        ),
-      );
+    self.app.add_plugins(PrefabPlugin::<T>::default());
     self
   }
 

@@ -71,6 +71,7 @@ impl State {
 
   pub fn add_selected(&mut self, entity: Entity, add: bool) {
     self.selected_entities.select_maybe_add(entity, add);
+    self.selection = InspectorSelection::Entities;
   }
 
   pub(crate) fn ui(&mut self, world: &mut World) {

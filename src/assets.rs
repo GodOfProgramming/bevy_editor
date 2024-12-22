@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use bevy::{
   asset::{io::Reader, AssetLoader, LoadContext, LoadedFolder},
   prelude::*,
@@ -7,6 +5,85 @@ use bevy::{
   utils::hashbrown::{hash_map, HashMap},
 };
 use serde::Deserialize;
+use std::marker::PhantomData;
+
+use crate::scenes::MapEntities;
+
+pub struct PrefabPlugin<T> {
+  _pd: PhantomData<T>,
+}
+
+impl<T> Default for PrefabPlugin<T> {
+  fn default() -> Self {
+    Self { _pd: default() }
+  }
+}
+
+impl<T> Plugin for PrefabPlugin<T>
+where
+  T: Prefab,
+{
+  fn build(&self, app: &mut App) {
+    app
+      .init_asset::<T::Descriptor>()
+      .insert_resource(Manifest::<T>::default())
+      .add_event::<LoadPrefabEvent<T>>()
+      .register_asset_loader(Loader::<T>::default())
+      .add_systems(
+        Startup,
+        |assets: ResMut<AssetServer>, mut commands: Commands| {
+          let folders = assets.load_folder(T::DIR);
+          commands.insert_resource(PrefabFolder::<T>::new(folders));
+          info!(
+            "Started folder load for {}",
+            T::get_type_registration().type_info().type_path()
+          );
+        },
+      )
+      .add_systems(
+        Update,
+        (
+          |mut event_reader: EventReader<AssetEvent<LoadedFolder>>,
+           folders: Res<PrefabFolder<T>>,
+           loaded_folders: Res<Assets<LoadedFolder>>,
+           mut event_writer: EventWriter<LoadPrefabEvent<T>>| {
+            for event in event_reader.read() {
+              info!(
+                "Loaded folder for {}",
+                T::get_type_registration().type_info().type_path()
+              );
+              if event.is_loaded_with_dependencies(folders.handle()) {
+                let folders = loaded_folders.get(folders.handle()).unwrap();
+                for handle in folders.handles.iter() {
+                  let id = handle.id().typed_unchecked::<T::Descriptor>();
+                  event_writer.send(LoadPrefabEvent::<T>::new(id));
+                }
+              }
+            }
+          },
+          |mut event_reader: EventReader<LoadPrefabEvent<T>>,
+           descriptors: Res<Assets<T::Descriptor>>,
+           mut manifest: ResMut<Manifest<T>>,
+           mut map_entities: ResMut<MapEntities>,
+           assets: Res<AssetServer>| {
+            for event in event_reader.read() {
+              info!(
+                "Received prefab load event for {}",
+                T::get_type_registration().type_info().type_path()
+              );
+              let Some(desc) = descriptors.get(event.id) else {
+                warn!("asset id did not resolve to a descriptor asset");
+                return;
+              };
+              let prefab = T::transform(desc, &assets);
+              map_entities.register(prefab.name().to_string(), prefab.clone());
+              manifest.register(prefab);
+            }
+          },
+        ),
+      );
+  }
+}
 
 #[derive(Resource)]
 pub struct Manifest<T>
@@ -48,52 +125,14 @@ pub trait Prefab: GetTypeRegistration + Bundle + Clone {
 
   type Descriptor: Asset + for<'a> Deserialize<'a>;
 
-  fn name(&self) -> &str;
+  fn name(&self) -> &str {
+    Self::get_type_registration()
+      .type_info()
+      .type_path_table()
+      .short_path()
+  }
 
   fn transform(desc: &Self::Descriptor, assets: &AssetServer) -> Self;
-}
-
-#[derive(Event)]
-
-pub struct LoadPrefabEvent<T>
-where
-  T: Prefab,
-{
-  pub id: AssetId<T::Descriptor>,
-}
-
-impl<T> LoadPrefabEvent<T>
-where
-  T: Prefab,
-{
-  pub fn new(id: AssetId<T::Descriptor>) -> Self {
-    Self { id }
-  }
-}
-
-#[derive(Resource)]
-pub struct PrefabFolder<T>
-where
-  T: Prefab,
-{
-  folder: Handle<LoadedFolder>,
-  _phantom_data: PhantomData<T>,
-}
-
-impl<T> PrefabFolder<T>
-where
-  T: Prefab,
-{
-  pub fn new(folder: Handle<LoadedFolder>) -> Self {
-    Self {
-      folder,
-      _phantom_data: default(),
-    }
-  }
-
-  pub fn folder(&self) -> &Handle<LoadedFolder> {
-    &self.folder
-  }
 }
 
 pub struct Loader<T>
@@ -138,5 +177,48 @@ where
 
   fn extensions(&self) -> &[&str] {
     T::EXTENSIONS
+  }
+}
+
+#[derive(Resource)]
+pub struct PrefabFolder<T>
+where
+  T: Prefab,
+{
+  handle: Handle<LoadedFolder>,
+  _phantom_data: PhantomData<T>,
+}
+
+impl<T> PrefabFolder<T>
+where
+  T: Prefab,
+{
+  pub fn new(handle: Handle<LoadedFolder>) -> Self {
+    Self {
+      handle,
+      _phantom_data: default(),
+    }
+  }
+
+  pub fn handle(&self) -> &Handle<LoadedFolder> {
+    &self.handle
+  }
+}
+
+#[derive(Event)]
+
+pub struct LoadPrefabEvent<T>
+where
+  T: Prefab,
+{
+  pub id: AssetId<T::Descriptor>,
+}
+
+impl<T> LoadPrefabEvent<T>
+where
+  T: Prefab,
+{
+  pub fn new(id: AssetId<T::Descriptor>) -> Self {
+    Self { id }
   }
 }

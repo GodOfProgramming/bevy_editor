@@ -5,12 +5,12 @@ mod ui;
 mod util;
 mod view;
 
-use assets::{LoadPrefabEvent, Manifest, Prefab, PrefabFolder, PrefabPlugin};
+use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
+use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::state::state::FreelyMutableState;
-use bevy::{asset::LoadedFolder, picking::pointer::PointerInteraction};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
@@ -29,7 +29,7 @@ where
   app: App,
   config: EditorConfig<S>,
   scene_type_registry: SceneTypeRegistry,
-  entity_types: MapEntityRegistrar,
+  prefab_registrar: PrefabRegistrar,
 }
 
 impl<S> Editor<S>
@@ -43,20 +43,22 @@ where
       app,
       config,
       scene_type_registry: default(),
-      entity_types: default(),
+      prefab_registrar: default(),
     }
   }
 
-  pub fn on_enter_editor_hook<System, M>(&mut self, system: System)
+  pub fn on_enter_editor_hook<System, M>(&mut self, system: System) -> &mut Self
   where
     System: IntoSystem<(), (), M>,
   {
     self
       .app
       .add_systems(OnEnter(self.config.editor_state), system);
+
+    self
   }
 
-  pub fn swap_camera_on_gameplay<C>(&mut self)
+  pub fn swap_camera_on_gameplay<C>(&mut self) -> &mut Self
   where
     C: Component,
   {
@@ -87,24 +89,19 @@ where
         OnEnter(self.config.editor_state),
         swap_cameras::<EditorCamera, C>,
       );
+
+    self
   }
 
-  pub fn register_prefab_default<T>(&mut self) -> &mut Self
+  pub fn register_static_prefab<T>(&mut self) -> &mut Self
   where
-    T: Component + GetTypeRegistration + Clone + Default,
+    T: StaticPrefab,
   {
-    self.register_static_prefab_internal(None, T::default)
-  }
+    self.register_type::<T>();
 
-  pub fn register_prefab<T, M>(
-    &mut self,
-    variant: impl Into<String>,
-    sys: impl IntoSystem<(), T, M> + 'static,
-  ) -> &mut Self
-  where
-    T: Component + GetTypeRegistration + Clone,
-  {
-    self.register_static_prefab_internal(Some(variant.into()), sys)
+    self.prefab_registrar.register::<T>();
+
+    self
   }
 
   pub fn load_prefabs<T>(&mut self) -> &mut Self
@@ -121,37 +118,14 @@ where
       mut app,
       config,
       scene_type_registry,
-      entity_types,
+      prefab_registrar,
     } = self;
 
     app
       .add_plugins(EditorPlugin::new(config))
       .insert_resource(scene_type_registry)
-      .insert_resource(entity_types)
+      .insert_resource(prefab_registrar)
       .run()
-  }
-
-  fn register_static_prefab_internal<F, T, M>(
-    &mut self,
-    variant: Option<String>,
-    sys: F,
-  ) -> &mut Self
-  where
-    F: IntoSystem<(), T, M> + 'static,
-    T: Component + GetTypeRegistration + Clone,
-  {
-    self.register_type::<T>();
-
-    let registration = T::get_type_registration();
-    let path = registration.type_info().type_path();
-    let id = variant
-      .map(|v| format!("{path}#{v}"))
-      .unwrap_or_else(|| path.into());
-
-    let sys_id = self.app.register_system(sys);
-    self.entity_types.register(id, sys_id);
-
-    self
   }
 
   fn register_type<T>(&mut self)
@@ -255,11 +229,13 @@ where
   }
 
   fn initialize_types(world: &mut World) {
-    let Some(registrar) = world.remove_resource::<MapEntityRegistrar>() else {
+    let Some(registrar) = world.remove_resource::<PrefabRegistrar>() else {
       return;
     };
-    let entities = MapEntities::new_from(world, registrar);
-    world.insert_resource(entities);
+
+    let prefabs = Prefabs::new(world, registrar);
+
+    world.insert_resource(prefabs);
   }
 
   fn on_exit(

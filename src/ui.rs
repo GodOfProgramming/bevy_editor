@@ -1,3 +1,4 @@
+use crate::assets::Prefabs;
 use crate::scenes::{LoadEvent, MapEntities, SaveEvent};
 use bevy::prelude::*;
 use bevy::{
@@ -218,10 +219,10 @@ impl TabViewer<'_> {
   fn prefab_ui(&mut self, ui: &mut egui::Ui) {
     self
       .world
-      .resource_scope(|world, entities: Mut<MapEntities>| {
-        for id in entities.ids() {
-          if ui.button(&id).clicked() {
-            entities.spawn(id, world);
+      .resource_scope(|world, mut prefabs: Mut<Prefabs>| {
+        for (id, spawn_fn) in prefabs.iter_mut() {
+          if ui.button(id).clicked() {
+            (spawn_fn)(world);
           }
         }
       });

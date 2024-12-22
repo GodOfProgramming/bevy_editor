@@ -6,10 +6,11 @@ mod util;
 mod view;
 
 use assets::{LoadPrefabEvent, Manifest, Prefab, PrefabFolder};
-use bevy::asset::LoadedFolder;
+use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::state::state::FreelyMutableState;
+use bevy::{asset::LoadedFolder, picking::pointer::PointerInteraction};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
@@ -213,7 +214,7 @@ where
 {
   fn build(&self, app: &mut App) {
     app
-      .add_plugins((DefaultInspectorConfigPlugin, UiPlugin))
+      .add_plugins((MeshPickingPlugin, DefaultInspectorConfigPlugin, UiPlugin))
       .register_type::<CameraState>()
       .register_type::<CameraSettings>()
       .add_event::<SaveEvent>()
@@ -222,7 +223,10 @@ where
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
       .insert_state(self.config.gameplay_state)
-      .add_systems(Startup, (Self::spawn_camera, Self::initialize_types))
+      .add_systems(
+        Startup,
+        (Self::startup, Self::spawn_camera, Self::initialize_types),
+      )
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
       .add_systems(OnExit(self.config.editor_state), Self::on_exit)
       .add_systems(
@@ -237,6 +241,7 @@ where
               view::auto_register_camera,
               Self::auto_register_targets,
               Self::handle_pick_events,
+              Self::draw_mesh_intersections,
             ),
             ((view::movement_system, view::look), view::cam_free_fly)
               .chain()
@@ -261,6 +266,10 @@ where
       config,
       hotkeys: default(),
     }
+  }
+
+  fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
+    picking_settings.require_markers = true;
   }
 
   fn spawn_camera(mut commands: Commands) {
@@ -317,6 +326,17 @@ where
       if q_raycast_pickables.get(target).is_ok() {
         ui_state.add_selected(target, modifiers.ctrl);
       }
+    }
+  }
+
+  fn draw_mesh_intersections(pointers: Query<&PointerInteraction>, mut gizmos: Gizmos) {
+    for (point, normal) in pointers
+      .iter()
+      .filter_map(|interaction| interaction.get_nearest_hit())
+      .filter_map(|(_entity, hit)| hit.position.zip(hit.normal))
+    {
+      gizmos.sphere(point, 0.05, RED_500);
+      gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
     }
   }
 }

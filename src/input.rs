@@ -1,8 +1,7 @@
-use bevy::{prelude::*, state::state::FreelyMutableState};
+use crate::{hide_cursor, show_cursor, EditorSettings, EditorState, InternalState};
+use bevy::prelude::*;
 
-use crate::{hide_cursor, show_cursor, EditorConfig, EditorState};
-
-#[derive(Resource, Clone)]
+#[derive(Clone)]
 pub struct Hotkeys {
   pub play: KeyCode,
 
@@ -25,45 +24,42 @@ impl Default for Hotkeys {
   }
 }
 
-pub fn special_input<S>(
-  config: Res<EditorConfig<S>>,
-  hotkeys: Res<Hotkeys>,
+pub fn special_input(
+  settings: Res<EditorSettings>,
   input: Res<ButtonInput<KeyCode>>,
-  current_state: Res<State<S>>,
-  mut next_game_state: ResMut<NextState<S>>,
-) where
-  S: FreelyMutableState + Copy,
-{
-  if input.just_pressed(hotkeys.play) {
-    if *current_state.get() == config.gameplay_state {
-      next_game_state.set(config.editor_state);
+  current_state: Res<State<EditorState>>,
+  mut next_editor_state: ResMut<NextState<EditorState>>,
+) {
+  if input.just_pressed(settings.hotkeys.play) {
+    if *current_state.get() == EditorState::Editing {
+      next_editor_state.set(EditorState::Testing);
     } else {
-      next_game_state.set(config.gameplay_state);
+      next_editor_state.set(EditorState::Editing);
     }
   }
 }
 
 pub fn handle_input(
-  hotkeys: Res<Hotkeys>,
+  settings: Res<EditorSettings>,
   input: Res<ButtonInput<KeyCode>>,
   mut windows: Query<&mut Window>,
-  mut next_editor_state: ResMut<NextState<EditorState>>,
+  mut next_internal_state: ResMut<NextState<InternalState>>,
 ) {
-  if input.just_pressed(hotkeys.move_cam) {
+  if input.just_pressed(settings.hotkeys.move_cam) {
     let Ok(mut window) = windows.get_single_mut() else {
       return;
     };
 
     hide_cursor(&mut window);
-    next_editor_state.set(EditorState::Inspecting);
+    next_internal_state.set(InternalState::Inspecting);
   }
 
-  if input.just_released(hotkeys.move_cam) {
+  if input.just_released(settings.hotkeys.move_cam) {
     let Ok(mut window) = windows.get_single_mut() else {
       return;
     };
 
     show_cursor(&mut window);
-    next_editor_state.set(EditorState::Editing);
+    next_internal_state.set(InternalState::Editing);
   }
 }

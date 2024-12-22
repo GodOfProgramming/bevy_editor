@@ -10,7 +10,6 @@ use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
-use bevy::state::state::FreelyMutableState;
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
@@ -22,26 +21,30 @@ pub use serde;
 pub use util::*;
 use view::{EditorCamera, View3dPlugin};
 
-pub struct Editor<S>
-where
-  S: FreelyMutableState + Copy,
-{
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
+pub enum EditorState {
+  Editing,
+  Testing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum InternalState {
+  Editing,
+  Inspecting,
+}
+
+pub struct Editor {
   app: App,
-  config: EditorConfig<S>,
+  settings: EditorSettings,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
 }
 
-impl<S> Editor<S>
-where
-  S: FreelyMutableState + Copy,
-{
-  pub fn new(app: App, active_state: S, gameplay_state: S) -> Self {
-    let config = EditorConfig::new(active_state, gameplay_state);
-
+impl Editor {
+  pub fn new(app: App) -> Self {
     Self {
       app,
-      config,
+      settings: default(),
       scene_type_registry: default(),
       prefab_registrar: default(),
     }
@@ -51,9 +54,7 @@ where
   where
     System: IntoSystem<(), (), M>,
   {
-    self
-      .app
-      .add_systems(OnEnter(self.config.editor_state), system);
+    self.app.add_systems(OnEnter(EditorState::Editing), system);
 
     self
   }
@@ -82,11 +83,11 @@ where
       .app
       .add_systems(PostStartup, swap_cameras::<EditorCamera, C>)
       .add_systems(
-        OnEnter(self.config.gameplay_state),
+        OnEnter(EditorState::Testing),
         swap_cameras::<C, EditorCamera>,
       )
       .add_systems(
-        OnEnter(self.config.editor_state),
+        OnEnter(EditorState::Editing),
         swap_cameras::<EditorCamera, C>,
       );
 
@@ -116,13 +117,13 @@ where
   pub fn run(self) -> AppExit {
     let Self {
       mut app,
-      config,
+      settings,
       scene_type_registry,
       prefab_registrar,
     } = self;
 
     app
-      .add_plugins(EditorPlugin::new(config))
+      .add_plugins(EditorPlugin::new(settings))
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar)
       .run()
@@ -137,45 +138,16 @@ where
   }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
-enum EditorState {
-  Editing,
-  Inspecting,
-}
-
-#[derive(Resource, Clone)]
-struct EditorConfig<S>
-where
-  S: FreelyMutableState + Copy,
-{
-  editor_state: S,
-  gameplay_state: S,
-}
-
-impl<S> EditorConfig<S>
-where
-  S: FreelyMutableState + Copy,
-{
-  pub fn new(active_editor_state: S, gameplay_state: S) -> Self {
-    Self {
-      editor_state: active_editor_state,
-      gameplay_state,
-    }
-  }
-}
-
-struct EditorPlugin<S>
-where
-  S: FreelyMutableState + Copy,
-{
-  config: EditorConfig<S>,
+#[derive(Resource, Default, Clone)]
+struct EditorSettings {
   hotkeys: Hotkeys,
 }
 
-impl<S> Plugin for EditorPlugin<S>
-where
-  S: FreelyMutableState + Copy,
-{
+struct EditorPlugin {
+  config: EditorSettings,
+}
+
+impl Plugin for EditorPlugin {
   fn build(&self, app: &mut App) {
     app
       .add_plugins((
@@ -186,17 +158,16 @@ where
       ))
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
-      .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
-      .insert_state(self.config.editor_state)
+      .insert_state(InternalState::Editing)
       .add_systems(Startup, (Self::startup, Self::initialize_types))
-      .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
-      .add_systems(OnExit(self.config.editor_state), Self::on_exit)
+      .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
+      .add_systems(OnExit(EditorState::Editing), Self::on_exit)
       .add_systems(
         Update,
         (
-          input::special_input::<S>,
+          input::special_input,
           (
             input::handle_input,
             scenes::check_for_saves,
@@ -205,7 +176,7 @@ where
             Self::handle_pick_events,
             Self::draw_mesh_intersections,
           )
-            .run_if(in_state(self.config.editor_state)),
+            .run_if(in_state(EditorState::Editing)),
           ui::render,
         )
           .chain(),
@@ -213,15 +184,9 @@ where
   }
 }
 
-impl<S> EditorPlugin<S>
-where
-  S: FreelyMutableState + Copy,
-{
-  fn new(config: EditorConfig<S>) -> Self {
-    Self {
-      config,
-      hotkeys: default(),
-    }
+impl EditorPlugin {
+  fn new(config: EditorSettings) -> Self {
+    Self { config }
   }
 
   fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {

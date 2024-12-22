@@ -1,5 +1,5 @@
 use super::ViewPlugin;
-use crate::{ui, EditorState};
+use crate::{ui, InternalState};
 use bevy::{
   input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
   prelude::*,
@@ -24,7 +24,7 @@ impl Plugin for View3dPlugin {
         Update,
         ((movement_system, look_system), cam_free_fly)
           .chain()
-          .run_if(in_state(EditorState::Inspecting)),
+          .run_if(in_state(InternalState::Inspecting)),
       )
       .add_systems(PostUpdate, set_camera_viewport);
   }
@@ -32,7 +32,7 @@ impl Plugin for View3dPlugin {
 
 impl View3dPlugin {
   fn spawn_camera(mut commands: Commands) {
-    commands.spawn(EditorCamera);
+    commands.spawn((Name::new("Editor Camera"), EditorCamera));
   }
 }
 

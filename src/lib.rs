@@ -86,9 +86,12 @@ where
     self.register_static_prefab_internal(None, T::default)
   }
 
-  pub fn register_prefab<F, T, M>(&mut self, variant: impl Into<String>, sys: F) -> &mut Self
+  pub fn register_prefab<T, M>(
+    &mut self,
+    variant: impl Into<String>,
+    sys: impl IntoSystem<(), T, M> + 'static,
+  ) -> &mut Self
   where
-    F: IntoSystem<(), T, M> + 'static,
     T: Component + GetTypeRegistration + Clone,
   {
     self.register_static_prefab_internal(Some(variant.into()), sys)

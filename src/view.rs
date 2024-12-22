@@ -4,6 +4,7 @@ use bevy::{
   input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
   prelude::*,
   render::camera::Viewport,
+  utils::warn,
   window::PrimaryWindow,
 };
 
@@ -199,14 +200,17 @@ pub fn set_camera_viewport<C>(
   C: Component,
 {
   let Ok(mut cam) = cameras.get_single_mut() else {
+    warn!("Found no camera");
     return;
   };
 
   let Ok(window) = primary_window.get_single() else {
+    warn!("Found no window");
     return;
   };
 
   let Ok(egui_settings) = q_egui_settings.get_single() else {
+    warn!("Found no egui settings");
     return;
   };
 

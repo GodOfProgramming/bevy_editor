@@ -248,17 +248,22 @@ where
       .add_systems(
         Update,
         (
-          Self::handle_input,
-          Self::check_for_saves,
-          Self::check_for_loads,
-          ((view::movement_system, view::orbit), view::cam_free_fly)
+          Self::special_input,
+          (
+            Self::handle_input,
+            Self::check_for_saves,
+            Self::check_for_loads,
+            ((view::movement_system, view::orbit), view::cam_free_fly)
+              .chain()
+              .run_if(in_state(EditorState::Inspecting)),
+          )
             .chain()
-            .run_if(in_state(EditorState::Inspecting)),
-          (Self::show_ui_system, view::set_camera_viewport::<C>).chain(),
+            .run_if(in_state(self.config.editor_state)),
+          Self::show_ui_system,
         )
-          .chain()
-          .run_if(in_state(self.config.editor_state)),
-      );
+          .chain(),
+      )
+      .add_systems(PostUpdate, view::set_camera_viewport::<C>);
   }
 }
 
@@ -316,13 +321,27 @@ where
     });
   }
 
-  fn handle_input(
+  fn special_input(
     config: Res<EditorConfig<C, S>>,
+    hotkeys: Res<Hotkeys>,
+    input: Res<ButtonInput<KeyCode>>,
+    current_state: Res<State<S>>,
+    mut next_game_state: ResMut<NextState<S>>,
+  ) {
+    if input.just_pressed(hotkeys.play) {
+      if *current_state.get() == config.gameplay_state {
+        next_game_state.set(config.editor_state);
+      } else {
+        next_game_state.set(config.gameplay_state);
+      }
+    }
+  }
+
+  fn handle_input(
     hotkeys: Res<Hotkeys>,
     input: Res<ButtonInput<KeyCode>>,
     mut windows: Query<&mut Window>,
     mut next_editor_state: ResMut<NextState<EditorState>>,
-    mut next_game_state: ResMut<NextState<S>>,
   ) {
     if input.just_pressed(hotkeys.move_cam) {
       let Ok(mut window) = windows.get_single_mut() else {
@@ -340,10 +359,6 @@ where
 
       show_cursor(&mut window);
       next_editor_state.set(EditorState::Editing);
-    }
-
-    if input.just_pressed(hotkeys.play_current_level) {
-      next_game_state.set(config.gameplay_state);
     }
   }
 }

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 
 #[derive(Resource, Clone)]
 pub struct Hotkeys {
-  pub play_current_level: KeyCode,
+  pub play: KeyCode,
 
   pub move_cam: KeyCode,
 
@@ -14,7 +14,7 @@ pub struct Hotkeys {
 impl Default for Hotkeys {
   fn default() -> Self {
     Self {
-      play_current_level: KeyCode::Escape,
+      play: KeyCode::Escape,
       move_cam: KeyCode::ShiftLeft,
       translate_gizmo: KeyCode::KeyT,
       rotate_gizmo: KeyCode::KeyR,

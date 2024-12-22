@@ -37,7 +37,7 @@ impl View3dPlugin {
 }
 
 #[derive(Component, Default)]
-#[require(Camera3d, CameraState, CameraSettings)]
+#[require(Camera3d, CameraState, CameraSettings, RayCastPickable)]
 pub struct EditorCamera;
 
 #[derive(Component, Reflect)]

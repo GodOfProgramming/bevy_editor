@@ -20,28 +20,63 @@ pub use bevy;
 pub use input::Hotkeys;
 pub use serde;
 pub use util::*;
-use view::View3dPlugin;
+use view::{EditorCamera, View3dPlugin};
 
-pub struct Editor {
+pub struct Editor<S>
+where
+  S: FreelyMutableState + Copy,
+{
   app: App,
+  config: EditorConfig<S>,
   scene_type_registry: SceneTypeRegistry,
   entity_types: MapEntityRegistrar,
 }
 
-impl Editor {
-  pub fn new<S>(mut app: App, active_state: S, gameplay_state: S) -> Self
-  where
-    S: FreelyMutableState + Copy,
-  {
+impl<S> Editor<S>
+where
+  S: FreelyMutableState + Copy,
+{
+  pub fn new(app: App, active_state: S, gameplay_state: S) -> Self {
     let config = EditorConfig::new(active_state, gameplay_state);
-
-    app.add_plugins(EditorPlugin::new(config));
 
     Self {
       app,
+      config,
       scene_type_registry: default(),
       entity_types: default(),
     }
+  }
+
+  pub fn swap_camera_on_gameplay<C>(&mut self)
+  where
+    C: Component,
+  {
+    fn swap_cameras<Enabled, Disabled>(
+      mut q_enabled_cameras: Query<&mut Camera, (With<Enabled>, Without<Disabled>)>,
+      mut q_disabled_cameras: Query<&mut Camera, (With<Disabled>, Without<Enabled>)>,
+    ) where
+      Enabled: Component,
+      Disabled: Component,
+    {
+      for mut cam in &mut q_enabled_cameras {
+        cam.is_active = true;
+      }
+
+      for mut cam in &mut q_disabled_cameras {
+        cam.is_active = false;
+      }
+    }
+
+    self
+      .app
+      .add_systems(
+        OnEnter(self.config.gameplay_state),
+        swap_cameras::<C, EditorCamera>,
+      )
+      .add_systems(
+        OnEnter(self.config.editor_state),
+        swap_cameras::<EditorCamera, C>,
+      );
   }
 
   pub fn register_prefab_default<T>(&mut self) -> &mut Self
@@ -130,14 +165,16 @@ impl Editor {
   pub fn run(self) -> AppExit {
     let Self {
       mut app,
+      config,
       scene_type_registry,
       entity_types,
     } = self;
 
-    app.insert_resource(scene_type_registry);
-    app.insert_resource(entity_types);
-
-    app.run()
+    app
+      .add_plugins(EditorPlugin::new(config))
+      .insert_resource(scene_type_registry)
+      .insert_resource(entity_types)
+      .run()
   }
 
   fn register_static_prefab_internal<F, T, M>(
@@ -224,7 +261,7 @@ where
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
-      .insert_state(self.config.gameplay_state)
+      .insert_state(self.config.editor_state)
       .add_systems(Startup, (Self::startup, Self::initialize_types))
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
       .add_systems(OnExit(self.config.editor_state), Self::on_exit)

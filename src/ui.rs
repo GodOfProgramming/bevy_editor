@@ -14,10 +14,7 @@ use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
 use std::path::PathBuf;
 
-pub fn render<C>(world: &mut World)
-where
-  C: Component,
-{
+pub fn render(world: &mut World) {
   world.resource_scope(|world, mut ui_state: Mut<State>| {
     ui_state.ui(world);
   });

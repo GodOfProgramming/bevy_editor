@@ -25,14 +25,13 @@ impl Default for Hotkeys {
   }
 }
 
-pub fn special_input<C, S>(
-  config: Res<EditorConfig<C, S>>,
+pub fn special_input<S>(
+  config: Res<EditorConfig<S>>,
   hotkeys: Res<Hotkeys>,
   input: Res<ButtonInput<KeyCode>>,
   current_state: Res<State<S>>,
   mut next_game_state: ResMut<NextState<S>>,
 ) where
-  C: Component + Clone,
   S: FreelyMutableState + Copy,
 {
   if input.just_pressed(hotkeys.play) {

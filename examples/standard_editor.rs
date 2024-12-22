@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy_editor::{Editor, EditorCamera, EditorConfig};
+use bevy_editor::{Editor, EditorConfig};
 
 #[derive(States, Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum GameState {
@@ -13,19 +13,11 @@ fn main() {
     .add_plugins(DefaultPlugins)
     .add_systems(Startup, startup);
 
-  let config = EditorConfig::<MainCamera, GameState>::new(GameState::Editor, GameState::Gameplay);
+  let config = EditorConfig::new(GameState::Editor, GameState::Gameplay);
 
   let editor = Editor::new(app, config);
 
   editor.run();
-}
-
-#[derive(Component, Clone)]
-#[require(EditorCamera, Name(camera_name))]
-struct MainCamera;
-
-fn camera_name() -> Name {
-  Name::new("Main Camera")
 }
 
 fn startup(
@@ -33,11 +25,6 @@ fn startup(
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-  commands.spawn((
-    MainCamera,
-    Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
-  ));
-
   // circular base
   commands.spawn((
     Mesh3d(meshes.add(Circle::new(4.0))),

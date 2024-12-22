@@ -1,13 +1,11 @@
-use std::f32::consts::{FRAC_PI_2, PI, TAU};
-
+use crate::ui;
 use bevy::{
   input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
   prelude::*,
   render::camera::Viewport,
   window::PrimaryWindow,
 };
-
-use crate::ui;
+use std::f32::consts::{FRAC_PI_2, TAU};
 
 const UP: Vec3 = Vec3::Y;
 
@@ -26,7 +24,7 @@ pub struct CameraState {
 impl Default for CameraState {
   fn default() -> Self {
     Self {
-      face: Vec3::X,
+      face: Vec3::X * 10.0,
       pitch: default(),
       yaw: default(),
       zoom: default(),
@@ -88,7 +86,7 @@ pub fn movement_system(
   }
 }
 
-pub fn orbit(
+pub fn look(
   mut mouse_motion: EventReader<MouseMotion>,
   mut q_cam: Query<(&CameraSettings, &mut CameraState), With<Camera>>,
 ) {
@@ -193,14 +191,12 @@ pub fn cam_look_at_target<T>(
 }
 
 // make camera only render to view not obstructed by UI
-pub fn set_camera_viewport<C>(
+pub fn set_camera_viewport(
   ui_state: Res<ui::State>,
   primary_window: Query<&mut Window, With<PrimaryWindow>>,
   q_egui_settings: Query<&bevy_egui::EguiSettings>,
-  mut cameras: Query<&mut Camera, With<C>>,
-) where
-  C: Component,
-{
+  mut cameras: Query<&mut Camera, With<EditorCamera>>,
+) {
   let Ok(mut cam) = cameras.get_single_mut() else {
     warn!("Found no camera");
     return;
@@ -237,12 +233,10 @@ pub fn set_camera_viewport<C>(
   }
 }
 
-pub fn auto_register_camera<C>(
+pub fn auto_register_camera(
   mut commands: Commands,
-  q_cam: Query<Entity, (Without<RayCastPickable>, With<C>)>,
-) where
-  C: Component,
-{
+  q_cam: Query<Entity, (Without<RayCastPickable>, With<EditorCamera>)>,
+) {
   for cam in &q_cam {
     debug!("added raycast to camera");
     commands.entity(cam).insert(RayCastPickable);

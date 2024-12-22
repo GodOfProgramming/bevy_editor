@@ -13,7 +13,6 @@ use bevy::state::state::FreelyMutableState;
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
-use std::marker::PhantomData;
 use ui::UiPlugin;
 use view::{CameraSettings, CameraState};
 
@@ -30,9 +29,8 @@ pub struct Editor {
 }
 
 impl Editor {
-  pub fn new<C, S>(mut app: App, config: EditorConfig<C, S>) -> Self
+  pub fn new<S>(mut app: App, config: EditorConfig<S>) -> Self
   where
-    C: Component + Clone,
     S: FreelyMutableState + Copy,
   {
     app.add_plugins(EditorPlugin::new(config));
@@ -179,43 +177,36 @@ enum EditorState {
 }
 
 #[derive(Resource, Clone)]
-pub struct EditorConfig<C, S>
+pub struct EditorConfig<S>
 where
-  C: Component + Clone,
   S: FreelyMutableState + Copy,
 {
   editor_state: S,
   gameplay_state: S,
-  _phantom_data: PhantomData<C>,
 }
 
-impl<C, S> EditorConfig<C, S>
+impl<S> EditorConfig<S>
 where
-  C: Component + Clone,
   S: FreelyMutableState + Copy,
 {
   pub fn new(active_editor_state: S, gameplay_state: S) -> Self {
     Self {
       editor_state: active_editor_state,
       gameplay_state,
-      _phantom_data: default(),
     }
   }
 }
 
-struct EditorPlugin<C, S>
+struct EditorPlugin<S>
 where
-  C: Component + Clone,
   S: FreelyMutableState + Copy,
 {
-  config: EditorConfig<C, S>,
+  config: EditorConfig<S>,
   hotkeys: Hotkeys,
-  cam_component: PhantomData<C>,
 }
 
-impl<C, S> Plugin for EditorPlugin<C, S>
+impl<S> Plugin for EditorPlugin<S>
 where
-  C: Component + Clone,
   S: FreelyMutableState + Copy,
 {
   fn build(&self, app: &mut App) {
@@ -228,48 +219,50 @@ where
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
-      .insert_state(self.config.editor_state)
-      .add_systems(Startup, Self::initialize_types)
+      .insert_state(self.config.gameplay_state)
+      .add_systems(Startup, (Self::spawn_camera, Self::initialize_types))
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
       .add_systems(OnExit(self.config.editor_state), Self::on_exit)
       .add_systems(
         Update,
         (
-          input::special_input::<C, S>,
+          input::special_input::<S>,
           (
             input::handle_input,
             scenes::check_for_saves,
             scenes::check_for_loads,
             (
-              view::auto_register_camera::<C>,
+              view::auto_register_camera,
               Self::auto_register_targets,
               Self::handle_pick_events,
             ),
-            ((view::movement_system, view::orbit), view::cam_free_fly)
+            ((view::movement_system, view::look), view::cam_free_fly)
               .chain()
               .run_if(in_state(EditorState::Inspecting)),
           )
             .chain()
             .run_if(in_state(self.config.editor_state)),
-          ui::render::<C>,
+          ui::render,
         )
           .chain(),
       )
-      .add_systems(PostUpdate, view::set_camera_viewport::<C>);
+      .add_systems(PostUpdate, view::set_camera_viewport);
   }
 }
 
-impl<C, S> EditorPlugin<C, S>
+impl<S> EditorPlugin<S>
 where
-  C: Component + Clone,
   S: FreelyMutableState + Copy,
 {
-  fn new(config: EditorConfig<C, S>) -> Self {
+  fn new(config: EditorConfig<S>) -> Self {
     Self {
       config,
       hotkeys: default(),
-      cam_component: default(),
     }
+  }
+
+  fn spawn_camera(mut commands: Commands) {
+    commands.spawn(EditorCamera);
   }
 
   fn initialize_types(world: &mut World) {

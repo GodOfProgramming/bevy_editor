@@ -50,21 +50,10 @@ pub(crate) struct State {
 
 impl State {
   pub fn new() -> Self {
-    let mut state = DockState::new(vec![Tabs::GameView]);
-    let tree = state.main_surface_mut();
-    let [game_view, _menu_bar] = tree.split_above(NodeIndex::root(), 0.1, vec![Tabs::MenuBar]);
-    let [game_view, _inspector] = tree.split_right(game_view, 0.75, vec![Tabs::Inspector]);
-    let [game_view, _level_info] = tree.split_left(game_view, 0.2, vec![Tabs::Hierarchy]);
-    let [_game, _game_object_tray] = tree.split_below(
-      game_view,
-      0.8,
-      vec![Tabs::Prefabs, Tabs::Resources, Tabs::Assets],
-    );
-
     Self {
       viewport_rect: egui::Rect::NOTHING,
       selected_entities: SelectedEntities::default(),
-      dock_state: state,
+      dock_state: Self::build_dock(),
       selection: InspectorSelection::Entities,
       on_file_select: None,
     }
@@ -96,6 +85,37 @@ impl State {
     DockArea::new(&mut self.dock_state)
       .style(Style::from_egui(ctx.style().as_ref()))
       .show(&ctx, &mut tab_viewer);
+  }
+
+  fn build_dock() -> DockState<Tabs> {
+    let mut state = DockState::new(vec![Tabs::GameView]);
+
+    let tree = state.main_surface_mut();
+
+    let node = NodeIndex::root();
+
+    // [Menubar]
+    // [GameView]
+    let node = tree.split_above(node, 0.1, vec![Tabs::MenuBar])[0];
+
+    // [Menubar]
+    // [Hierarchy | GameView]
+    let node = tree.split_left(node, 1.0 / 6.0, vec![Tabs::Hierarchy])[0];
+
+    // [Menubar]
+    // [Hierarchy | Game | Inspector]
+    let node = tree.split_right(node, 4.0 / 5.0, vec![Tabs::Inspector])[0];
+
+    // [Menubar]
+    // [Hierarchy | Game | Inspector]
+    // [Prefabs/Resources/Assets]
+    tree.split_below(
+      node,
+      0.7,
+      vec![Tabs::Prefabs, Tabs::Resources, Tabs::Assets],
+    );
+
+    state
   }
 }
 

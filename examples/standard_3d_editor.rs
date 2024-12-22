@@ -7,10 +7,15 @@ fn main() {
     .add_plugins(DefaultPlugins)
     .add_systems(Startup, startup);
 
-  let editor = Editor::new(app);
+  let mut editor = Editor::new(app);
+
+  editor.swap_to_camera::<GameCamera>();
 
   editor.run();
 }
+
+#[derive(Component)]
+struct GameCamera;
 
 fn startup(
   mut commands: Commands,
@@ -36,5 +41,11 @@ fn startup(
       ..default()
     },
     Transform::from_xyz(4.0, 8.0, 4.0),
+  ));
+  // camera
+  commands.spawn((
+    GameCamera,
+    Camera3d::default(),
+    Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
   ));
 }

@@ -59,7 +59,7 @@ impl Editor {
     self
   }
 
-  pub fn swap_camera_on_gameplay<C>(&mut self) -> &mut Self
+  pub fn swap_to_camera<C>(&mut self) -> &mut Self
   where
     C: Component,
   {

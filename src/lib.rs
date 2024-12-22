@@ -13,7 +13,7 @@ use bevy::reflect::GetTypeRegistration;
 use bevy::state::state::FreelyMutableState;
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
+use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use ui::UiPlugin;
 
 pub use bevy;

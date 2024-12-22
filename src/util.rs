@@ -1,6 +1,6 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use bevy::{prelude::*, window::CursorGrabMode};
+use bevy::{prelude::*, reflect::GetTypeRegistration, window::CursorGrabMode};
 
 #[macro_export]
 macro_rules! here {
@@ -9,6 +9,16 @@ macro_rules! here {
     println!("{}({})", file!(), line!());
     std::io::stdout().flush().ok();
   }};
+}
+
+pub fn short_name_of<T>() -> &'static str
+where
+  T: GetTypeRegistration,
+{
+  T::get_type_registration()
+    .type_info()
+    .type_path_table()
+    .short_path()
 }
 
 pub fn show_cursor(window: &mut Window) {

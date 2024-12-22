@@ -1,17 +1,16 @@
+use crate::short_name_of;
 use bevy::{
   asset::{io::Reader, AssetLoader, LoadContext, LoadedFolder},
   ecs::system::{SystemParam, SystemState},
   prelude::*,
   reflect::GetTypeRegistration,
-  utils::hashbrown::{hash_map, HashMap},
+  utils::hashbrown::HashMap,
 };
 use serde::Deserialize;
 use std::{
   marker::PhantomData,
   ops::{Deref, DerefMut},
 };
-
-use crate::scenes::MapEntities;
 
 pub struct PrefabPlugin<T> {
   _pd: PhantomData<T>,
@@ -30,113 +29,61 @@ where
   fn build(&self, app: &mut App) {
     app
       .init_asset::<T::Descriptor>()
-      .insert_resource(Manifest::<T>::default())
-      .add_event::<LoadPrefabEvent<T>>()
-      .register_asset_loader(Loader::<T>::default())
-      .add_systems(
-        Startup,
-        |assets: ResMut<AssetServer>, mut commands: Commands| {
-          let folders = assets.load_folder(T::DIR);
-          commands.insert_resource(PrefabFolder::<T>::new(folders));
-          info!(
-            "Started folder load for {}",
-            T::get_type_registration().type_info().type_path()
-          );
-        },
-      )
-      .add_systems(
-        Update,
-        (
-          |mut event_reader: EventReader<AssetEvent<LoadedFolder>>,
-           folders: Res<PrefabFolder<T>>,
-           loaded_folders: Res<Assets<LoadedFolder>>,
-           mut event_writer: EventWriter<LoadPrefabEvent<T>>| {
-            for event in event_reader.read() {
-              info!(
-                "Loaded folder for {}",
-                T::get_type_registration().type_info().type_path()
-              );
-              if event.is_loaded_with_dependencies(folders.handle()) {
-                let folders = loaded_folders.get(folders.handle()).unwrap();
-                for handle in folders.handles.iter() {
-                  let id = handle.id().typed_unchecked::<T::Descriptor>();
-                  event_writer.send(LoadPrefabEvent::<T>::new(id));
-                }
-              }
-            }
-          },
-          |mut event_reader: EventReader<LoadPrefabEvent<T>>,
-           descriptors: Res<Assets<T::Descriptor>>,
-           mut manifest: ResMut<Manifest<T>>,
-           mut map_entities: ResMut<MapEntities>,
-           assets: Res<AssetServer>| {
-            for event in event_reader.read() {
-              info!(
-                "Received prefab load event for {}",
-                T::get_type_registration().type_info().type_path()
-              );
-              let Some(desc) = descriptors.get(event.id) else {
-                warn!("asset id did not resolve to a descriptor asset");
-                return;
-              };
-              let prefab = T::transform(desc, &assets);
-              map_entities.register(prefab.name().to_string(), prefab.clone());
-              manifest.register(prefab);
-            }
-          },
-        ),
-      );
+      .add_event::<PrefabLoadedEvent<T>>()
+      .register_asset_loader(PrefabLoader::<T>::default())
+      // on startup create a prefab loader
+      .add_systems(Startup, Self::on_start)
+      // then read all events that come in for the loaded prefab
+      .add_systems(Update, (Self::on_load, Self::on_prefab_loaded));
   }
 }
 
-#[derive(Resource)]
-pub struct Manifest<T>
+impl<T> PrefabPlugin<T>
 where
   T: Prefab,
 {
-  table: HashMap<String, T>,
-}
-
-impl<T> Default for Manifest<T>
-where
-  T: Prefab,
-{
-  fn default() -> Self {
-    Self { table: default() }
-  }
-}
-
-impl<T> Manifest<T>
-where
-  T: Prefab,
-{
-  pub fn ids(&self) -> hash_map::Keys<String, T> {
-    self.table.keys()
+  fn on_start(assets: ResMut<AssetServer>, mut commands: Commands) {
+    let handle = assets.load_folder(T::DIR);
+    commands.insert_resource(PrefabFolder::<T>::new(handle));
+    info!("Started folder load for {}", short_name_of::<T>());
   }
 
-  pub fn register(&mut self, prefab: T) {
-    self.table.insert(prefab.name().to_string(), prefab);
+  fn on_load(
+    mut event_reader: EventReader<AssetEvent<LoadedFolder>>,
+    folder: Res<PrefabFolder<T>>,
+    loaded_folders: Res<Assets<LoadedFolder>>,
+    mut event_writer: EventWriter<PrefabLoadedEvent<T>>,
+  ) {
+    for event in event_reader.read() {
+      info!("Loaded folder for {}", short_name_of::<T>());
+      if event.is_loaded_with_dependencies(folder.handle()) {
+        let folders = loaded_folders.get(folder.handle()).unwrap();
+        for handle in folders.handles.iter() {
+          let id = handle.id().typed_unchecked::<T::Descriptor>();
+          event_writer.send(PrefabLoadedEvent::<T>::new(id));
+        }
+      }
+    }
   }
 
-  pub fn lookup(&self, name: impl AsRef<str>) -> Option<T> {
-    self.table.get(name.as_ref()).cloned()
+  fn on_prefab_loaded(
+    mut event_reader: EventReader<PrefabLoadedEvent<T>>,
+    descriptors: Res<Assets<T::Descriptor>>,
+    mut prefabs: ResMut<Prefabs>,
+    assets: Res<AssetServer>,
+  ) {
+    for event in event_reader.read() {
+      info!("Received prefab load event for {}", short_name_of::<T>());
+
+      let Some(desc) = descriptors.get(event.id) else {
+        warn!("asset id did not resolve to a descriptor asset");
+        return;
+      };
+
+      let prefab = T::transform(desc, &assets);
+      prefabs.register(prefab);
+    }
   }
-}
-
-pub trait StaticPrefab: GetTypeRegistration + Sized {
-  type Params<'pw, 'ps>: for<'w, 's> SystemParam<Item<'w, 's> = Self::Params<'w, 's>>;
-
-  fn spawn(params: Self::Params<'_, '_>) -> impl Bundle;
-}
-
-fn short_name_of<T>() -> &'static str
-where
-  T: GetTypeRegistration,
-{
-  T::get_type_registration()
-    .type_info()
-    .type_path_table()
-    .short_path()
 }
 
 type RegistrationFn = dyn Fn(&mut World) -> Box<SpawnFn> + Send + Sync;
@@ -163,7 +110,7 @@ impl PrefabRegistrar {
     });
   }
 
-  /// Calls R which produces a closure that is later invoked to return the spawn function
+  /// Calls R which produces a closure S that is later invoked to return the spawn function
   fn register_internal<'w, 's, R, S>(&mut self, name: impl Into<String>, f: R)
   where
     S: FnMut(&mut World) + Send + Sync + 'static,
@@ -192,6 +139,18 @@ impl Prefabs {
     Self(prefabs)
   }
 
+  fn register<T>(&mut self, prefab: T)
+  where
+    T: Prefab,
+  {
+    self.insert(
+      prefab.name().to_string(),
+      Box::new(move |world| {
+        world.spawn(prefab.clone());
+      }),
+    );
+  }
+
   pub fn spawn(&mut self, id: impl AsRef<str>, world: &mut World) {
     if let Some(spawn_fn) = self.get_mut(id.as_ref()) {
       (spawn_fn)(world);
@@ -213,6 +172,12 @@ impl DerefMut for Prefabs {
   }
 }
 
+pub trait StaticPrefab: GetTypeRegistration + Sized {
+  type Params<'pw, 'ps>: for<'w, 's> SystemParam<Item<'w, 's> = Self::Params<'w, 's>>;
+
+  fn spawn(params: Self::Params<'_, '_>) -> impl Bundle;
+}
+
 pub trait Prefab: GetTypeRegistration + Bundle + Clone {
   const DIR: &str;
   const EXTENSIONS: &[&str];
@@ -226,14 +191,14 @@ pub trait Prefab: GetTypeRegistration + Bundle + Clone {
   fn transform(desc: &Self::Descriptor, assets: &AssetServer) -> Self;
 }
 
-pub struct Loader<T>
+pub struct PrefabLoader<T>
 where
   T: Prefab,
 {
   _phantom_data: PhantomData<T>,
 }
 
-impl<T> Default for Loader<T>
+impl<T> Default for PrefabLoader<T>
 where
   T: Prefab,
 {
@@ -244,7 +209,7 @@ where
   }
 }
 
-impl<T> AssetLoader for Loader<T>
+impl<T> AssetLoader for PrefabLoader<T>
 where
   T: Prefab,
 {
@@ -298,14 +263,14 @@ where
 
 #[derive(Event)]
 
-pub struct LoadPrefabEvent<T>
+pub struct PrefabLoadedEvent<T>
 where
   T: Prefab,
 {
   pub id: AssetId<T::Descriptor>,
 }
 
-impl<T> LoadPrefabEvent<T>
+impl<T> PrefabLoadedEvent<T>
 where
   T: Prefab,
 {

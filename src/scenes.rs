@@ -1,17 +1,7 @@
-use crate::ValueCache;
-use bevy::{
-  asset::ReflectHandle,
-  ecs::system::SystemId,
-  prelude::*,
-  reflect::{GetTypeRegistration, TypeRegistryArc},
-  tasks::IoTaskPool,
-  utils::HashMap,
-};
+use bevy::{asset::ReflectHandle, prelude::*, reflect::TypeRegistryArc, tasks::IoTaskPool};
 use std::{
-  cell::RefCell,
   ops::{Deref, DerefMut},
   path::PathBuf,
-  sync::Mutex,
 };
 
 #[derive(Event)]
@@ -133,86 +123,6 @@ impl LoadEvent {
 
   pub fn file(&self) -> &PathBuf {
     &self.0
-  }
-}
-
-pub fn load_map() -> Entity {
-  Entity::PLACEHOLDER
-}
-
-#[derive(Default, Resource)]
-pub struct MapEntityRegistrar {
-  mapping: Mutex<HashMap<String, Box<dyn FnOnce(String, &mut World, &mut MapEntities) + Send>>>,
-}
-
-impl MapEntityRegistrar {
-  pub fn register<T>(&mut self, name: String, sys: SystemId<(), T>)
-  where
-    T: Bundle + GetTypeRegistration + Clone,
-  {
-    self.mapping.lock().unwrap().insert(
-      name,
-      Box::new(move |name, world, entities| {
-        let bundle: T = world.run_system(sys).unwrap();
-        entities.register(name, bundle);
-      }),
-    );
-  }
-}
-
-#[derive(Default, Resource)]
-pub struct MapEntities {
-  mapping: Mutex<HashMap<String, Box<dyn Fn(&mut World) + Send>>>,
-  key_cache: Mutex<RefCell<ValueCache<Vec<String>>>>,
-}
-
-impl MapEntities {
-  pub fn new_from(world: &mut World, registrar: MapEntityRegistrar) -> Self {
-    let mut entities = Self::default();
-    let mapping = registrar.mapping.into_inner().unwrap();
-
-    for (k, v) in mapping.into_iter() {
-      (v)(k, world, &mut entities);
-    }
-
-    entities
-  }
-
-  pub fn register<T>(&mut self, id: impl Into<String>, value: T)
-  where
-    T: Bundle + Clone,
-  {
-    self.key_cache.lock().unwrap().borrow_mut().dirty();
-    self.mapping.lock().unwrap().insert(
-      id.into(),
-      Box::new(move |world| {
-        world.spawn((SceneMarker, value.clone()));
-      }),
-    );
-  }
-
-  pub fn ids(&self) -> Vec<String> {
-    let key_cache = self.key_cache.lock().unwrap();
-    let mut key_cache = key_cache.borrow_mut();
-
-    if key_cache.is_dirty() {
-      let values = self.mapping.lock().unwrap().keys().cloned().collect();
-      key_cache.emplace(values);
-    }
-
-    key_cache.value().clone()
-  }
-
-  pub fn spawn(&self, id: impl AsRef<str>, world: &mut World) {
-    let Ok(mapping) = self.mapping.lock() else {
-      return;
-    };
-
-    let Some(spawn_fn) = mapping.get(id.as_ref()) else {
-      return;
-    };
-
-    spawn_fn(world);
   }
 }
 

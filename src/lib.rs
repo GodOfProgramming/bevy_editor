@@ -69,6 +69,7 @@ where
 
     self
       .app
+      .add_systems(PostStartup, swap_cameras::<EditorCamera, C>)
       .add_systems(
         OnEnter(self.config.gameplay_state),
         swap_cameras::<C, EditorCamera>,

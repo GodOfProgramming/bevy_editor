@@ -191,7 +191,7 @@ pub fn cam_look_at_target<T>(
 
 // make camera only render to view not obstructed by UI
 pub fn set_camera_viewport<C>(
-  ui_state: Res<ui::State<C>>,
+  ui_state: Res<ui::State>,
   primary_window: Query<&mut Window, With<PrimaryWindow>>,
   q_egui_settings: Query<&bevy_egui::EguiSettings>,
   mut cameras: Query<&mut Camera, With<C>>,

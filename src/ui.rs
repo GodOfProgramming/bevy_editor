@@ -3,7 +3,7 @@ use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
   reflect::TypeRegistry,
 };
-use bevy_egui::egui;
+use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector::{
   self,
   hierarchy::{hierarchy_ui, SelectedEntities},
@@ -11,7 +11,6 @@ use bevy_inspector_egui::bevy_inspector::{
 };
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
-use std::marker::PhantomData;
 use std::path::PathBuf;
 
 use crate::scenes::{LoadEvent, MapEntities, SaveEvent};
@@ -23,66 +22,27 @@ enum InspectorSelection {
   Asset(TypeId, String, UntypedAssetId),
 }
 
-pub(crate) struct UiPlugin<C>
-where
-  C: Component,
-{
-  _cam_component: PhantomData<C>,
-}
+pub(crate) struct UiPlugin;
 
-impl<C> UiPlugin<C>
-where
-  C: Component,
-{
-  pub fn new() -> Self {
-    Self {
-      _cam_component: default(),
-    }
-  }
-}
-
-impl<C> Plugin for UiPlugin<C>
-where
-  C: Component,
-{
+impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
     app
-      .insert_resource(State::<C>::new())
+      .add_plugins(EguiPlugin)
+      .insert_resource(State::new())
       .insert_resource(FileDialog::new());
   }
 }
 
 #[derive(Resource)]
-struct FileDialog {
-  dialog: egui::mutex::Mutex<egui_file_dialog::FileDialog>,
-}
-
-impl FileDialog {
-  fn new() -> Self {
-    Self {
-      dialog: egui::mutex::Mutex::new(egui_file_dialog::FileDialog::new()),
-    }
-  }
-
-  fn access_mut(&mut self, f: impl FnOnce(&mut egui_file_dialog::FileDialog)) {
-    f(&mut self.dialog.lock());
-  }
-}
-
-#[derive(Resource)]
-pub(crate) struct State<C: Component> {
+pub(crate) struct State {
   pub(crate) viewport_rect: egui::Rect,
   selected_entities: SelectedEntities,
   dock_state: DockState<Tabs>,
   selection: InspectorSelection,
-  cam_component: PhantomData<C>,
   on_file_select: Option<fn(&mut World, PathBuf)>,
 }
 
-impl<C> State<C>
-where
-  C: Component,
-{
+impl State {
   pub fn new() -> Self {
     let mut state = DockState::new(vec![Tabs::GameView]);
     let tree = state.main_surface_mut();
@@ -100,7 +60,6 @@ where
       selected_entities: SelectedEntities::default(),
       dock_state: state,
       selection: InspectorSelection::Entities,
-      cam_component: default(),
       on_file_select: None,
     }
   }
@@ -109,19 +68,27 @@ where
     self.selected_entities.select_maybe_add(entity, add);
   }
 
-  pub(crate) fn ui(&mut self, world: &mut World, ctx: &mut egui::Context) {
-    let mut tab_viewer = TabViewer::<C> {
+  pub(crate) fn ui(&mut self, world: &mut World) {
+    let Ok(mut ctx) = world
+      .query::<&mut bevy_egui::EguiContext>()
+      .get_single_mut(world)
+    else {
+      return;
+    };
+
+    let ctx = ctx.get_mut().clone();
+
+    let mut tab_viewer = TabViewer {
       world,
       viewport_rect: &mut self.viewport_rect,
       selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
-      cam_component: default(),
       on_file_select: &mut self.on_file_select,
     };
 
     DockArea::new(&mut self.dock_state)
       .style(Style::from_egui(ctx.style().as_ref()))
-      .show(ctx, &mut tab_viewer);
+      .show(&ctx, &mut tab_viewer);
   }
 }
 
@@ -136,19 +103,15 @@ enum Tabs {
   Inspector,
 }
 
-struct TabViewer<'a, C: Component> {
+struct TabViewer<'a> {
   world: &'a mut World,
   selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
-  cam_component: PhantomData<C>,
   on_file_select: &'a mut Option<fn(&mut World, PathBuf)>,
 }
 
-impl<C> TabViewer<'_, C>
-where
-  C: Component,
-{
+impl TabViewer<'_> {
   fn select_resource(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
     let mut resources: Vec<_> = type_registry
       .iter()
@@ -175,7 +138,7 @@ where
   }
 
   fn select_asset(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
-    let mut assets: Vec<_> = type_registry
+    let mut assets = type_registry
       .iter()
       .filter_map(|registration| {
         let reflect_asset = registration.data::<ReflectAsset>()?;
@@ -185,11 +148,12 @@ where
           reflect_asset,
         ))
       })
-      .collect();
+      .collect::<Vec<_>>();
+
     assets.sort_by(|(name_a, ..), (name_b, ..)| name_a.cmp(name_b));
 
     for (asset_name, asset_type_id, reflect_asset) in assets {
-      let handles: Vec<_> = reflect_asset.ids(self.world).collect();
+      let handles = reflect_asset.ids(self.world).collect::<Vec<_>>();
 
       ui.collapsing(format!("{asset_name} ({})", handles.len()), |ui| {
         for handle in handles {
@@ -258,10 +222,7 @@ where
   }
 }
 
-impl<C> egui_dock::TabViewer for TabViewer<'_, C>
-where
-  C: Component,
-{
+impl egui_dock::TabViewer for TabViewer<'_> {
   type Tab = Tabs;
 
   fn title(&mut self, window: &mut Self::Tab) -> egui::WidgetText {
@@ -309,5 +270,22 @@ where
         self.prefab_ui(ui);
       }
     }
+  }
+}
+
+#[derive(Resource)]
+struct FileDialog {
+  dialog: egui::mutex::Mutex<egui_file_dialog::FileDialog>,
+}
+
+impl FileDialog {
+  fn new() -> Self {
+    Self {
+      dialog: egui::mutex::Mutex::new(egui_file_dialog::FileDialog::new()),
+    }
+  }
+
+  fn access_mut(&mut self, f: impl FnOnce(&mut egui_file_dialog::FileDialog)) {
+    f(&mut self.dialog.lock());
   }
 }

@@ -2,6 +2,17 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 use bevy::{prelude::*, window::CursorGrabMode};
 
+#[macro_export]
+macro_rules! here {
+  () => {{
+    use std::io::Write;
+    println!("{}({})", file!(), line!());
+    std::io::stdout().flush().ok();
+  }};
+}
+
+pub use here;
+
 pub fn show_cursor(window: &mut Window) {
   window.cursor_options.visible = true;
   window.cursor_options.grab_mode = CursorGrabMode::None;

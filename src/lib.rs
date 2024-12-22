@@ -12,8 +12,7 @@ use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::state::state::FreelyMutableState;
 use bevy::transform::TransformSystem;
-use bevy::window::PrimaryWindow;
-use bevy_egui::{EguiContext, EguiSet};
+use bevy_egui::EguiSet;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::Cache;
 use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
@@ -237,18 +236,14 @@ where
 {
   fn build(&self, app: &mut App) {
     app
-      .add_plugins((
-        bevy_egui::EguiPlugin,
-        DefaultInspectorConfigPlugin,
-        UiPlugin::<C>::new(),
-      ))
+      .add_plugins((DefaultInspectorConfigPlugin, UiPlugin))
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
       .insert_resource(self.hotkeys.clone())
       .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
       .insert_state(self.config.editor_state)
-      .add_systems(Startup, (Self::initialize_types))
+      .add_systems(Startup, Self::initialize_types)
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
       .add_systems(
         Update,
@@ -259,19 +254,10 @@ where
           ((view::movement_system, view::orbit), view::cam_free_fly)
             .chain()
             .run_if(in_state(EditorState::Inspecting)),
+          (Self::show_ui_system, view::set_camera_viewport::<C>).chain(),
         )
           .chain()
-          .run_if(Self::in_editor_state),
-      )
-      .add_systems(
-        PostUpdate,
-        (
-          Self::show_ui_system
-            .before(EguiSet::ProcessOutput)
-            .before(TransformSystem::TransformPropagate),
-          view::set_camera_viewport::<C>,
-        )
-          .chain(),
+          .run_if(in_state(self.config.editor_state)),
       );
   }
 }
@@ -307,22 +293,14 @@ where
   where
     C: Component,
   {
-    let Ok(egui_context) = world
-      .query_filtered::<&mut EguiContext, With<PrimaryWindow>>()
-      .get_single(world)
-    else {
-      return;
-    };
-    let mut egui_context = egui_context.clone();
-
-    world.resource_scope::<ui::State<C>, _>(|world, mut ui_state| {
-      ui_state.ui(world, egui_context.get_mut())
+    world.resource_scope(|world, mut ui_state: Mut<ui::State>| {
+      ui_state.ui(world);
     });
   }
 
   fn check_for_saves(world: &mut World) {
     world.resource_scope(|world, save_events: Mut<Events<SaveEvent>>| {
-      save_events.get_reader().read(&save_events).for_each(|e| {
+      save_events.get_cursor().read(&save_events).for_each(|e| {
         e.handler(world);
       });
     });
@@ -367,9 +345,5 @@ where
     if input.just_pressed(hotkeys.play_current_level) {
       next_game_state.set(config.gameplay_state);
     }
-  }
-
-  fn in_editor_state(config: Res<EditorConfig<C, S>>, state: Res<State<S>>) -> bool {
-    config.editor_state == **state
   }
 }

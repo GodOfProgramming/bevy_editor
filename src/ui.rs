@@ -1,3 +1,4 @@
+use crate::scenes::{LoadEvent, MapEntities, SaveEvent};
 use bevy::prelude::*;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
@@ -13,7 +14,14 @@ use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
 use std::path::PathBuf;
 
-use crate::scenes::{LoadEvent, MapEntities, SaveEvent};
+pub fn render<C>(world: &mut World)
+where
+  C: Component,
+{
+  world.resource_scope(|world, mut ui_state: Mut<State>| {
+    ui_state.ui(world);
+  });
+}
 
 #[derive(Eq, PartialEq)]
 enum InspectorSelection {

@@ -1,10 +1,9 @@
-use std::f32::consts::{PI, TAU};
+use std::f32::consts::{FRAC_PI_2, PI, TAU};
 
 use bevy::{
   input::mouse::{MouseMotion, MouseScrollUnit, MouseWheel},
   prelude::*,
   render::camera::Viewport,
-  utils::warn,
   window::PrimaryWindow,
 };
 
@@ -16,7 +15,7 @@ const UP: Vec3 = Vec3::Y;
 #[require(Camera3d, CameraState, CameraSettings)]
 pub struct EditorCamera;
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct CameraState {
   face: Vec3,
   pitch: f32,
@@ -35,7 +34,7 @@ impl Default for CameraState {
   }
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 pub struct CameraSettings {
   /// Radians per pixel of mouse motion
   pub orbit_sensitivity: f32,
@@ -108,7 +107,10 @@ pub fn orbit(
 
     state.yaw %= TAU;
 
-    state.pitch = state.pitch.clamp(-PI, PI);
+    state.pitch = state.pitch.clamp(
+      -FRAC_PI_2 + 1.0f32.to_radians(),
+      FRAC_PI_2 - 1.0f32.to_radians(),
+    );
     (state.yaw, state.pitch)
   };
 
@@ -232,5 +234,17 @@ pub fn set_camera_viewport<C>(
       physical_size,
       depth: 0.0..1.0,
     });
+  }
+}
+
+pub fn auto_register_camera<C>(
+  mut commands: Commands,
+  q_cam: Query<Entity, (Without<RayCastPickable>, With<C>)>,
+) where
+  C: Component,
+{
+  for cam in &q_cam {
+    debug!("added raycast to camera");
+    commands.entity(cam).insert(RayCastPickable);
   }
 }

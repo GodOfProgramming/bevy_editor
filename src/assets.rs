@@ -9,13 +9,6 @@ use bevy::{
 use serde::Deserialize;
 
 #[derive(Resource)]
-pub struct PrefabManifest {
-  table: HashMap<String, DynamicPrefab>,
-}
-
-struct DynamicPrefab {}
-
-#[derive(Resource)]
 pub struct Manifest<T>
 where
   T: Prefab,
@@ -51,6 +44,7 @@ where
 
 pub trait Prefab: GetTypeRegistration + Bundle + Clone {
   const DIR: &str;
+  const EXTENSIONS: &[&str];
 
   type Descriptor: Asset + for<'a> Deserialize<'a>;
 
@@ -143,6 +137,6 @@ where
   }
 
   fn extensions(&self) -> &[&str] {
-    &["weapon.ron"]
+    T::EXTENSIONS
   }
 }

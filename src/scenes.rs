@@ -236,3 +236,21 @@ impl DerefMut for SceneTypeRegistry {
     &mut self.type_registry
   }
 }
+
+pub fn check_for_saves(world: &mut World) {
+  world.resource_scope(|world, save_events: Mut<Events<SaveEvent>>| {
+    save_events.get_cursor().read(&save_events).for_each(|e| {
+      e.handler(world);
+    });
+  });
+}
+
+pub fn check_for_loads(
+  mut commands: Commands,
+  mut load_events: EventReader<LoadEvent>,
+  asset_server: Res<AssetServer>,
+) {
+  load_events.read().for_each(|e| {
+    commands.spawn(DynamicSceneRoot(asset_server.load(e.file().clone())));
+  });
+}

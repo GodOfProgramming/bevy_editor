@@ -1,5 +1,4 @@
 pub mod assets;
-mod cache;
 mod input;
 mod scenes;
 mod ui;
@@ -11,13 +10,12 @@ use bevy::asset::LoadedFolder;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::state::state::FreelyMutableState;
-use bevy::transform::TransformSystem;
-use bevy_egui::EguiSet;
+use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use cache::Cache;
 use scenes::{LoadEvent, MapEntities, MapEntityRegistrar, SaveEvent, SceneTypeRegistry};
 use std::marker::PhantomData;
 use ui::UiPlugin;
+use view::{CameraSettings, CameraState};
 
 pub use bevy;
 pub use input::Hotkeys;
@@ -27,7 +25,6 @@ pub use view::EditorCamera;
 
 pub struct Editor {
   app: App,
-  cache: Cache,
   scene_type_registry: SceneTypeRegistry,
   entity_types: MapEntityRegistrar,
 }
@@ -40,19 +37,8 @@ impl Editor {
   {
     app.add_plugins(EditorPlugin::new(config));
 
-    let mut cache_path = std::env::current_exe()
-      .unwrap()
-      .parent()
-      .unwrap()
-      .to_path_buf();
-
-    cache_path.push("cache.sqlite");
-
-    let cache = Cache::connect(cache_path).unwrap();
-
     Self {
       app,
-      cache,
       scene_type_registry: default(),
       entity_types: default(),
     }
@@ -144,14 +130,12 @@ impl Editor {
   pub fn run(self) -> AppExit {
     let Self {
       mut app,
-      cache,
       scene_type_registry,
       entity_types,
     } = self;
 
     app.insert_resource(scene_type_registry);
     app.insert_resource(entity_types);
-    app.insert_resource(cache);
 
     app.run()
   }
@@ -219,24 +203,26 @@ where
   }
 }
 
-struct EditorPlugin<C, A>
+struct EditorPlugin<C, S>
 where
   C: Component + Clone,
-  A: FreelyMutableState + Copy,
+  S: FreelyMutableState + Copy,
 {
-  config: EditorConfig<C, A>,
+  config: EditorConfig<C, S>,
   hotkeys: Hotkeys,
   cam_component: PhantomData<C>,
 }
 
-impl<C, A> Plugin for EditorPlugin<C, A>
+impl<C, S> Plugin for EditorPlugin<C, S>
 where
   C: Component + Clone,
-  A: FreelyMutableState + Copy,
+  S: FreelyMutableState + Copy,
 {
   fn build(&self, app: &mut App) {
     app
       .add_plugins((DefaultInspectorConfigPlugin, UiPlugin))
+      .register_type::<CameraState>()
+      .register_type::<CameraSettings>()
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
       .insert_resource(self.hotkeys.clone())
@@ -245,21 +231,27 @@ where
       .insert_state(self.config.editor_state)
       .add_systems(Startup, Self::initialize_types)
       .add_systems(OnEnter(self.config.editor_state), Self::on_enter)
+      .add_systems(OnExit(self.config.editor_state), Self::on_exit)
       .add_systems(
         Update,
         (
-          Self::special_input,
+          input::special_input::<C, S>,
           (
-            Self::handle_input,
-            Self::check_for_saves,
-            Self::check_for_loads,
+            input::handle_input,
+            scenes::check_for_saves,
+            scenes::check_for_loads,
+            (
+              view::auto_register_camera::<C>,
+              Self::auto_register_targets,
+              Self::handle_pick_events,
+            ),
             ((view::movement_system, view::orbit), view::cam_free_fly)
               .chain()
               .run_if(in_state(EditorState::Inspecting)),
           )
             .chain()
             .run_if(in_state(self.config.editor_state)),
-          Self::show_ui_system,
+          ui::render::<C>,
         )
           .chain(),
       )
@@ -288,77 +280,48 @@ where
     world.insert_resource(entities);
   }
 
+  fn on_exit(
+    mut commands: Commands,
+    q_targets: Query<Entity, (With<RayCastPickable>, Without<Camera>)>,
+  ) {
+    for target in q_targets.iter() {
+      commands.entity(target).remove::<RayCastPickable>();
+    }
+  }
+
   fn on_enter(mut q_windows: Query<&mut Window>) {
     for mut window in q_windows.iter_mut() {
       show_cursor(&mut window);
     }
   }
 
-  fn show_ui_system(world: &mut World)
-  where
-    C: Component,
-  {
-    world.resource_scope(|world, mut ui_state: Mut<ui::State>| {
-      ui_state.ui(world);
-    });
-  }
-
-  fn check_for_saves(world: &mut World) {
-    world.resource_scope(|world, save_events: Mut<Events<SaveEvent>>| {
-      save_events.get_cursor().read(&save_events).for_each(|e| {
-        e.handler(world);
-      });
-    });
-  }
-
-  fn check_for_loads(
+  fn auto_register_targets(
     mut commands: Commands,
-    mut load_events: EventReader<LoadEvent>,
-    asset_server: Res<AssetServer>,
+    query: Query<Entity, (Without<RayCastPickable>, With<Mesh3d>)>,
   ) {
-    load_events.read().for_each(|e| {
-      commands.spawn(DynamicSceneRoot(asset_server.load(e.file().clone())));
-    });
+    for entity in &query {
+      debug!("added raycast to target {}", entity);
+      commands.entity(entity).insert((RayCastPickable,));
+    }
   }
 
-  fn special_input(
-    config: Res<EditorConfig<C, S>>,
-    hotkeys: Res<Hotkeys>,
-    input: Res<ButtonInput<KeyCode>>,
-    current_state: Res<State<S>>,
-    mut next_game_state: ResMut<NextState<S>>,
+  fn handle_pick_events(
+    mut ui_state: ResMut<ui::State>,
+    mut click_events: EventReader<Pointer<Click>>,
+    mut q_egui: Query<&mut EguiContext>,
+    q_raycast_pickables: Query<&RayCastPickable>,
   ) {
-    if input.just_pressed(hotkeys.play) {
-      if *current_state.get() == config.gameplay_state {
-        next_game_state.set(config.editor_state);
-      } else {
-        next_game_state.set(config.gameplay_state);
+    let mut egui = q_egui.single_mut();
+    let egui_context = egui.get_mut();
+
+    for click in click_events.read() {
+      let target = click.target;
+
+      let modifiers = egui_context.input(|i| i.modifiers);
+
+      if q_raycast_pickables.get(target).is_ok() {
+        ui_state.add_selected(target, modifiers.ctrl);
       }
-    }
-  }
-
-  fn handle_input(
-    hotkeys: Res<Hotkeys>,
-    input: Res<ButtonInput<KeyCode>>,
-    mut windows: Query<&mut Window>,
-    mut next_editor_state: ResMut<NextState<EditorState>>,
-  ) {
-    if input.just_pressed(hotkeys.move_cam) {
-      let Ok(mut window) = windows.get_single_mut() else {
-        return;
-      };
-
-      hide_cursor(&mut window);
-      next_editor_state.set(EditorState::Inspecting);
-    }
-
-    if input.just_released(hotkeys.move_cam) {
-      let Ok(mut window) = windows.get_single_mut() else {
-        return;
-      };
-
-      show_cursor(&mut window);
-      next_editor_state.set(EditorState::Editing);
     }
   }
 }

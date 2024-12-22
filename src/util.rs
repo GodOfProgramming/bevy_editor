@@ -11,8 +11,6 @@ macro_rules! here {
   }};
 }
 
-pub use here;
-
 pub fn show_cursor(window: &mut Window) {
   window.cursor_options.visible = true;
   window.cursor_options.grab_mode = CursorGrabMode::None;

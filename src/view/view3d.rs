@@ -1,4 +1,3 @@
-use super::ViewPlugin;
 use crate::{input::EditorActions, ui, EditorState};
 use bevy::{
   input::mouse::MouseMotion, prelude::*, render::camera::Viewport, window::PrimaryWindow,
@@ -9,8 +8,6 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 const UP: Vec3 = Vec3::Y;
 
 pub struct View3dPlugin;
-
-impl ViewPlugin for View3dPlugin {}
 
 impl Plugin for View3dPlugin {
   fn build(&self, app: &mut App) {
@@ -23,8 +20,9 @@ impl Plugin for View3dPlugin {
         (
           (
             EditorCamera::movement_system,
-            EditorCamera::orbit_system,
+            EditorCamera::orbit_self_system,
             EditorCamera::zoom_system,
+            EditorCamera::pan_system,
           ),
           EditorCamera::free_fly,
         )
@@ -60,10 +58,10 @@ impl Default for CameraState {
 
 #[derive(Component, Reflect)]
 pub struct CameraSettings {
-  /// Radians per pixel of mouse motion
-  pub orbit_sensitivity: f32,
-  /// Exponent per pixel of mouse motion
-  pub zoom_sensitivity: f32,
+  move_speed: f32,
+  orbit_sensitivity: f32,
+  zoom_sensitivity: f32,
+  pan_sensitivity: f32,
 }
 
 #[derive(Component, Default)]
@@ -73,8 +71,10 @@ pub struct EditorCamera;
 impl Default for CameraSettings {
   fn default() -> Self {
     CameraSettings {
-      orbit_sensitivity: 0.05f32.to_radians(), // 0.1 degree per pixel
-      zoom_sensitivity: 0.1,
+      move_speed: 10.0,
+      orbit_sensitivity: 0.05,
+      zoom_sensitivity: 5.0,
+      pan_sensitivity: 0.2,
     }
   }
 }
@@ -82,13 +82,11 @@ impl Default for CameraSettings {
 impl EditorCamera {
   fn movement_system(
     q_action_states: Query<&ActionState<EditorActions>>,
+    mut q_cam: Query<(&CameraState, &CameraSettings, &mut Transform), With<EditorCamera>>,
     time: Res<Time>,
-    mut q_cam: Query<(&CameraState, &mut Transform), With<Camera>>,
   ) {
-    const MOVE_SPEED: f32 = 0.05;
-
     for action_state in &q_action_states {
-      let (cam_state, mut cam_transform) = q_cam.single_mut();
+      let (cam_state, cam_settings, mut cam_transform) = q_cam.single_mut();
 
       let mut movement = Vec3::ZERO;
 
@@ -111,16 +109,17 @@ impl EditorCamera {
       let moved = movement != Vec3::ZERO;
 
       if moved {
-        let movement = movement.normalize() * MOVE_SPEED * time.delta().as_millis() as f32;
+        let movement = movement.normalize() * cam_settings.move_speed * time.delta_secs();
         cam_transform.translation += movement;
       }
     }
   }
 
-  fn orbit_system(
+  fn orbit_self_system(
     q_action_states: Query<&ActionState<EditorActions>>,
+    mut q_cam: Query<(&CameraSettings, &mut CameraState), With<EditorCamera>>,
     mut mouse_motion: EventReader<MouseMotion>,
-    mut q_cam: Query<(&CameraSettings, &mut CameraState), With<Camera>>,
+    time: Res<Time>,
   ) {
     let should_orbit = q_action_states
       .iter()
@@ -136,7 +135,7 @@ impl EditorCamera {
       .read()
       .map(|motion| motion.delta)
       .reduce(|c, n| c + n)
-      .map(|mouse| mouse * settings.orbit_sensitivity)
+      .map(|mouse| mouse * settings.orbit_sensitivity * time.delta_secs())
       .unwrap_or_default();
 
     let (yaw_rad, pitch_rad) = {
@@ -162,17 +161,50 @@ impl EditorCamera {
     state.face = Vec3::new(pitch_cos * yaw_cos, pitch_sin, -pitch_cos * yaw_sin).normalize();
   }
 
+  fn pan_system(
+    q_action_states: Query<&ActionState<EditorActions>>,
+    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera>>,
+    mut mouse_motion: EventReader<MouseMotion>,
+    time: Res<Time>,
+  ) {
+    let should_pan = q_action_states
+      .iter()
+      .any(|state| state.pressed(&EditorActions::PanCamera));
+
+    if !should_pan {
+      return;
+    }
+
+    let (cam_settings, mut cam_transform) = q_cam.single_mut();
+
+    let pan = mouse_motion
+      .read()
+      .map(|motion| motion.delta)
+      .reduce(|c, n| c + n)
+      .unwrap_or_default();
+
+    let sensitivity = cam_settings.pan_sensitivity * time.delta_secs();
+    let horizontal = cam_transform.right() * pan.x * sensitivity;
+    let vertical = cam_transform.up() * pan.y * sensitivity;
+
+    cam_transform.translation += horizontal;
+    cam_transform.translation -= vertical;
+  }
+
   fn zoom_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut query: Query<(&CameraSettings, &mut Projection), (With<EditorCamera>, With<Camera>)>,
+    mut q_cam: Query<(&CameraSettings, &mut Projection), With<EditorCamera>>,
+    time: Res<Time>,
   ) {
-    let Ok((cam_settings, mut projection)) = query.get_single_mut() else {
+    let Ok((cam_settings, mut projection)) = q_cam.get_single_mut() else {
       return;
     };
 
     for action_state in &q_action_states {
-      let zoom =
-        1.0 - action_state.clamped_value(&EditorActions::Zoom) * cam_settings.zoom_sensitivity;
+      let zoom = 1.0
+        - action_state.clamped_value(&EditorActions::Zoom)
+          * cam_settings.zoom_sensitivity
+          * time.delta_secs();
 
       match &mut *projection {
         Projection::Perspective(perspective_projection) => {
@@ -183,45 +215,18 @@ impl EditorCamera {
     }
   }
 
-  fn free_fly(mut q_cam: Query<(&mut Transform, &CameraState), With<Camera>>) {
+  fn free_fly(mut q_cam: Query<(&mut Transform, &CameraState), With<EditorCamera>>) {
     let (mut cam_transform, cam_state) = q_cam.single_mut();
     let cam_target = cam_transform.translation + cam_state.face;
     cam_transform.look_at(cam_target, UP);
   }
 
-  fn cam_look_at_target<T>(
-    mut query: ParamSet<(
-      Query<(&mut Transform, &CameraState), With<Camera>>,
-      Query<&Transform, With<T>>,
-    )>,
-  ) where
-    T: Component,
-  {
-    let q_transforms = query.p1();
-    let Ok(target_transform) = q_transforms.get_single() else {
-      return;
-    };
-
-    let target_pos = target_transform.translation;
-    let target_magnitude = target_transform.scale.length();
-
-    let mut q_cam = query.p0();
-    let (mut cam_transform, cam_state) = q_cam.single_mut();
-    let cam_pos = target_pos - cam_state.face * 5.0 * target_magnitude;
-
-    // set cam position
-    cam_transform.translation = cam_pos;
-
-    // set cam look
-    cam_transform.look_at(target_pos, UP);
-  }
-
   // make camera only render to view not obstructed by UI
   fn set_viewport(
-    ui_state: Res<ui::State>,
     primary_window: Query<&mut Window, With<PrimaryWindow>>,
     q_egui_settings: Query<&bevy_egui::EguiSettings>,
     mut cameras: Query<&mut Camera, With<EditorCamera>>,
+    ui_state: Res<ui::State>,
   ) {
     let Ok(mut cam) = cameras.get_single_mut() else {
       warn!("Found no camera");

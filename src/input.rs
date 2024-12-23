@@ -73,15 +73,22 @@ pub fn handle_input(
   mut windows: Query<&mut Window>,
 ) {
   for action_state in &q_action_states {
-    if action_state.just_pressed(&EditorActions::OrbitCamera) {
+    if action_state.just_pressed(&EditorActions::OrbitCamera)
+      || action_state.just_pressed(&EditorActions::PanCamera)
+    {
       let Ok(mut window) = windows.get_single_mut() else {
         return;
       };
 
       hide_cursor(&mut window);
+      continue;
     }
 
-    if action_state.just_released(&EditorActions::OrbitCamera) {
+    if (action_state.just_released(&EditorActions::OrbitCamera)
+      && action_state.released(&EditorActions::PanCamera))
+      || (action_state.just_released(&EditorActions::PanCamera)
+        && action_state.released(&EditorActions::OrbitCamera))
+    {
       let Ok(mut window) = windows.get_single_mut() else {
         return;
       };

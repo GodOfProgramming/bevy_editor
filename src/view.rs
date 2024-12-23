@@ -4,5 +4,3 @@ mod view3d;
 use bevy::app::Plugin;
 
 pub use view3d::{EditorCamera, View3dPlugin};
-
-pub trait ViewPlugin: Plugin {}

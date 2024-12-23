@@ -9,11 +9,9 @@ mod view;
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
 use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
-use bevy::math::NormedVectorSpace;
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
-use bevy::render::camera::CameraProjection;
 use bevy::utils::tracing::level_filters::LevelFilter;
 use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
 use bevy_egui::EguiContext;
@@ -27,7 +25,9 @@ use ui::UiPlugin;
 pub use bevy;
 pub use serde;
 pub use util::*;
-use view::{ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin};
+use view::{
+  ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -63,6 +63,8 @@ impl Editor {
   where
     C: Component,
   {
+    const COLOR: Srgba = tailwind::GREEN_700;
+
     fn swap_cameras<Enabled, Disabled>(
       mut q_enabled_cameras: Query<&mut Camera, (With<Enabled>, Without<Disabled>)>,
       mut q_disabled_cameras: Query<&mut Camera, (With<Disabled>, Without<Enabled>)>,
@@ -79,42 +81,58 @@ impl Editor {
       }
     }
 
+    fn render_2d_cameras<C: Component>(
+      mut gizmos: Gizmos,
+      q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
+    ) {
+      for (transform, projection) in &q_cam {
+        let rect_pos = transform.translation;
+        gizmos.rect(rect_pos, projection.area.max - projection.area.min, COLOR);
+      }
+    }
+
     fn render_3d_cameras<C: Component>(
       mut gizmos: Gizmos,
       q_cam: Query<(&Transform, &Projection), (With<Camera3d>, With<C>)>,
     ) {
-      const COLOR: Srgba = tailwind::GREEN_700;
+      fn show_camera(transform: &Transform, scaler: f32, gizmos: &mut Gizmos) {
+        gizmos.cuboid(transform.clone(), COLOR);
+
+        let forward = transform.forward().as_vec3();
+
+        let rect_pos = transform.translation + forward;
+        let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
+        let rect_dim = Vec2::new(1.0 * scaler, 1.0);
+
+        gizmos.rect(rect_iso, rect_dim, COLOR);
+
+        let start = transform.translation + forward * transform.scale / 2.0;
+
+        let rect_corners = [
+          rect_dim,
+          -rect_dim,
+          rect_dim.with_x(-rect_dim.x),
+          rect_dim.with_y(-rect_dim.y),
+        ]
+        .map(|corner| Vec3::from((corner / 2.0, 0.0)))
+        .map(|corner| rect_iso * corner);
+
+        for corner in rect_corners {
+          gizmos.line(start, corner, COLOR);
+        }
+      }
 
       for (transform, projection) in &q_cam {
         match projection {
           Projection::Perspective(perspective) => {
-            gizmos.cuboid(transform.clone(), COLOR);
-
-            let forward = transform.forward().as_vec3();
-
-            let rect_pos = transform.translation + forward;
-            let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
-            let rect_dim = Vec2::new(1.0 * perspective.aspect_ratio, 1.0);
-
-            gizmos.rect(rect_iso, rect_dim, COLOR);
-
-            let start = transform.translation + forward * transform.scale / 2.0;
-
-            let rect_corners = [
-              rect_iso * Vec3::from((rect_dim / 2.0, 0.0)),
-              rect_iso * Vec3::from((-rect_dim / 2.0, 0.0)),
-              rect_iso * Vec3::from((rect_dim.with_x(-rect_dim.x) / 2.0, 0.0)),
-              rect_iso * Vec3::from((rect_dim.with_y(-rect_dim.y) / 2.0, 0.0)),
-            ];
-
-            for corner in rect_corners {
-              gizmos.line(start, corner, COLOR);
-            }
+            show_camera(transform, perspective.aspect_ratio, &mut gizmos);
           }
-          Projection::Orthographic(_orthographic_projection) => {}
+          Projection::Orthographic(orthographic) => {
+            show_camera(transform, orthographic.scale, &mut gizmos);
+          }
         }
       }
-    };
+    }
 
     self
       .app
@@ -129,7 +147,11 @@ impl Editor {
       )
       .add_systems(
         Update,
-        render_3d_cameras::<C>.run_if(in_state(EditorState::Editing)),
+        (
+          render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
+          render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
+        )
+          .run_if(in_state(EditorState::Editing)),
       );
 
     self
@@ -270,7 +292,13 @@ impl EditorPlugin {
     q_targets: Query<Entity, (With<RayCastPickable>, Without<Camera>)>,
   ) {
     for target in q_targets.iter() {
-      commands.entity(target).remove::<RayCastPickable>();
+      commands
+        .entity(target)
+        .remove::<RayCastPickable>()
+        .insert(PickingBehavior {
+          is_hoverable: false,
+          should_block_lower: false,
+        });
     }
   }
 
@@ -302,23 +330,30 @@ impl EditorPlugin {
   ) {
     for entity in &q_entities {
       debug!("Added observation to target {}", entity);
-      commands.entity(entity).insert(RayCastPickable).observe(
-        |event: Trigger<Pointer<Click>>,
-         mut ui_state: ResMut<ui::State>,
-         mut q_egui: Query<&mut EguiContext>| {
-          if event.button == PointerButton::Primary {
-            debug!("Clicked on: {}", event.target);
+      commands
+        .entity(entity)
+        .insert(RayCastPickable)
+        .insert(PickingBehavior {
+          is_hoverable: true,
+          should_block_lower: false,
+        })
+        .observe(
+          |event: Trigger<Pointer<Click>>,
+           mut ui_state: ResMut<ui::State>,
+           mut q_egui: Query<&mut EguiContext>| {
+            if event.button == PointerButton::Primary {
+              debug!("Clicked on: {}", event.target);
 
-            let mut egui = q_egui.single_mut();
-            let egui_context = egui.get_mut();
+              let mut egui = q_egui.single_mut();
+              let egui_context = egui.get_mut();
 
-            let target = event.target;
-            let modifiers = egui_context.input(|i| i.modifiers);
+              let target = event.target;
+              let modifiers = egui_context.input(|i| i.modifiers);
 
-            ui_state.add_selected(target, modifiers.ctrl);
-          }
-        },
-      );
+              ui_state.add_selected(target, modifiers.ctrl);
+            }
+          },
+        );
     }
   }
 

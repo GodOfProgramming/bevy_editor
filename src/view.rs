@@ -16,7 +16,7 @@ pub struct ViewPlugin;
 
 impl ViewPlugin {
   fn startup(cache: Res<Cache>, mut next_state: ResMut<NextState<ViewState>>) {
-    let state = cache.get::<ViewState>().unwrap_or(ViewState::Camera3D);
+    let state = cache.get::<ViewState>().unwrap_or_default();
     next_state.set(state);
   }
 }
@@ -24,6 +24,7 @@ impl ViewPlugin {
 impl Plugin for ViewPlugin {
   fn build(&self, app: &mut bevy::prelude::App) {
     app
+      .register_type::<ViewState>()
       .add_plugins((View2dPlugin, View3dPlugin))
       .insert_state(ViewState::None)
       .add_systems(PostStartup, Self::startup)
@@ -90,7 +91,9 @@ impl EditorCamera {
   }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default, Serialize, Deserialize)]
+#[derive(
+  Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default, Serialize, Deserialize, Reflect,
+)]
 pub enum ViewState {
   #[default]
   None,

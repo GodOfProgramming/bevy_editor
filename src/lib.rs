@@ -177,10 +177,9 @@ impl Plugin for EditorPlugin {
       .insert_state(EditorState::Editing)
       .insert_resource(cache)
       .insert_resource(log_info)
-      .add_systems(Startup, (Self::startup, Self::initialize_types))
+      .add_systems(Startup, Self::initialize_types)
       .add_systems(PostStartup, Self::post_startup)
       .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
-      .add_systems(OnExit(EditorState::Editing), Self::on_exit)
       .add_systems(
         Update,
         (
@@ -212,10 +211,6 @@ impl Plugin for EditorPlugin {
 }
 
 impl EditorPlugin {
-  fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
-    picking_settings.require_markers = true;
-  }
-
   fn post_startup(mut q_windows: Query<&mut Window>) {
     for mut window in &mut q_windows {
       window.visible = true;
@@ -232,15 +227,6 @@ impl EditorPlugin {
     world.insert_resource(prefabs);
   }
 
-  fn on_exit(
-    mut commands: Commands,
-    q_targets: Query<Entity, (With<RayCastPickable>, Without<Camera>)>,
-  ) {
-    for target in q_targets.iter() {
-      commands.entity(target).remove::<RayCastPickable>();
-    }
-  }
-
   fn on_enter(mut q_windows: Query<&mut Window>) {
     for mut window in q_windows.iter_mut() {
       show_cursor(&mut window);
@@ -250,7 +236,7 @@ impl EditorPlugin {
   fn auto_register_targets(
     mut commands: Commands,
     q_2d_objects: Query<Entity, (Without<Observed>, With<Mesh2d>)>,
-    q_3d_objects: Query<Entity, (Without<RayCastPickable>, Without<Observed>, With<Mesh3d>)>,
+    q_3d_objects: Query<Entity, (Without<Observed>, With<Mesh3d>)>,
   ) {
     for entity in &q_2d_objects {
       debug!("Added raycast to 2d target {}", entity);
@@ -264,30 +250,23 @@ impl EditorPlugin {
 
     for entity in &q_3d_objects {
       debug!("Added raycast to 3d target {}", entity);
-      commands
-        .entity(entity)
-        .insert(RayCastPickable)
-        .insert(Observed)
-        .observe(
-          |event: Trigger<Pointer<Click>>,
-           mut ui_state: ResMut<ui::State>,
-           mut q_egui: Query<&mut EguiContext>,
-           q_raycast_pickables: Query<&RayCastPickable>| {
-            if event.button == PointerButton::Primary {
-              debug!("Clicked on: {}", event.target);
+      commands.entity(entity).insert(Observed).observe(
+        |event: Trigger<Pointer<Click>>,
+         mut ui_state: ResMut<ui::State>,
+         mut q_egui: Query<&mut EguiContext>| {
+          if event.button == PointerButton::Primary {
+            debug!("Clicked on: {}", event.target);
 
-              let mut egui = q_egui.single_mut();
-              let egui_context = egui.get_mut();
+            let mut egui = q_egui.single_mut();
+            let egui_context = egui.get_mut();
 
-              let target = event.target;
-              let modifiers = egui_context.input(|i| i.modifiers);
+            let target = event.target;
+            let modifiers = egui_context.input(|i| i.modifiers);
 
-              if q_raycast_pickables.get(target).is_ok() {
-                ui_state.add_selected(target, modifiers.ctrl);
-              }
-            }
-          },
-        );
+            ui_state.add_selected(target, modifiers.ctrl);
+          }
+        },
+      );
     }
   }
 

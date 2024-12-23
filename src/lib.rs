@@ -9,9 +9,11 @@ mod view;
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
 use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
+use bevy::math::NormedVectorSpace;
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
+use bevy::render::camera::CameraProjection;
 use bevy::utils::tracing::level_filters::LevelFilter;
 use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
 use bevy_egui::EguiContext;
@@ -77,26 +79,40 @@ impl Editor {
       }
     }
 
-    let render_game_camera = move |mut gizmos: Gizmos, q_cam: Query<&Transform, With<C>>| {
+    fn render_3d_cameras<C: Component>(
+      mut gizmos: Gizmos,
+      q_cam: Query<(&Transform, &Projection), (With<Camera3d>, With<C>)>,
+    ) {
       const COLOR: Srgba = tailwind::GREEN_700;
-      for transform in &q_cam {
-        gizmos.cuboid(transform.clone(), COLOR);
 
-        gizmos.sphere(
-          Isometry3d::new(
-            transform.translation + transform.up().as_vec3() * 0.5,
-            transform.rotation,
-          ),
-          0.3,
-          COLOR,
-        );
+      for (transform, projection) in &q_cam {
+        match projection {
+          Projection::Perspective(perspective) => {
+            gizmos.cuboid(transform.clone(), COLOR);
 
-        let forward = transform.forward().as_vec3();
-        gizmos.arrow(
-          transform.translation + forward * 0.5,
-          transform.translation + forward,
-          COLOR,
-        );
+            let forward = transform.forward().as_vec3();
+
+            let rect_pos = transform.translation + forward;
+            let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
+            let rect_dim = Vec2::new(1.0 * perspective.aspect_ratio, 1.0);
+
+            gizmos.rect(rect_iso, rect_dim, COLOR);
+
+            let start = transform.translation + forward * transform.scale / 2.0;
+
+            let rect_corners = [
+              rect_iso * Vec3::from((rect_dim / 2.0, 0.0)),
+              rect_iso * Vec3::from((-rect_dim / 2.0, 0.0)),
+              rect_iso * Vec3::from((rect_dim.with_x(-rect_dim.x) / 2.0, 0.0)),
+              rect_iso * Vec3::from((rect_dim.with_y(-rect_dim.y) / 2.0, 0.0)),
+            ];
+
+            for corner in rect_corners {
+              gizmos.line(start, corner, COLOR);
+            }
+          }
+          Projection::Orthographic(_orthographic_projection) => {}
+        }
       }
     };
 
@@ -113,7 +129,7 @@ impl Editor {
       )
       .add_systems(
         Update,
-        render_game_camera.run_if(in_state(EditorState::Editing)),
+        render_3d_cameras::<C>.run_if(in_state(EditorState::Editing)),
       );
 
     self

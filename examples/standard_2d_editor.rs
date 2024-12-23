@@ -19,17 +19,27 @@ fn startup(
   mut commands: Commands,
   mut meshes: ResMut<Assets<Mesh>>,
   mut materials: ResMut<Assets<StandardMaterial>>,
+  mut color_materials: ResMut<Assets<ColorMaterial>>,
 ) {
   commands.spawn((Name::new("Game Camera"), GameCamera, Camera2d));
 
   commands.spawn((
-    Name::new("Purple Square"),
+    Name::new("Purple Square Sprite"),
     Sprite {
       color: Color::from(PURPLE),
       custom_size: Some(Vec2::splat(32.0)),
       ..default()
     },
     Transform::default().with_translation(Vec3::new(-64.0, 0.0, 0.0)),
+  ));
+
+  commands.spawn((
+    Name::new("Purple Square"),
+    Mesh2d(meshes.add(Rectangle::default())),
+    MeshMaterial2d(color_materials.add(Color::from(PURPLE))),
+    Transform::default()
+      .with_translation(Vec3::new(64.0, 0.0, 0.0))
+      .with_scale(Vec3::new(32.0, 32.0, 0.0)),
   ));
 
   // circular base

@@ -1,4 +1,7 @@
-use bevy::{color::palettes::css::PURPLE, prelude::*};
+use bevy::{
+  color::palettes::css::PURPLE, picking::focus::PickingInteraction, prelude::*,
+  render::sync_world::RenderEntity,
+};
 use bevy_editor::Editor;
 
 fn main() {
@@ -18,16 +21,18 @@ struct GameCamera;
 fn startup(
   mut commands: Commands,
   mut meshes: ResMut<Assets<Mesh>>,
-  mut color_materials: ResMut<Assets<ColorMaterial>>,
   mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
   commands.spawn((Name::new("Game Camera"), GameCamera, Camera2d));
 
   commands.spawn((
     Name::new("Purple Square"),
-    Mesh2d(meshes.add(Rectangle::default())),
-    MeshMaterial2d(color_materials.add(Color::from(PURPLE))),
-    Transform::default().with_scale(Vec3::new(32.0, 32.0, 0.0)),
+    Sprite {
+      color: Color::from(PURPLE),
+      custom_size: Some(Vec2::splat(32.0)),
+      ..default()
+    },
+    Transform::default().with_translation(Vec3::new(-64.0, 0.0, 0.0)),
   ));
 
   // circular base

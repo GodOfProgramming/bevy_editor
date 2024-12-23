@@ -1,7 +1,9 @@
 use crate::assets::Prefabs;
 use crate::view::ViewState;
 use crate::{LogInfo, WorldExtensions};
+use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
+use bevy::tasks::IoTaskPool;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
   reflect::TypeRegistry,
@@ -14,6 +16,34 @@ use bevy_inspector_egui::bevy_inspector::{
 };
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
+use std::marker::PhantomData;
+
+#[derive(Resource)]
+pub struct SystemGraph<L: ScheduleLabel> {
+  graph: String,
+  _pd: PhantomData<L>,
+}
+
+impl<L> SystemGraph<L>
+where
+  L: ScheduleLabel,
+{
+  pub fn new(app: &mut App, schedule: L) -> Self {
+    let graph = bevy_mod_debugdump::schedule_graph_dot(
+      app,
+      schedule,
+      &bevy_mod_debugdump::schedule_graph::Settings::default(),
+    );
+
+    Self {
+      graph,
+      _pd: default(),
+    }
+  }
+}
+
+#[derive(Resource)]
+pub struct CustomTab(pub fn(&mut World, &mut egui::Ui));
 
 pub fn render(world: &mut World) {
   world.resource_scope(|world, mut ui_state: Mut<State>| {
@@ -30,9 +60,19 @@ enum InspectorSelection {
 
 pub(crate) struct UiPlugin;
 
+impl UiPlugin {
+  fn on_start(mut commands: Commands, custom_tab: Option<Res<CustomTab>>) {
+    commands.insert_resource(State::new(custom_tab.is_some()));
+  }
+}
+
 impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
-    app.add_plugins(EguiPlugin).insert_resource(State::new());
+    debug!("Building UI Plugin");
+    app
+      .add_plugins(EguiPlugin)
+      .add_systems(Startup, Self::on_start)
+      .add_systems(Update, render);
   }
 }
 
@@ -45,11 +85,11 @@ pub(crate) struct State {
 }
 
 impl State {
-  pub fn new() -> Self {
+  pub fn new(have_custom: bool) -> Self {
     Self {
       viewport_rect: egui::Rect::NOTHING,
       selected_entities: SelectedEntities::default(),
-      dock_state: Self::build_dock(),
+      dock_state: Self::build_dock(have_custom),
       selection: InspectorSelection::Entities,
     }
   }
@@ -81,8 +121,11 @@ impl State {
       .show(&ctx, &mut tab_viewer);
   }
 
-  fn build_dock() -> DockState<Tabs> {
-    let mut state = DockState::new(vec![Tabs::GameView]);
+  fn build_dock(have_custom: bool) -> DockState<Tabs> {
+    let base_tabs = have_custom
+      .then(|| vec![Tabs::GameView, Tabs::Custom])
+      .unwrap_or_else(|| vec![Tabs::GameView]);
+    let mut state = DockState::new(base_tabs);
 
     let tree = state.main_surface_mut();
 
@@ -108,6 +151,7 @@ impl State {
 enum Tabs {
   ControlPanel,
   GameView,
+  Custom,
   Hierarchy,
   Prefabs,
   Resources,
@@ -138,6 +182,19 @@ impl TabViewer<'_> {
           });
           if prev_view != view {
             self.world.set_state(view);
+          }
+
+          if ui.button("Dump Update Graph").clicked() {
+            let Some(update) = self.world.get_resource::<SystemGraph<Update>>() else {
+              return;
+            };
+
+            let graph = update.graph.clone();
+            let _ = IoTaskPool::get().spawn(async move {
+              if let Err(e) = async_std::fs::write("update.dot", graph).await {
+                error!("Failed to save update graph: {e}");
+              }
+            });
           }
         }
         crate::EditorState::Testing => {
@@ -260,6 +317,13 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       }
       Tabs::GameView => {
         *self.viewport_rect = ui.clip_rect();
+      }
+      Tabs::Custom => {
+        self
+          .world
+          .resource_scope(|world, custom_tab: Mut<CustomTab>| {
+            (custom_tab.0)(world, ui);
+          });
       }
       Tabs::Hierarchy => {
         if hierarchy_ui(self.world, ui, self.selected_entities) {

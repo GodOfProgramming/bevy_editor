@@ -15,7 +15,7 @@ use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::utils::tracing::level_filters::LevelFilter;
 use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
-use bevy_egui::EguiContext;
+use bevy_egui::{egui, EguiContext};
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::{Cache, Saveable};
 use input::InputPlugin;
@@ -23,7 +23,7 @@ use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 pub use serde;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
-use ui::UiPlugin;
+use ui::{CustomTab, SystemGraph, UiPlugin};
 pub use util::*;
 use view::{
   ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
@@ -57,7 +57,11 @@ impl Editor {
     System: IntoSystemConfigs<M>,
   {
     self.app.add_systems(OnEnter(EditorState::Editing), system);
+    self
+  }
 
+  pub fn add_custom_tab(&mut self, f: fn(&mut World, &mut egui::Ui)) -> &mut Self {
+    self.app.insert_resource(CustomTab(f));
     self
   }
 
@@ -188,8 +192,14 @@ impl Editor {
 
     app
       .insert_resource(scene_type_registry)
-      .insert_resource(prefab_registrar)
-      .run()
+      .insert_resource(prefab_registrar);
+
+    let update_graph = SystemGraph::new(&mut app, Update);
+    app.insert_resource(update_graph);
+
+    debug!("Launching Editor");
+
+    app.run()
   }
 
   fn register_type<T>(&mut self)
@@ -273,7 +283,6 @@ impl Plugin for EditorPlugin {
               Self::draw_mesh_intersections,
             )
               .run_if(in_state(EditorState::Editing)),
-            ui::render,
           )
             .chain(),
           (

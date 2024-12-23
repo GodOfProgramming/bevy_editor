@@ -1,11 +1,9 @@
 use crate::{
   cache::{Cache, Saveable},
   input::EditorActions,
-  ui, EditorState,
+  EditorState,
 };
-use bevy::{
-  input::mouse::MouseMotion, prelude::*, render::camera::Viewport, window::PrimaryWindow,
-};
+use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::ActionState;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::{FRAC_PI_2, TAU};
@@ -35,9 +33,9 @@ impl Plugin for View3dPlugin {
           EditorCamera3d::look,
         )
           .chain()
-          .run_if(in_state(EditorState::Editing)),
-      )
-      .add_systems(PostUpdate, EditorCamera3d::set_viewport);
+          .run_if(in_state(EditorState::Editing))
+          .run_if(in_state(ViewState::Camera3D)),
+      );
   }
 }
 
@@ -52,7 +50,7 @@ impl View3dPlugin {
     } = cache.get().unwrap_or_default();
 
     commands.spawn((
-      Name::new("Editor Camera"),
+      Name::new("Editor Camera 3D"),
       EditorCamera3d,
       state,
       settings,
@@ -97,10 +95,6 @@ pub struct CameraSettings {
   pan_sensitivity: f32,
 }
 
-#[derive(Component, Default)]
-#[require(EditorCamera, Camera3d, CameraState, CameraSettings)]
-pub struct EditorCamera3d;
-
 impl Default for CameraSettings {
   fn default() -> Self {
     CameraSettings {
@@ -111,6 +105,10 @@ impl Default for CameraSettings {
     }
   }
 }
+
+#[derive(Component, Default)]
+#[require(EditorCamera, Camera3d, CameraState, CameraSettings)]
+pub struct EditorCamera3d;
 
 impl EditorCamera3d {
   fn on_enter(
@@ -270,49 +268,6 @@ impl EditorCamera3d {
     let (mut cam_transform, cam_state) = q_cam.single_mut();
     let cam_target = cam_transform.translation + cam_state.face;
     cam_transform.look_at(cam_target, UP);
-  }
-
-  // make camera only render to view not obstructed by UI
-  fn set_viewport(
-    primary_window: Query<&mut Window, With<PrimaryWindow>>,
-    q_egui_settings: Query<&bevy_egui::EguiSettings>,
-    mut cameras: Query<&mut Camera, With<EditorCamera3d>>,
-    ui_state: Res<ui::State>,
-  ) {
-    let Ok(mut cam) = cameras.get_single_mut() else {
-      warn!("Found no camera");
-      return;
-    };
-
-    let Ok(window) = primary_window.get_single() else {
-      warn!("Found no window");
-      return;
-    };
-
-    let Ok(egui_settings) = q_egui_settings.get_single() else {
-      warn!("Found no egui settings");
-      return;
-    };
-
-    let scale_factor = window.scale_factor() * egui_settings.scale_factor;
-
-    let viewport_pos = ui_state.viewport_rect.left_top().to_vec2() * scale_factor;
-    let viewport_size = ui_state.viewport_rect.size() * scale_factor;
-
-    let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
-    let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
-
-    // The desired viewport rectangle at its offset in "physical pixel space"
-    let rect = physical_position + physical_size;
-
-    let window_size = window.physical_size();
-    if rect.x <= window_size.x && rect.y <= window_size.y {
-      cam.viewport = Some(Viewport {
-        physical_position,
-        physical_size,
-        depth: 0.0..1.0,
-      });
-    }
   }
 
   pub fn on_app_exit(

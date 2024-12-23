@@ -22,7 +22,7 @@ use ui::UiPlugin;
 pub use bevy;
 pub use serde;
 pub use util::*;
-use view::{ActiveEditorCamera, EditorCamera, EditorCamera3d, ViewPlugin};
+use view::{ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -187,7 +187,11 @@ impl Plugin for EditorPlugin {
             .chain(),
           (
             Self::on_close_requested,
-            (EditorCamera::on_app_exit, EditorCamera3d::on_app_exit),
+            (
+              EditorCamera::on_app_exit,
+              EditorCamera2d::on_app_exit,
+              EditorCamera3d::on_app_exit,
+            ),
             Self::on_app_exit,
           )
             .chain(),

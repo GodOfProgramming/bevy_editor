@@ -7,7 +7,7 @@ mod util;
 mod view;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
-use bevy::color::palettes::tailwind::{PINK_100, RED_500};
+use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
 use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
@@ -57,7 +57,7 @@ impl Editor {
     self
   }
 
-  pub fn swap_to_camera<C>(&mut self) -> &mut Self
+  pub fn add_game_camera<C>(&mut self) -> &mut Self
   where
     C: Component,
   {
@@ -77,6 +77,29 @@ impl Editor {
       }
     }
 
+    let render_game_camera = move |mut gizmos: Gizmos, q_cam: Query<&Transform, With<C>>| {
+      const COLOR: Srgba = tailwind::GREEN_700;
+      for transform in &q_cam {
+        gizmos.cuboid(transform.clone(), COLOR);
+
+        gizmos.sphere(
+          Isometry3d::new(
+            transform.translation + transform.up().as_vec3() * 0.5,
+            transform.rotation,
+          ),
+          0.3,
+          COLOR,
+        );
+
+        let forward = transform.forward().as_vec3();
+        gizmos.arrow(
+          transform.translation + forward * 0.5,
+          transform.translation + forward,
+          COLOR,
+        );
+      }
+    };
+
     self
       .app
       .add_systems(PostStartup, swap_cameras::<ActiveEditorCamera, C>)
@@ -87,6 +110,10 @@ impl Editor {
       .add_systems(
         OnEnter(EditorState::Editing),
         swap_cameras::<ActiveEditorCamera, C>,
+      )
+      .add_systems(
+        Update,
+        render_game_camera.run_if(in_state(EditorState::Editing)),
       );
 
     self
@@ -177,9 +204,10 @@ impl Plugin for EditorPlugin {
       .insert_state(EditorState::Editing)
       .insert_resource(cache)
       .insert_resource(log_info)
-      .add_systems(Startup, Self::initialize_types)
+      .add_systems(Startup, (Self::startup, Self::initialize_types))
       .add_systems(PostStartup, Self::post_startup)
       .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
+      .add_systems(OnExit(EditorState::Editing), Self::on_exit)
       .add_systems(
         Update,
         (
@@ -211,9 +239,22 @@ impl Plugin for EditorPlugin {
 }
 
 impl EditorPlugin {
+  fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
+    picking_settings.require_markers = true;
+  }
+
   fn post_startup(mut q_windows: Query<&mut Window>) {
     for mut window in &mut q_windows {
       window.visible = true;
+    }
+  }
+
+  fn on_exit(
+    mut commands: Commands,
+    q_targets: Query<Entity, (With<RayCastPickable>, Without<Camera>)>,
+  ) {
+    for target in q_targets.iter() {
+      commands.entity(target).remove::<RayCastPickable>();
     }
   }
 
@@ -238,14 +279,14 @@ impl EditorPlugin {
     q_entities: Query<
       Entity,
       (
-        Without<Observed>,
+        Without<RayCastPickable>,
         Or<(With<Sprite>, With<Mesh2d>, With<Mesh3d>)>,
       ),
     >,
   ) {
     for entity in &q_entities {
       debug!("Added observation to target {}", entity);
-      commands.entity(entity).insert(Observed).observe(
+      commands.entity(entity).insert(RayCastPickable).observe(
         |event: Trigger<Pointer<Click>>,
          mut ui_state: ResMut<ui::State>,
          mut q_egui: Query<&mut EguiContext>| {
@@ -292,9 +333,6 @@ impl EditorPlugin {
     }
   }
 }
-
-#[derive(Component)]
-struct Observed;
 
 #[derive(Default, Clone, Resource, Serialize, Deserialize)]
 struct LogInfo {

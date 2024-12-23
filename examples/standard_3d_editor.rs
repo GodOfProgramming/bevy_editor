@@ -9,7 +9,7 @@ fn main() {
   let mut editor = Editor::new(app);
 
   editor
-    .swap_to_camera::<GameCamera>()
+    .add_game_camera::<GameCamera>()
     .register_static_prefab::<Cube>();
 
   editor.run();

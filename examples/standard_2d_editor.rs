@@ -7,7 +7,7 @@ fn main() {
 
   let mut editor = Editor::new(app);
 
-  editor.swap_to_camera::<GameCamera>();
+  editor.add_game_camera::<GameCamera>();
 
   editor.run();
 }

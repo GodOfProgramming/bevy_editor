@@ -6,9 +6,6 @@ use leafwing_input_manager::{
   Actionlike, InputManagerBundle,
 };
 
-#[derive(Component)]
-pub struct EditorInput;
-
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
 pub enum EditorActions {
   Play,
@@ -38,7 +35,6 @@ impl InputPlugin {
 
     commands.spawn((
       Name::new("Editor Input"),
-      EditorInput,
       InputManagerBundle::with_map(inputs),
     ));
   }

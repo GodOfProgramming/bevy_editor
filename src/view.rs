@@ -35,6 +35,7 @@ impl Plugin for ViewPlugin {
 pub struct ActiveEditorCamera;
 
 #[derive(Component, Default)]
+#[require(RayCastPickable)]
 pub struct EditorCamera;
 
 impl EditorCamera {

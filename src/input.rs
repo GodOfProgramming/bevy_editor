@@ -16,10 +16,10 @@ pub enum EditorActions {
   OrbitCamera,
   #[actionlike(Axis)]
   Zoom,
-  MoveForward,
-  MoveBack,
-  MoveLeft,
-  MoveRight,
+  MoveNorth,
+  MoveSouth,
+  MoveWest,
+  MoveEast,
 }
 
 pub struct InputPlugin;
@@ -31,10 +31,10 @@ impl InputPlugin {
       .with(EditorActions::OrbitCamera, MouseButton::Right)
       .with(EditorActions::PanCamera, MouseButton::Middle)
       .with_axis(EditorActions::Zoom, MouseScrollAxis::Y)
-      .with(EditorActions::MoveForward, KeyCode::KeyW)
-      .with(EditorActions::MoveBack, KeyCode::KeyS)
-      .with(EditorActions::MoveLeft, KeyCode::KeyA)
-      .with(EditorActions::MoveRight, KeyCode::KeyD);
+      .with(EditorActions::MoveNorth, KeyCode::KeyW)
+      .with(EditorActions::MoveSouth, KeyCode::KeyS)
+      .with(EditorActions::MoveWest, KeyCode::KeyA)
+      .with(EditorActions::MoveEast, KeyCode::KeyD);
 
     commands.spawn((
       Name::new("Editor Input"),

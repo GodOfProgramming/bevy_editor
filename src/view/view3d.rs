@@ -10,6 +10,8 @@ use leafwing_input_manager::prelude::ActionState;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::{FRAC_PI_2, TAU};
 
+use super::{ActiveEditorCamera, EditorCamera, ViewState};
+
 const UP: Vec3 = Vec3::Y;
 
 pub struct View3dPlugin;
@@ -20,29 +22,29 @@ impl Plugin for View3dPlugin {
       .register_type::<CameraState>()
       .register_type::<CameraSettings>()
       .add_systems(Startup, Self::spawn_camera)
+      .add_systems(OnEnter(ViewState::Camera3D), EditorCamera3d::on_enter)
       .add_systems(
         Update,
         (
           (
-            (
-              EditorCamera::movement_system,
-              EditorCamera::orbit_self_system,
-              EditorCamera::zoom_system,
-              EditorCamera::pan_system,
-            ),
-            EditorCamera::look,
-          )
-            .chain()
-            .run_if(in_state(EditorState::Editing)),
-          EditorCamera::on_app_exit,
-        ),
+            EditorCamera3d::movement_system,
+            EditorCamera3d::orbit_self_system,
+            EditorCamera3d::zoom_system,
+            EditorCamera3d::pan_system,
+          ),
+          EditorCamera3d::look,
+        )
+          .chain()
+          .run_if(in_state(EditorState::Editing)),
       )
-      .add_systems(PostUpdate, EditorCamera::set_viewport);
+      .add_systems(PostUpdate, EditorCamera3d::set_viewport);
   }
 }
 
 impl View3dPlugin {
   fn spawn_camera(mut commands: Commands, cache: Res<Cache>) {
+    info!("Spawning 3d camera");
+
     let CameraSaveData {
       state,
       settings,
@@ -51,7 +53,7 @@ impl View3dPlugin {
 
     commands.spawn((
       Name::new("Editor Camera"),
-      EditorCamera,
+      EditorCamera3d,
       state,
       settings,
       transform,
@@ -67,7 +69,7 @@ struct CameraSaveData {
 }
 
 impl Saveable for CameraSaveData {
-  const KEY: &str = "camera";
+  const KEY: &str = "camera3d";
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone)]
@@ -96,8 +98,8 @@ pub struct CameraSettings {
 }
 
 #[derive(Component, Default)]
-#[require(Camera3d, CameraState, CameraSettings, RayCastPickable)]
-pub struct EditorCamera;
+#[require(EditorCamera, Camera3d, CameraState, CameraSettings)]
+pub struct EditorCamera3d;
 
 impl Default for CameraSettings {
   fn default() -> Self {
@@ -110,10 +112,28 @@ impl Default for CameraSettings {
   }
 }
 
-impl EditorCamera {
+impl EditorCamera3d {
+  fn on_enter(
+    mut commands: Commands,
+    mut q_3d_cams: Query<(Entity, &mut Camera), With<EditorCamera3d>>,
+    mut q_other_cams: Query<(Entity, &mut Camera), Without<EditorCamera3d>>,
+  ) {
+    info!("Switched to 3d camera");
+
+    for (entity, mut cam) in &mut q_3d_cams {
+      commands.entity(entity).insert(ActiveEditorCamera);
+      cam.is_active = true;
+    }
+
+    for (entity, mut cam) in &mut q_other_cams {
+      commands.entity(entity).remove::<ActiveEditorCamera>();
+      cam.is_active = false;
+    }
+  }
+
   fn movement_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraState, &CameraSettings, &mut Transform), With<EditorCamera>>,
+    mut q_cam: Query<(&CameraState, &CameraSettings, &mut Transform), With<EditorCamera3d>>,
     time: Res<Time>,
   ) {
     for action_state in &q_action_states {
@@ -121,19 +141,19 @@ impl EditorCamera {
 
       let mut movement = Vec3::ZERO;
 
-      if action_state.pressed(&EditorActions::MoveForward) {
+      if action_state.pressed(&EditorActions::MoveNorth) {
         movement += cam_state.face;
       }
 
-      if action_state.pressed(&EditorActions::MoveBack) {
+      if action_state.pressed(&EditorActions::MoveSouth) {
         movement -= cam_state.face;
       }
 
-      if action_state.pressed(&EditorActions::MoveLeft) {
+      if action_state.pressed(&EditorActions::MoveWest) {
         movement -= cam_state.face.cross(UP);
       }
 
-      if action_state.pressed(&EditorActions::MoveRight) {
+      if action_state.pressed(&EditorActions::MoveEast) {
         movement += cam_state.face.cross(UP);
       }
 
@@ -148,7 +168,7 @@ impl EditorCamera {
 
   fn orbit_self_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut CameraState), With<EditorCamera>>,
+    mut q_cam: Query<(&CameraSettings, &mut CameraState), With<EditorCamera3d>>,
     mut mouse_motion: EventReader<MouseMotion>,
     time: Res<Time>,
   ) {
@@ -194,7 +214,7 @@ impl EditorCamera {
 
   fn pan_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera>>,
+    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera3d>>,
     mut mouse_motion: EventReader<MouseMotion>,
     time: Res<Time>,
   ) {
@@ -224,7 +244,7 @@ impl EditorCamera {
 
   fn zoom_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Projection), With<EditorCamera>>,
+    mut q_cam: Query<(&CameraSettings, &mut Projection), With<EditorCamera3d>>,
     time: Res<Time>,
   ) {
     let Ok((cam_settings, mut projection)) = q_cam.get_single_mut() else {
@@ -246,7 +266,7 @@ impl EditorCamera {
     }
   }
 
-  fn look(mut q_cam: Query<(&mut Transform, &CameraState), With<EditorCamera>>) {
+  fn look(mut q_cam: Query<(&mut Transform, &CameraState), With<EditorCamera3d>>) {
     let (mut cam_transform, cam_state) = q_cam.single_mut();
     let cam_target = cam_transform.translation + cam_state.face;
     cam_transform.look_at(cam_target, UP);
@@ -256,7 +276,7 @@ impl EditorCamera {
   fn set_viewport(
     primary_window: Query<&mut Window, With<PrimaryWindow>>,
     q_egui_settings: Query<&bevy_egui::EguiSettings>,
-    mut cameras: Query<&mut Camera, With<EditorCamera>>,
+    mut cameras: Query<&mut Camera, With<EditorCamera3d>>,
     ui_state: Res<ui::State>,
   ) {
     let Ok(mut cam) = cameras.get_single_mut() else {
@@ -298,7 +318,7 @@ impl EditorCamera {
   pub fn on_app_exit(
     app_exit: EventReader<AppExit>,
     mut cache: ResMut<Cache>,
-    q_cam: Query<(&Transform, &CameraState, &CameraSettings), With<EditorCamera>>,
+    q_cam: Query<(&Transform, &CameraState, &CameraSettings), With<EditorCamera3d>>,
   ) {
     if !app_exit.is_empty() {
       for (cam_transform, cam_state, cam_settings) in &q_cam {

@@ -3,10 +3,9 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use bevy::{
   prelude::*,
   reflect::GetTypeRegistration,
+  state::state::FreelyMutableState,
   window::{CursorGrabMode, PrimaryWindow},
 };
-
-use crate::EditorState;
 
 #[macro_export]
 macro_rules! here {
@@ -98,8 +97,14 @@ where
 
 pub trait WorldExtensions {
   fn primary_window_mut(&mut self) -> Mut<Window>;
-  fn editor_state(&mut self) -> EditorState;
-  fn set_editor_state(&mut self, state: EditorState);
+
+  fn get_state<T>(&mut self) -> T
+  where
+    T: FreelyMutableState + Copy;
+
+  fn set_state<T>(&mut self, state: T)
+  where
+    T: FreelyMutableState + Copy;
 }
 
 impl WorldExtensions for World {
@@ -108,11 +113,17 @@ impl WorldExtensions for World {
     q_window.single_mut(self)
   }
 
-  fn editor_state(&mut self) -> EditorState {
-    **self.resource::<State<EditorState>>()
+  fn get_state<T>(&mut self) -> T
+  where
+    T: FreelyMutableState + Copy,
+  {
+    **self.resource::<State<T>>()
   }
 
-  fn set_editor_state(&mut self, state: EditorState) {
-    self.resource_mut::<NextState<EditorState>>().set(state);
+  fn set_state<T>(&mut self, state: T)
+  where
+    T: FreelyMutableState + Copy,
+  {
+    self.resource_mut::<NextState<T>>().set(state);
   }
 }

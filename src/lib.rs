@@ -11,7 +11,7 @@ use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
-use bevy::window::{WindowCloseRequested, WindowMode};
+use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::Cache;
@@ -22,7 +22,7 @@ use ui::UiPlugin;
 pub use bevy;
 pub use serde;
 pub use util::*;
-use view::{EditorCamera, View3dPlugin};
+use view::{ActiveEditorCamera, EditorCamera, EditorCamera3d, ViewPlugin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -76,14 +76,14 @@ impl Editor {
 
     self
       .app
-      .add_systems(PostStartup, swap_cameras::<EditorCamera, C>)
+      .add_systems(PostStartup, swap_cameras::<ActiveEditorCamera, C>)
       .add_systems(
         OnEnter(EditorState::Testing),
-        swap_cameras::<C, EditorCamera>,
+        swap_cameras::<C, ActiveEditorCamera>,
       )
       .add_systems(
         OnEnter(EditorState::Editing),
-        swap_cameras::<EditorCamera, C>,
+        swap_cameras::<ActiveEditorCamera, C>,
       );
 
     self
@@ -139,9 +139,14 @@ impl Plugin for EditorPlugin {
   fn build(&self, app: &mut App) {
     let mut window = Window::default();
 
-    window.title = String::from("3D Editor");
+    window.title = String::from("Bevy Editor");
     window.mode = WindowMode::Windowed;
     window.visible = false;
+    window.enabled_buttons = EnabledButtons {
+      close: true,
+      maximize: true,
+      minimize: false, // minimize causes a crash
+    };
 
     app
       .add_plugins((
@@ -150,7 +155,7 @@ impl Plugin for EditorPlugin {
           close_when_requested: false,
           ..default()
         }),
-        View3dPlugin,
+        ViewPlugin,
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
         UiPlugin,
@@ -182,7 +187,7 @@ impl Plugin for EditorPlugin {
             .chain(),
           (
             Self::on_close_requested,
-            EditorCamera::on_app_exit,
+            (EditorCamera::on_app_exit, EditorCamera3d::on_app_exit),
             Self::on_app_exit,
           )
             .chain(),

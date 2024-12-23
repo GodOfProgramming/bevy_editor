@@ -1,4 +1,5 @@
 use crate::assets::Prefabs;
+use crate::view::ViewState;
 use crate::WorldExtensions;
 use bevy::prelude::*;
 use bevy::{
@@ -124,15 +125,29 @@ struct TabViewer<'a> {
 impl TabViewer<'_> {
   fn control_panel_ui(&mut self, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
-      match self.world.editor_state() {
+      match self.world.get_state() {
         crate::EditorState::Editing => {
           if ui.button("▶").clicked() {
-            self.world.set_editor_state(crate::EditorState::Testing);
+            self.world.set_state(crate::EditorState::Testing);
+          }
+
+          match self.world.get_state() {
+            ViewState::Camera2D => {
+              if ui.button("3D").clicked() {
+                self.world.set_state(ViewState::Camera3D);
+              }
+            }
+            ViewState::Camera3D => {
+              if ui.button("2D").clicked() {
+                self.world.set_state(ViewState::Camera2D);
+              }
+            }
+            ViewState::None => unreachable!(),
           }
         }
         crate::EditorState::Testing => {
           if ui.button("⏸").clicked() {
-            self.world.set_editor_state(crate::EditorState::Editing);
+            self.world.set_state(crate::EditorState::Editing);
           }
         }
       };

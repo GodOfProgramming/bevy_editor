@@ -28,6 +28,10 @@ impl Plugin for ViewPlugin {
       .add_plugins((View2dPlugin, View3dPlugin))
       .insert_state(ViewState::None)
       .add_systems(PostStartup, Self::startup)
+      .add_systems(
+        Update,
+        EditorCamera::disable_cameras.run_if(in_state(ViewState::None)),
+      )
       .add_systems(PostUpdate, EditorCamera::set_viewport);
   }
 }
@@ -40,6 +44,12 @@ pub struct ActiveEditorCamera;
 pub struct EditorCamera;
 
 impl EditorCamera {
+  fn disable_cameras(mut q_cams: Query<&mut Camera>) {
+    for mut cam in &mut q_cams {
+      cam.is_active = false;
+    }
+  }
+
   pub fn on_app_exit(
     app_exit: EventReader<AppExit>,
     mut cache: ResMut<Cache>,

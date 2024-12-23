@@ -269,6 +269,7 @@ impl Plugin for EditorPlugin {
               scenes::check_for_saves,
               scenes::check_for_loads,
               Self::auto_register_targets,
+              Self::handle_pick_events,
               Self::draw_mesh_intersections,
             )
               .run_if(in_state(EditorState::Editing)),
@@ -343,31 +344,37 @@ impl EditorPlugin {
     >,
   ) {
     for entity in &q_entities {
-      debug!("Added observation to target {}", entity);
+      debug!("Registered Picking: {}", entity);
       commands
         .entity(entity)
         .insert(RayCastPickable)
         .insert(PickingBehavior {
           is_hoverable: true,
-          should_block_lower: false,
-        })
-        .observe(
-          |event: Trigger<Pointer<Click>>,
-           mut ui_state: ResMut<ui::State>,
-           mut q_egui: Query<&mut EguiContext>| {
-            if event.button == PointerButton::Primary {
-              debug!("Clicked on: {}", event.target);
+          should_block_lower: true,
+        });
+    }
+  }
 
-              let mut egui = q_egui.single_mut();
-              let egui_context = egui.get_mut();
+  fn handle_pick_events(
+    mut ui_state: ResMut<ui::State>,
+    mut click_events: EventReader<Pointer<Click>>,
+    mut q_egui: Query<&mut EguiContext>,
+    q_raycast_pickables: Query<&RayCastPickable>,
+  ) {
+    let mut egui = q_egui.single_mut();
+    let egui_context = egui.get_mut();
 
-              let target = event.target;
-              let modifiers = egui_context.input(|i| i.modifiers);
+    for click in click_events
+      .read()
+      .filter(|evt| evt.button == PointerButton::Primary)
+    {
+      let target = click.target;
 
-              ui_state.add_selected(target, modifiers.ctrl);
-            }
-          },
-        );
+      let modifiers = egui_context.input(|i| i.modifiers);
+
+      if q_raycast_pickables.get(target).is_ok() {
+        ui_state.add_selected(target, modifiers.ctrl);
+      }
     }
   }
 

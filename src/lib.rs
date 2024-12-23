@@ -7,6 +7,7 @@ mod util;
 mod view;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
+pub use bevy;
 use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
 use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
 use bevy::picking::pointer::PointerInteraction;
@@ -19,11 +20,10 @@ use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::{Cache, Saveable};
 use input::InputPlugin;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
-use serde::{Deserialize, Serialize};
-use ui::UiPlugin;
-
-pub use bevy;
 pub use serde;
+use serde::{Deserialize, Serialize};
+use std::ops::{Deref, DerefMut};
+use ui::UiPlugin;
 pub use util::*;
 use view::{
   ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
@@ -42,7 +42,9 @@ pub struct Editor {
 }
 
 impl Editor {
-  pub fn new(app: App) -> Self {
+  pub fn new(mut app: App) -> Self {
+    app.add_plugins(EditorPlugin);
+
     Self {
       app,
       scene_type_registry: default(),
@@ -177,7 +179,7 @@ impl Editor {
     self
   }
 
-  pub fn run(self) -> AppExit {
+  pub fn launch(self) -> AppExit {
     let Self {
       mut app,
       scene_type_registry,
@@ -185,7 +187,6 @@ impl Editor {
     } = self;
 
     app
-      .add_plugins(EditorPlugin)
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar)
       .run()
@@ -197,6 +198,19 @@ impl Editor {
   {
     self.scene_type_registry.write().register::<T>();
     self.app.register_type::<T>();
+  }
+}
+
+impl Deref for Editor {
+  type Target = App;
+  fn deref(&self) -> &Self::Target {
+    &self.app
+  }
+}
+
+impl DerefMut for Editor {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.app
   }
 }
 

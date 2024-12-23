@@ -2,17 +2,14 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_editor::{assets::StaticPrefab, Editor};
 
 fn main() {
-  let mut app = App::new();
-
-  app.add_systems(Startup, startup);
-
-  let mut editor = Editor::new(app);
+  let mut editor = Editor::new(App::new());
 
   editor
     .add_game_camera::<GameCamera>()
-    .register_static_prefab::<Cube>();
+    .register_static_prefab::<Cube>()
+    .add_systems(Startup, startup);
 
-  editor.run();
+  editor.launch();
 }
 
 #[derive(Component)]

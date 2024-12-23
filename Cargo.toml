@@ -13,7 +13,7 @@ const_format = "0.2"
 egui-file-dialog = "0.7"
 egui_dock = "0.14"
 leafwing-input-manager = "0.16"
+platform-dirs = "0.3"
 ron = "0.8"
-rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "2.0"

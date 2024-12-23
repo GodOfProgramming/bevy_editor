@@ -1,22 +1,10 @@
-use bevy::{ecs::system::SystemParam, prelude::*, window::WindowMode};
+use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_editor::{assets::StaticPrefab, Editor};
 
 fn main() {
   let mut app = App::new();
 
-  let mut window = Window::default();
-  window.title = String::from("3D Editor");
-  window.mode = WindowMode::Windowed;
-  window.visible = false;
-  window.set_maximized(true);
-
-  app
-    .add_plugins(DefaultPlugins.set(WindowPlugin {
-      primary_window: Some(window),
-      ..default()
-    }))
-    .add_systems(Startup, startup)
-    .add_systems(PostStartup, post_startup);
+  app.add_systems(Startup, startup);
 
   let mut editor = Editor::new(app);
 
@@ -61,12 +49,6 @@ fn startup(
     Camera3d::default(),
     Transform::from_xyz(-2.5, 4.5, 9.0).looking_at(Vec3::ZERO, Vec3::Y),
   ));
-}
-
-fn post_startup(mut q_windows: Query<&mut Window>) {
-  for mut window in &mut q_windows {
-    window.visible = true;
-  }
 }
 
 #[derive(Reflect)]

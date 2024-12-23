@@ -1,6 +1,10 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use bevy::{prelude::*, reflect::GetTypeRegistration, window::CursorGrabMode};
+use bevy::{
+  prelude::*,
+  reflect::GetTypeRegistration,
+  window::{CursorGrabMode, PrimaryWindow},
+};
 
 #[macro_export]
 macro_rules! here {
@@ -87,5 +91,16 @@ where
 {
   fn default() -> Self {
     Self::new(T::default())
+  }
+}
+
+pub trait WorldExtensions {
+  fn primary_window_mut(&mut self) -> Mut<Window>;
+}
+
+impl WorldExtensions for World {
+  fn primary_window_mut(&mut self) -> Mut<Window> {
+    let mut q_window = self.query_filtered::<&mut Window, With<PrimaryWindow>>();
+    q_window.single_mut(self)
   }
 }

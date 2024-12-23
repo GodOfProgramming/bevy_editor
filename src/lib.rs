@@ -1,4 +1,5 @@
 pub mod assets;
+mod cache;
 mod input;
 mod scenes;
 mod ui;
@@ -10,8 +11,10 @@ use bevy::color::palettes::tailwind::{PINK_100, RED_500};
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
+use bevy::window::{WindowCloseRequested, WindowMode};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+use cache::Cache;
 use input::InputPlugin;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use ui::UiPlugin;
@@ -115,6 +118,7 @@ impl Editor {
 
     app
       .add_plugins(EditorPlugin)
+      .insert_resource(Cache::load_or_default())
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar)
       .run()
@@ -133,8 +137,19 @@ struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
   fn build(&self, app: &mut App) {
+    let mut window = Window::default();
+
+    window.title = String::from("3D Editor");
+    window.mode = WindowMode::Windowed;
+    window.visible = false;
+
     app
       .add_plugins((
+        DefaultPlugins.set(WindowPlugin {
+          primary_window: Some(window),
+          close_when_requested: false,
+          ..default()
+        }),
         View3dPlugin,
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
@@ -145,24 +160,33 @@ impl Plugin for EditorPlugin {
       .add_event::<LoadEvent>()
       .insert_state(EditorState::Editing)
       .add_systems(Startup, (Self::startup, Self::initialize_types))
+      .add_systems(PostStartup, Self::post_startup)
       .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
       .add_systems(OnExit(EditorState::Editing), Self::on_exit)
       .add_systems(
         Update,
         (
-          input::global_input_actions,
           (
-            input::handle_input,
-            scenes::check_for_saves,
-            scenes::check_for_loads,
-            Self::auto_register_targets,
-            Self::handle_pick_events,
-            Self::draw_mesh_intersections,
+            input::global_input_actions,
+            (
+              input::handle_input,
+              scenes::check_for_saves,
+              scenes::check_for_loads,
+              Self::auto_register_targets,
+              Self::handle_pick_events,
+              Self::draw_mesh_intersections,
+            )
+              .run_if(in_state(EditorState::Editing)),
+            ui::render,
           )
-            .run_if(in_state(EditorState::Editing)),
-          ui::render,
-        )
-          .chain(),
+            .chain(),
+          (
+            Self::on_close_requested,
+            EditorCamera::on_app_exit,
+            Self::on_app_exit,
+          )
+            .chain(),
+        ),
       );
   }
 }
@@ -170,6 +194,12 @@ impl Plugin for EditorPlugin {
 impl EditorPlugin {
   fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
     picking_settings.require_markers = true;
+  }
+
+  fn post_startup(mut q_windows: Query<&mut Window>) {
+    for mut window in &mut q_windows {
+      window.visible = true;
+    }
   }
 
   fn initialize_types(world: &mut World) {
@@ -238,6 +268,21 @@ impl EditorPlugin {
     {
       gizmos.sphere(point, 0.05, RED_500);
       gizmos.arrow(point, point + normal.normalize() * 0.5, PINK_100);
+    }
+  }
+
+  fn on_close_requested(
+    close_requests: EventReader<WindowCloseRequested>,
+    mut app_exit: EventWriter<AppExit>,
+  ) {
+    if !close_requests.is_empty() {
+      app_exit.send(AppExit::Success);
+    }
+  }
+
+  fn on_app_exit(app_exit: EventReader<AppExit>, cache: Res<Cache>) {
+    if !app_exit.is_empty() {
+      cache.save();
     }
   }
 }

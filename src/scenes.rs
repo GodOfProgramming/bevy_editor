@@ -8,7 +8,7 @@ use std::{
 pub struct SaveEvent(PathBuf);
 
 impl SaveEvent {
-  pub fn new(path: PathBuf) -> Self {
+  pub fn _new(path: PathBuf) -> Self {
     Self(path)
   }
 
@@ -117,7 +117,7 @@ impl SaveEvent {
 pub struct LoadEvent(PathBuf);
 
 impl LoadEvent {
-  pub fn new(path: PathBuf) -> Self {
+  pub fn _new(path: PathBuf) -> Self {
     Self(path)
   }
 

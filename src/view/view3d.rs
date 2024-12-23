@@ -1,8 +1,13 @@
-use crate::{input::EditorActions, ui, EditorState};
+use crate::{
+  cache::{Cache, Saveable},
+  input::EditorActions,
+  ui, EditorState,
+};
 use bevy::{
   input::mouse::MouseMotion, prelude::*, render::camera::Viewport, window::PrimaryWindow,
 };
 use leafwing_input_manager::prelude::ActionState;
+use serde::{Deserialize, Serialize};
 use std::f32::consts::{FRAC_PI_2, TAU};
 
 const UP: Vec3 = Vec3::Y;
@@ -19,27 +24,53 @@ impl Plugin for View3dPlugin {
         Update,
         (
           (
-            EditorCamera::movement_system,
-            EditorCamera::orbit_self_system,
-            EditorCamera::zoom_system,
-            EditorCamera::pan_system,
-          ),
-          EditorCamera::free_fly,
-        )
-          .chain()
-          .run_if(in_state(EditorState::Editing)),
+            (
+              EditorCamera::movement_system,
+              EditorCamera::orbit_self_system,
+              EditorCamera::zoom_system,
+              EditorCamera::pan_system,
+            ),
+            EditorCamera::look,
+          )
+            .chain()
+            .run_if(in_state(EditorState::Editing)),
+          EditorCamera::on_app_exit,
+        ),
       )
       .add_systems(PostUpdate, EditorCamera::set_viewport);
   }
 }
 
 impl View3dPlugin {
-  fn spawn_camera(mut commands: Commands) {
-    commands.spawn((Name::new("Editor Camera"), EditorCamera));
+  fn spawn_camera(mut commands: Commands, cache: Res<Cache>) {
+    let CameraSaveData {
+      state,
+      settings,
+      transform,
+    } = cache.get().unwrap_or_default();
+
+    commands.spawn((
+      Name::new("Editor Camera"),
+      EditorCamera,
+      state,
+      settings,
+      transform,
+    ));
   }
 }
 
-#[derive(Component, Reflect)]
+#[derive(Default, Serialize, Deserialize)]
+struct CameraSaveData {
+  state: CameraState,
+  settings: CameraSettings,
+  transform: Transform,
+}
+
+impl Saveable for CameraSaveData {
+  const KEY: &str = "camera";
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
 pub struct CameraState {
   face: Vec3,
   pitch: f32,
@@ -56,7 +87,7 @@ impl Default for CameraState {
   }
 }
 
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
 pub struct CameraSettings {
   move_speed: f32,
   orbit_sensitivity: f32,
@@ -215,7 +246,7 @@ impl EditorCamera {
     }
   }
 
-  fn free_fly(mut q_cam: Query<(&mut Transform, &CameraState), With<EditorCamera>>) {
+  fn look(mut q_cam: Query<(&mut Transform, &CameraState), With<EditorCamera>>) {
     let (mut cam_transform, cam_state) = q_cam.single_mut();
     let cam_target = cam_transform.translation + cam_state.face;
     cam_transform.look_at(cam_target, UP);
@@ -261,6 +292,22 @@ impl EditorCamera {
         physical_size,
         depth: 0.0..1.0,
       });
+    }
+  }
+
+  pub fn on_app_exit(
+    app_exit: EventReader<AppExit>,
+    mut cache: ResMut<Cache>,
+    q_cam: Query<(&Transform, &CameraState, &CameraSettings), With<EditorCamera>>,
+  ) {
+    if !app_exit.is_empty() {
+      for (cam_transform, cam_state, cam_settings) in &q_cam {
+        cache.store(CameraSaveData {
+          state: cam_state.clone(),
+          settings: cam_settings.clone(),
+          transform: cam_transform.clone(),
+        });
+      }
     }
   }
 }

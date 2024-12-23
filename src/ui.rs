@@ -1,5 +1,5 @@
 use crate::assets::Prefabs;
-use crate::scenes::{LoadEvent, SaveEvent};
+use crate::WorldExtensions;
 use bevy::prelude::*;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
@@ -13,7 +13,6 @@ use bevy_inspector_egui::bevy_inspector::{
 };
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
-use std::path::PathBuf;
 
 pub fn render(world: &mut World) {
   world.resource_scope(|world, mut ui_state: Mut<State>| {
@@ -32,10 +31,7 @@ pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
-    app
-      .add_plugins(EguiPlugin)
-      .insert_resource(State::new())
-      .insert_resource(FileDialog::new());
+    app.add_plugins(EguiPlugin).insert_resource(State::new());
   }
 }
 
@@ -45,7 +41,6 @@ pub(crate) struct State {
   selected_entities: SelectedEntities,
   dock_state: DockState<Tabs>,
   selection: InspectorSelection,
-  on_file_select: Option<fn(&mut World, PathBuf)>,
 }
 
 impl State {
@@ -55,7 +50,6 @@ impl State {
       selected_entities: SelectedEntities::default(),
       dock_state: Self::build_dock(),
       selection: InspectorSelection::Entities,
-      on_file_select: None,
     }
   }
 
@@ -79,7 +73,6 @@ impl State {
       viewport_rect: &mut self.viewport_rect,
       selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
-      on_file_select: &mut self.on_file_select,
     };
 
     DockArea::new(&mut self.dock_state)
@@ -135,35 +128,30 @@ struct TabViewer<'a> {
   selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
-  on_file_select: &'a mut Option<fn(&mut World, PathBuf)>,
 }
 
 impl TabViewer<'_> {
-  fn menu_bar_ui(&mut self, ui: &mut egui::Ui) {
-    self.world.resource_scope(|world, mut fd: Mut<FileDialog>| {
-      ui.horizontal(|ui| {
-        ui.menu_button("File", |ui| {
-          if ui.button("Save").clicked() {
-            fd.access_mut(|dlg| dlg.save_file());
-            *self.on_file_select = Some(Self::on_save);
-          }
-
-          if ui.button("Open Map").clicked() {
-            fd.access_mut(|dlg| dlg.select_file());
-            *self.on_file_select = Some(Self::on_load);
-          }
-        });
-      });
-
-      fd.access_mut(|dlg| {
-        dlg.update(ui.ctx());
-        if let Some(path) = dlg.take_selected() {
-          if let Some(on_file_select) = self.on_file_select.take() {
-            (on_file_select)(world, path);
-          }
+  fn menu_bar_ui(&mut self, #[allow(unused_variables)] ui: &mut egui::Ui) {
+    return;
+    #[allow(unreachable_code)]
+    {
+      ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+        if ui.button("X").clicked() {
+          self.world.send_event(AppExit::Success);
+          self.world.trigger(AppExit::Success);
         }
-      })
-    });
+
+        if ui.button("🗖").clicked() {
+          let mut window = self.world.primary_window_mut();
+          window.set_maximized(true);
+        }
+
+        if ui.button("_").clicked() {
+          let mut window = self.world.primary_window_mut();
+          window.set_maximized(false);
+        }
+      });
+    }
   }
 
   fn prefab_ui(&mut self, ui: &mut egui::Ui) {
@@ -246,14 +234,6 @@ impl TabViewer<'_> {
       });
     }
   }
-
-  fn on_save(world: &mut World, path: PathBuf) {
-    world.send_event(SaveEvent::new(path));
-  }
-
-  fn on_load(world: &mut World, path: PathBuf) {
-    world.send_event(LoadEvent::new(path));
-  }
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
@@ -307,22 +287,5 @@ impl egui_dock::TabViewer for TabViewer<'_> {
         }
       },
     }
-  }
-}
-
-#[derive(Resource)]
-struct FileDialog {
-  dialog: egui::mutex::Mutex<egui_file_dialog::FileDialog>,
-}
-
-impl FileDialog {
-  fn new() -> Self {
-    Self {
-      dialog: egui::mutex::Mutex::new(egui_file_dialog::FileDialog::new()),
-    }
-  }
-
-  fn access_mut(&mut self, f: impl FnOnce(&mut egui_file_dialog::FileDialog)) {
-    f(&mut self.dialog.lock());
   }
 }

@@ -235,21 +235,16 @@ impl EditorPlugin {
 
   fn auto_register_targets(
     mut commands: Commands,
-    q_2d_objects: Query<Entity, (Without<Observed>, With<Mesh2d>)>,
-    q_3d_objects: Query<Entity, (Without<Observed>, With<Mesh3d>)>,
+    q_entities: Query<
+      Entity,
+      (
+        Without<Observed>,
+        Or<(With<Sprite>, With<Mesh2d>, With<Mesh3d>)>,
+      ),
+    >,
   ) {
-    for entity in &q_2d_objects {
-      debug!("Added raycast to 2d target {}", entity);
-      commands
-        .entity(entity)
-        .insert(Observed)
-        .observe(|ev: Trigger<Pointer<Click>>| {
-          debug!("Clicked on: {}", ev.target);
-        });
-    }
-
-    for entity in &q_3d_objects {
-      debug!("Added raycast to 3d target {}", entity);
+    for entity in &q_entities {
+      debug!("Added observation to target {}", entity);
       commands.entity(entity).insert(Observed).observe(
         |event: Trigger<Pointer<Click>>,
          mut ui_state: ResMut<ui::State>,

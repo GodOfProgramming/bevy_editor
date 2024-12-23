@@ -173,7 +173,9 @@ impl DerefMut for Prefabs {
 }
 
 pub trait StaticPrefab: GetTypeRegistration + Sized {
-  type Params<'pw, 'ps>: for<'w, 's> SystemParam<Item<'w, 's> = Self::Params<'w, 's>>;
+  type Params<'w, 's>: for<'world, 'system> SystemParam<
+    Item<'world, 'system> = Self::Params<'world, 'system>,
+  >;
 
   fn spawn(params: Self::Params<'_, '_>) -> impl Bundle;
 }

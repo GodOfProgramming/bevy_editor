@@ -1,65 +1,92 @@
-use crate::{hide_cursor, show_cursor, EditorSettings, EditorState, InternalState};
+use crate::{hide_cursor, show_cursor, EditorState};
 use bevy::prelude::*;
+use leafwing_input_manager::{
+  plugin::InputManagerPlugin,
+  prelude::{ActionState, Buttonlike, InputMap, MouseScrollAxis},
+  Actionlike, InputManagerBundle,
+};
 
-#[derive(Clone)]
-pub struct Hotkeys {
-  pub play: KeyCode,
+#[derive(Component)]
+pub struct EditorInput;
 
-  pub move_cam: KeyCode,
-
-  pub translate_gizmo: KeyCode,
-  pub rotate_gizmo: KeyCode,
-  pub scale_gizmo: KeyCode,
+#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
+pub enum EditorActions {
+  Play,
+  PanCamera,
+  OrbitCamera,
+  #[actionlike(Axis)]
+  Zoom,
+  MoveForward,
+  MoveBack,
+  MoveLeft,
+  MoveRight,
 }
 
-impl Default for Hotkeys {
-  fn default() -> Self {
-    Self {
-      play: KeyCode::Escape,
-      move_cam: KeyCode::ShiftLeft,
-      translate_gizmo: KeyCode::KeyT,
-      rotate_gizmo: KeyCode::KeyR,
-      scale_gizmo: KeyCode::KeyS,
-    }
+pub struct InputPlugin;
+
+impl InputPlugin {
+  fn init_input(mut commands: Commands) {
+    let inputs = InputMap::default()
+      .with(EditorActions::OrbitCamera, MouseButton::Right)
+      .with(EditorActions::PanCamera, MouseButton::Middle)
+      .with_axis(EditorActions::Zoom, MouseScrollAxis::Y)
+      .with(EditorActions::MoveForward, KeyCode::KeyW)
+      .with(EditorActions::MoveBack, KeyCode::KeyS)
+      .with(EditorActions::MoveLeft, KeyCode::KeyA)
+      .with(EditorActions::MoveRight, KeyCode::KeyD);
+
+    commands.spawn((
+      Name::new("Editor Input"),
+      EditorInput,
+      InputManagerBundle::with_map(inputs),
+    ));
   }
 }
 
-pub fn special_input(
-  settings: Res<EditorSettings>,
-  input: Res<ButtonInput<KeyCode>>,
+impl Plugin for InputPlugin {
+  fn build(&self, app: &mut App) {
+    app
+      .add_plugins(InputManagerPlugin::<EditorActions>::default())
+      .register_type::<Box<dyn Buttonlike>>()
+      .add_systems(Startup, Self::init_input);
+  }
+}
+
+pub fn global_input_actions(
+  q_action_states: Query<&ActionState<EditorActions>>,
   current_state: Res<State<EditorState>>,
   mut next_editor_state: ResMut<NextState<EditorState>>,
 ) {
-  if input.just_pressed(settings.hotkeys.play) {
-    if *current_state.get() == EditorState::Editing {
-      next_editor_state.set(EditorState::Testing);
-    } else {
-      next_editor_state.set(EditorState::Editing);
+  for action_state in &q_action_states {
+    if action_state.just_pressed(&EditorActions::Play) {
+      if *current_state.get() == EditorState::Editing {
+        next_editor_state.set(EditorState::Testing);
+      } else {
+        next_editor_state.set(EditorState::Editing);
+      }
     }
   }
 }
 
 pub fn handle_input(
-  settings: Res<EditorSettings>,
-  input: Res<ButtonInput<KeyCode>>,
+  q_action_states: Query<&ActionState<EditorActions>>,
   mut windows: Query<&mut Window>,
-  mut next_internal_state: ResMut<NextState<InternalState>>,
 ) {
-  if input.just_pressed(settings.hotkeys.move_cam) {
-    let Ok(mut window) = windows.get_single_mut() else {
-      return;
-    };
+  for action_state in &q_action_states {
+    if action_state.just_pressed(&EditorActions::OrbitCamera) {
+      let Ok(mut window) = windows.get_single_mut() else {
+        return;
+      };
 
-    hide_cursor(&mut window);
-    next_internal_state.set(InternalState::Inspecting);
-  }
+      hide_cursor(&mut window);
+    }
 
-  if input.just_released(settings.hotkeys.move_cam) {
-    let Ok(mut window) = windows.get_single_mut() else {
-      return;
-    };
+    if action_state.just_released(&EditorActions::OrbitCamera) {
+      let Ok(mut window) = windows.get_single_mut() else {
+        return;
+      };
 
-    show_cursor(&mut window);
-    next_internal_state.set(InternalState::Editing);
+      show_cursor(&mut window);
+    }
   }
 }

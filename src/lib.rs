@@ -12,11 +12,11 @@ use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
+use input::InputPlugin;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use ui::UiPlugin;
 
 pub use bevy;
-pub use input::Hotkeys;
 pub use serde;
 pub use util::*;
 use view::{EditorCamera, View3dPlugin};
@@ -27,15 +27,8 @@ pub enum EditorState {
   Testing,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
-enum InternalState {
-  Editing,
-  Inspecting,
-}
-
 pub struct Editor {
   app: App,
-  settings: EditorSettings,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
 }
@@ -44,7 +37,6 @@ impl Editor {
   pub fn new(app: App) -> Self {
     Self {
       app,
-      settings: default(),
       scene_type_registry: default(),
       prefab_registrar: default(),
     }
@@ -117,13 +109,12 @@ impl Editor {
   pub fn run(self) -> AppExit {
     let Self {
       mut app,
-      settings,
       scene_type_registry,
       prefab_registrar,
     } = self;
 
     app
-      .add_plugins(EditorPlugin::new(settings))
+      .add_plugins(EditorPlugin)
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar)
       .run()
@@ -138,14 +129,7 @@ impl Editor {
   }
 }
 
-#[derive(Resource, Default, Clone)]
-struct EditorSettings {
-  hotkeys: Hotkeys,
-}
-
-struct EditorPlugin {
-  config: EditorSettings,
-}
+struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
   fn build(&self, app: &mut App) {
@@ -155,19 +139,18 @@ impl Plugin for EditorPlugin {
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
         UiPlugin,
+        InputPlugin,
       ))
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
-      .insert_resource(self.config.clone())
       .insert_state(EditorState::Editing)
-      .insert_state(InternalState::Editing)
       .add_systems(Startup, (Self::startup, Self::initialize_types))
       .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
       .add_systems(OnExit(EditorState::Editing), Self::on_exit)
       .add_systems(
         Update,
         (
-          input::special_input,
+          input::global_input_actions,
           (
             input::handle_input,
             scenes::check_for_saves,
@@ -185,10 +168,6 @@ impl Plugin for EditorPlugin {
 }
 
 impl EditorPlugin {
-  fn new(config: EditorSettings) -> Self {
-    Self { config }
-  }
-
   fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
     picking_settings.require_markers = true;
   }
@@ -237,7 +216,10 @@ impl EditorPlugin {
     let mut egui = q_egui.single_mut();
     let egui_context = egui.get_mut();
 
-    for click in click_events.read() {
+    for click in click_events
+      .read()
+      .filter(|evt| evt.button == PointerButton::Primary)
+    {
       let target = click.target;
 
       let modifiers = egui_context.input(|i| i.modifiers);

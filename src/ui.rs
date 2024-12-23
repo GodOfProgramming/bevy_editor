@@ -139,7 +139,53 @@ struct TabViewer<'a> {
 }
 
 impl TabViewer<'_> {
-  fn select_resource(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
+  fn menu_bar_ui(&mut self, ui: &mut egui::Ui) {
+    self.world.resource_scope(|world, mut fd: Mut<FileDialog>| {
+      ui.horizontal(|ui| {
+        ui.menu_button("File", |ui| {
+          if ui.button("Save").clicked() {
+            fd.access_mut(|dlg| dlg.save_file());
+            *self.on_file_select = Some(Self::on_save);
+          }
+
+          if ui.button("Open Map").clicked() {
+            fd.access_mut(|dlg| dlg.select_file());
+            *self.on_file_select = Some(Self::on_load);
+          }
+        });
+      });
+
+      fd.access_mut(|dlg| {
+        dlg.update(ui.ctx());
+        if let Some(path) = dlg.take_selected() {
+          if let Some(on_file_select) = self.on_file_select.take() {
+            (on_file_select)(world, path);
+          }
+        }
+      })
+    });
+  }
+
+  fn prefab_ui(&mut self, ui: &mut egui::Ui) {
+    self
+      .world
+      .resource_scope(|world, mut prefabs: Mut<Prefabs>| {
+        let mut prefab_ids = prefabs.keys().cloned().collect::<Vec<_>>();
+
+        prefab_ids.sort();
+
+        for id in prefab_ids {
+          ui.horizontal(|ui| {
+            ui.label(&id);
+            if ui.button("Spawn").clicked() {
+              prefabs.spawn(id, world);
+            }
+          });
+        }
+      });
+  }
+
+  fn resource_ui(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
     let mut resources: Vec<_> = type_registry
       .iter()
       .filter(|registration| registration.data::<ReflectResource>().is_some())
@@ -164,7 +210,7 @@ impl TabViewer<'_> {
     }
   }
 
-  fn select_asset(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
+  fn asset_ui(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
     let mut assets = type_registry
       .iter()
       .filter_map(|registration| {
@@ -201,51 +247,12 @@ impl TabViewer<'_> {
     }
   }
 
-  fn menu_bar_ui(&mut self, ui: &mut egui::Ui) {
-    self.world.resource_scope(|world, mut fd: Mut<FileDialog>| {
-      ui.horizontal(|ui| {
-        ui.menu_button("File", |ui| {
-          if ui.button("Save").clicked() {
-            fd.access_mut(|dlg| dlg.save_file());
-            *self.on_file_select = Some(Self::on_save);
-          }
-
-          if ui.button("Open Map").clicked() {
-            fd.access_mut(|dlg| dlg.select_file());
-            *self.on_file_select = Some(Self::on_load);
-          }
-        });
-      });
-
-      fd.access_mut(|dlg| {
-        dlg.update(ui.ctx());
-        if let Some(path) = dlg.take_selected() {
-          if let Some(on_file_select) = self.on_file_select.take() {
-            (on_file_select)(world, path);
-          }
-        }
-      })
-    });
-  }
-
   fn on_save(world: &mut World, path: PathBuf) {
     world.send_event(SaveEvent::new(path));
   }
 
   fn on_load(world: &mut World, path: PathBuf) {
     world.send_event(LoadEvent::new(path));
-  }
-
-  fn prefab_ui(&mut self, ui: &mut egui::Ui) {
-    self
-      .world
-      .resource_scope(|world, mut prefabs: Mut<Prefabs>| {
-        for (id, spawn_fn) in prefabs.iter_mut() {
-          if ui.button(id).clicked() {
-            (spawn_fn)(world);
-          }
-        }
-      });
   }
 }
 
@@ -272,13 +279,19 @@ impl egui_dock::TabViewer for TabViewer<'_> {
         *self.viewport_rect = ui.clip_rect();
       }
       Tabs::Hierarchy => {
-        let selected = hierarchy_ui(self.world, ui, self.selected_entities);
-        if selected {
+        if hierarchy_ui(self.world, ui, self.selected_entities) {
           *self.selection = InspectorSelection::Entities;
         }
       }
-      Tabs::Resources => self.select_resource(ui, &type_registry),
-      Tabs::Assets => self.select_asset(ui, &type_registry),
+      Tabs::Prefabs => {
+        self.prefab_ui(ui);
+      }
+      Tabs::Resources => {
+        self.resource_ui(ui, &type_registry);
+      }
+      Tabs::Assets => {
+        self.asset_ui(ui, &type_registry);
+      }
       Tabs::Inspector => match *self.selection {
         InspectorSelection::Entities => match self.selected_entities.as_slice() {
           &[entity] => ui_for_entity_with_children(self.world, entity, ui),
@@ -293,9 +306,6 @@ impl egui_dock::TabViewer for TabViewer<'_> {
           bevy_inspector::by_type_id::ui_for_asset(self.world, type_id, handle, ui, &type_registry);
         }
       },
-      Tabs::Prefabs => {
-        self.prefab_ui(ui);
-      }
     }
   }
 }

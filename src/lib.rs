@@ -54,7 +54,7 @@ impl Editor {
 
   pub fn on_enter_editor_hook<System, M>(&mut self, system: System) -> &mut Self
   where
-    System: IntoSystem<(), (), M>,
+    System: IntoSystemConfigs<M>,
   {
     self.app.add_systems(OnEnter(EditorState::Editing), system);
 

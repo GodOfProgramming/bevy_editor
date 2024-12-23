@@ -1,7 +1,4 @@
-use bevy::{
-  color::palettes::css::PURPLE, picking::focus::PickingInteraction, prelude::*,
-  render::sync_world::RenderEntity,
-};
+use bevy::{color::palettes::css::PURPLE, prelude::*};
 use bevy_editor::Editor;
 
 fn main() {

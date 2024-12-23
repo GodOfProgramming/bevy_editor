@@ -85,25 +85,16 @@ impl State {
 
     let tree = state.main_surface_mut();
 
-    let node = NodeIndex::root();
+    let game_view = NodeIndex::root();
 
-    // [Menubar]
-    // [GameView]
-    let node = tree.split_above(node, 0.1, vec![Tabs::MenuBar])[0];
+    let [game_view, hierarchy] = tree.split_left(game_view, 1.0 / 6.0, vec![Tabs::Hierarchy]);
 
-    // [Menubar]
-    // [Hierarchy | GameView]
-    let node = tree.split_left(node, 1.0 / 6.0, vec![Tabs::Hierarchy])[0];
+    let [_hierarchy, _control_panel] = tree.split_above(hierarchy, 0.1, vec![Tabs::ControlPanel]);
 
-    // [Menubar]
-    // [Hierarchy | Game | Inspector]
-    let node = tree.split_right(node, 4.0 / 5.0, vec![Tabs::Inspector])[0];
+    let [game_view, _inspector] = tree.split_right(game_view, 4.0 / 5.0, vec![Tabs::Inspector]);
 
-    // [Menubar]
-    // [Hierarchy | Game | Inspector]
-    // [Prefabs/Resources/Assets]
     tree.split_below(
-      node,
+      game_view,
       0.7,
       vec![Tabs::Prefabs, Tabs::Resources, Tabs::Assets],
     );
@@ -114,7 +105,7 @@ impl State {
 
 #[derive(Debug)]
 enum Tabs {
-  MenuBar,
+  ControlPanel,
   GameView,
   Hierarchy,
   Prefabs,
@@ -131,27 +122,21 @@ struct TabViewer<'a> {
 }
 
 impl TabViewer<'_> {
-  fn menu_bar_ui(&mut self, #[allow(unused_variables)] ui: &mut egui::Ui) {
-    return;
-    #[allow(unreachable_code)]
-    {
-      ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-        if ui.button("X").clicked() {
-          self.world.send_event(AppExit::Success);
-          self.world.trigger(AppExit::Success);
+  fn control_panel_ui(&mut self, ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+      match self.world.editor_state() {
+        crate::EditorState::Editing => {
+          if ui.button("▶").clicked() {
+            self.world.set_editor_state(crate::EditorState::Testing);
+          }
         }
-
-        if ui.button("🗖").clicked() {
-          let mut window = self.world.primary_window_mut();
-          window.set_maximized(true);
+        crate::EditorState::Testing => {
+          if ui.button("⏸").clicked() {
+            self.world.set_editor_state(crate::EditorState::Editing);
+          }
         }
-
-        if ui.button("_").clicked() {
-          let mut window = self.world.primary_window_mut();
-          window.set_maximized(false);
-        }
-      });
-    }
+      };
+    });
   }
 
   fn prefab_ui(&mut self, ui: &mut egui::Ui) {
@@ -252,8 +237,8 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     let type_registry = type_registry.read();
 
     match tab {
-      Tabs::MenuBar => {
-        self.menu_bar_ui(ui);
+      Tabs::ControlPanel => {
+        self.control_panel_ui(ui);
       }
       Tabs::GameView => {
         *self.viewport_rect = ui.clip_rect();

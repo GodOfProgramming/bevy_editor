@@ -6,6 +6,8 @@ use bevy::{
   window::{CursorGrabMode, PrimaryWindow},
 };
 
+use crate::EditorState;
+
 #[macro_export]
 macro_rules! here {
   () => {{
@@ -96,11 +98,21 @@ where
 
 pub trait WorldExtensions {
   fn primary_window_mut(&mut self) -> Mut<Window>;
+  fn editor_state(&mut self) -> EditorState;
+  fn set_editor_state(&mut self, state: EditorState);
 }
 
 impl WorldExtensions for World {
   fn primary_window_mut(&mut self) -> Mut<Window> {
     let mut q_window = self.query_filtered::<&mut Window, With<PrimaryWindow>>();
     q_window.single_mut(self)
+  }
+
+  fn editor_state(&mut self) -> EditorState {
+    **self.resource::<State<EditorState>>()
+  }
+
+  fn set_editor_state(&mut self, state: EditorState) {
+    self.resource_mut::<NextState<EditorState>>().set(state);
   }
 }

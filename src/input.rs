@@ -27,6 +27,7 @@ pub struct InputPlugin;
 impl InputPlugin {
   fn init_input(mut commands: Commands) {
     let inputs = InputMap::default()
+      .with(EditorActions::Play, KeyCode::F5)
       .with(EditorActions::OrbitCamera, MouseButton::Right)
       .with(EditorActions::PanCamera, MouseButton::Middle)
       .with_axis(EditorActions::Zoom, MouseScrollAxis::Y)

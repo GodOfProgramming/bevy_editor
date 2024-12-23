@@ -8,15 +8,18 @@ mod view;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 use bevy::color::palettes::tailwind::{PINK_100, RED_500};
+use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
+use bevy::utils::tracing::level_filters::LevelFilter;
 use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use cache::Cache;
+use cache::{Cache, Saveable};
 use input::InputPlugin;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
+use serde::{Deserialize, Serialize};
 use ui::UiPlugin;
 
 pub use bevy;
@@ -118,7 +121,6 @@ impl Editor {
 
     app
       .add_plugins(EditorPlugin)
-      .insert_resource(Cache::load_or_default())
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar)
       .run()
@@ -138,7 +140,6 @@ struct EditorPlugin;
 impl Plugin for EditorPlugin {
   fn build(&self, app: &mut App) {
     let mut window = Window::default();
-
     window.title = String::from("Bevy Editor");
     window.mode = WindowMode::Windowed;
     window.visible = false;
@@ -148,13 +149,23 @@ impl Plugin for EditorPlugin {
       minimize: false, // minimize causes a crash
     };
 
+    let cache = Cache::load_or_default();
+
+    let log_info = cache.get::<LogInfo>().unwrap_or_default();
+
     app
       .add_plugins((
-        DefaultPlugins.set(WindowPlugin {
-          primary_window: Some(window),
-          close_when_requested: false,
-          ..default()
-        }),
+        DefaultPlugins
+          .set(WindowPlugin {
+            primary_window: Some(window),
+            close_when_requested: false,
+            ..default()
+          })
+          .set(LogPlugin {
+            level: log_info.level.into(),
+            filter: DEFAULT_FILTER.to_string(),
+            ..default()
+          }),
         ViewPlugin,
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
@@ -164,6 +175,8 @@ impl Plugin for EditorPlugin {
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
       .insert_state(EditorState::Editing)
+      .insert_resource(cache)
+      .insert_resource(log_info)
       .add_systems(Startup, (Self::startup, Self::initialize_types))
       .add_systems(PostStartup, Self::post_startup)
       .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
@@ -174,11 +187,9 @@ impl Plugin for EditorPlugin {
           (
             input::global_input_actions,
             (
-              input::handle_input,
               scenes::check_for_saves,
               scenes::check_for_loads,
               Self::auto_register_targets,
-              Self::handle_pick_events,
               Self::draw_mesh_intersections,
             )
               .run_if(in_state(EditorState::Editing)),
@@ -238,34 +249,45 @@ impl EditorPlugin {
 
   fn auto_register_targets(
     mut commands: Commands,
-    query: Query<Entity, (Without<RayCastPickable>, With<Mesh3d>)>,
+    q_2d_objects: Query<Entity, (Without<Observed>, With<Mesh2d>)>,
+    q_3d_objects: Query<Entity, (Without<RayCastPickable>, Without<Observed>, With<Mesh3d>)>,
   ) {
-    for entity in &query {
-      debug!("added raycast to target {}", entity);
-      commands.entity(entity).insert((RayCastPickable,));
+    for entity in &q_2d_objects {
+      debug!("Added raycast to 2d target {}", entity);
+      commands
+        .entity(entity)
+        .insert(Observed)
+        .observe(|ev: Trigger<Pointer<Click>>| {
+          debug!("Clicked on: {}", ev.target);
+        });
     }
-  }
 
-  fn handle_pick_events(
-    mut ui_state: ResMut<ui::State>,
-    mut click_events: EventReader<Pointer<Click>>,
-    mut q_egui: Query<&mut EguiContext>,
-    q_raycast_pickables: Query<&RayCastPickable>,
-  ) {
-    let mut egui = q_egui.single_mut();
-    let egui_context = egui.get_mut();
+    for entity in &q_3d_objects {
+      debug!("Added raycast to 3d target {}", entity);
+      commands
+        .entity(entity)
+        .insert(RayCastPickable)
+        .insert(Observed)
+        .observe(
+          |event: Trigger<Pointer<Click>>,
+           mut ui_state: ResMut<ui::State>,
+           mut q_egui: Query<&mut EguiContext>,
+           q_raycast_pickables: Query<&RayCastPickable>| {
+            if event.button == PointerButton::Primary {
+              debug!("Clicked on: {}", event.target);
 
-    for click in click_events
-      .read()
-      .filter(|evt| evt.button == PointerButton::Primary)
-    {
-      let target = click.target;
+              let mut egui = q_egui.single_mut();
+              let egui_context = egui.get_mut();
 
-      let modifiers = egui_context.input(|i| i.modifiers);
+              let target = event.target;
+              let modifiers = egui_context.input(|i| i.modifiers);
 
-      if q_raycast_pickables.get(target).is_ok() {
-        ui_state.add_selected(target, modifiers.ctrl);
-      }
+              if q_raycast_pickables.get(target).is_ok() {
+                ui_state.add_selected(target, modifiers.ctrl);
+              }
+            }
+          },
+        );
     }
   }
 
@@ -289,9 +311,56 @@ impl EditorPlugin {
     }
   }
 
-  fn on_app_exit(app_exit: EventReader<AppExit>, cache: Res<Cache>) {
+  fn on_app_exit(app_exit: EventReader<AppExit>, log_info: Res<LogInfo>, mut cache: ResMut<Cache>) {
     if !app_exit.is_empty() {
+      cache.store(log_info.clone());
       cache.save();
+    }
+  }
+}
+
+#[derive(Component)]
+struct Observed;
+
+#[derive(Default, Clone, Resource, Serialize, Deserialize)]
+struct LogInfo {
+  level: LogLevel,
+}
+
+impl Saveable for LogInfo {
+  const KEY: &str = "logging";
+}
+
+#[derive(Reflect, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+enum LogLevel {
+  Trace,
+  Debug,
+  #[default]
+  Info,
+  Warn,
+  Error,
+}
+
+impl Into<Level> for LogLevel {
+  fn into(self) -> Level {
+    match self {
+      LogLevel::Trace => Level::TRACE,
+      LogLevel::Debug => Level::DEBUG,
+      LogLevel::Info => Level::INFO,
+      LogLevel::Warn => Level::WARN,
+      LogLevel::Error => Level::ERROR,
+    }
+  }
+}
+
+impl Into<LevelFilter> for LogLevel {
+  fn into(self) -> LevelFilter {
+    match self {
+      LogLevel::Trace => LevelFilter::TRACE,
+      LogLevel::Debug => LevelFilter::DEBUG,
+      LogLevel::Info => LevelFilter::INFO,
+      LogLevel::Warn => LevelFilter::WARN,
+      LogLevel::Error => LevelFilter::ERROR,
     }
   }
 }

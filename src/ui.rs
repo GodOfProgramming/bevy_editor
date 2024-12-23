@@ -1,6 +1,6 @@
 use crate::assets::Prefabs;
 use crate::view::ViewState;
-use crate::WorldExtensions;
+use crate::{LogInfo, WorldExtensions};
 use bevy::prelude::*;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
@@ -12,6 +12,7 @@ use bevy_inspector_egui::bevy_inspector::{
   hierarchy::{hierarchy_ui, SelectedEntities},
   ui_for_entities_shared_components, ui_for_entity_with_children,
 };
+use bevy_inspector_egui::reflect_inspector;
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
 
@@ -123,7 +124,7 @@ struct TabViewer<'a> {
 }
 
 impl TabViewer<'_> {
-  fn control_panel_ui(&mut self, ui: &mut egui::Ui) {
+  fn control_panel_ui(&mut self, ui: &mut egui::Ui, type_registry: &TypeRegistry) {
     ui.horizontal(|ui| {
       match self.world.get_state() {
         crate::EditorState::Editing => {
@@ -151,6 +152,10 @@ impl TabViewer<'_> {
           }
         }
       };
+
+      self.world.resource_scope(|_, mut log_info: Mut<LogInfo>| {
+        reflect_inspector::ui_for_value(&mut log_info.level, ui, type_registry);
+      });
     });
   }
 
@@ -253,7 +258,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
     match tab {
       Tabs::ControlPanel => {
-        self.control_panel_ui(ui);
+        self.control_panel_ui(ui, &type_registry);
       }
       Tabs::GameView => {
         *self.viewport_rect = ui.clip_rect();

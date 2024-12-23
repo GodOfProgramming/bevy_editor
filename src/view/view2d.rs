@@ -1,7 +1,9 @@
 use super::{EditorCamera, ViewState};
 use crate::{
   cache::{Cache, Saveable},
+  hide_cursor,
   input::EditorActions,
+  show_cursor,
   view::ActiveEditorCamera,
   EditorState,
 };
@@ -22,6 +24,7 @@ impl Plugin for View2dPlugin {
       .add_systems(
         Update,
         (
+          EditorCamera2d::handle_input,
           EditorCamera2d::movement_system,
           EditorCamera2d::zoom_system,
           EditorCamera2d::pan_system,
@@ -70,9 +73,9 @@ pub struct CameraSettings {
 impl Default for CameraSettings {
   fn default() -> Self {
     CameraSettings {
-      move_speed: 10.0,
-      zoom_sensitivity: 5.0,
-      pan_sensitivity: 0.2,
+      move_speed: 128.0,
+      zoom_sensitivity: 10.0,
+      pan_sensitivity: 10.0,
     }
   }
 }
@@ -87,7 +90,7 @@ impl EditorCamera2d {
     mut q_2d_cams: Query<(Entity, &mut Camera), With<EditorCamera2d>>,
     mut q_other_cams: Query<(Entity, &mut Camera), Without<EditorCamera2d>>,
   ) {
-    info!("Switched to 3d camera");
+    info!("Switched to 2d camera");
 
     for (entity, mut cam) in &mut q_2d_cams {
       commands.entity(entity).insert(ActiveEditorCamera);
@@ -97,6 +100,30 @@ impl EditorCamera2d {
     for (entity, mut cam) in &mut q_other_cams {
       commands.entity(entity).remove::<ActiveEditorCamera>();
       cam.is_active = false;
+    }
+  }
+
+  pub fn handle_input(
+    q_action_states: Query<&ActionState<EditorActions>>,
+    mut windows: Query<&mut Window>,
+  ) {
+    for action_state in &q_action_states {
+      if action_state.just_pressed(&EditorActions::PanCamera) {
+        let Ok(mut window) = windows.get_single_mut() else {
+          return;
+        };
+
+        hide_cursor(&mut window);
+        continue;
+      }
+
+      if action_state.just_released(&EditorActions::PanCamera) {
+        let Ok(mut window) = windows.get_single_mut() else {
+          return;
+        };
+
+        show_cursor(&mut window);
+      }
     }
   }
 
@@ -137,7 +164,7 @@ impl EditorCamera2d {
 
   fn zoom_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Projection), With<EditorCamera2d>>,
+    mut q_cam: Query<(&CameraSettings, &mut OrthographicProjection), With<EditorCamera2d>>,
     time: Res<Time>,
   ) {
     let Ok((cam_settings, mut projection)) = q_cam.get_single_mut() else {
@@ -150,12 +177,7 @@ impl EditorCamera2d {
           * cam_settings.zoom_sensitivity
           * time.delta_secs();
 
-      match &mut *projection {
-        Projection::Perspective(_perspective_projection) => {}
-        Projection::Orthographic(orthographic_projection) => {
-          orthographic_projection.scale *= zoom;
-        }
-      }
+      projection.scale *= zoom;
     }
   }
 

@@ -1,4 +1,4 @@
-use crate::{hide_cursor, show_cursor, EditorState};
+use crate::EditorState;
 use bevy::prelude::*;
 use leafwing_input_manager::{
   plugin::InputManagerPlugin,
@@ -65,36 +65,6 @@ pub fn global_input_actions(
       } else {
         next_editor_state.set(EditorState::Editing);
       }
-    }
-  }
-}
-
-pub fn handle_input(
-  q_action_states: Query<&ActionState<EditorActions>>,
-  mut windows: Query<&mut Window>,
-) {
-  for action_state in &q_action_states {
-    if action_state.just_pressed(&EditorActions::OrbitCamera)
-      || action_state.just_pressed(&EditorActions::PanCamera)
-    {
-      let Ok(mut window) = windows.get_single_mut() else {
-        return;
-      };
-
-      hide_cursor(&mut window);
-      continue;
-    }
-
-    if (action_state.just_released(&EditorActions::OrbitCamera)
-      && action_state.released(&EditorActions::PanCamera))
-      || (action_state.just_released(&EditorActions::PanCamera)
-        && action_state.released(&EditorActions::OrbitCamera))
-    {
-      let Ok(mut window) = windows.get_single_mut() else {
-        return;
-      };
-
-      show_cursor(&mut window);
     }
   }
 }

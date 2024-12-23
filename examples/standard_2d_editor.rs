@@ -27,7 +27,7 @@ fn startup(
     Name::new("Purple Square"),
     Mesh2d(meshes.add(Rectangle::default())),
     MeshMaterial2d(color_materials.add(Color::from(PURPLE))),
-    Transform::default().with_scale(Vec3::splat(128.0)),
+    Transform::default().with_scale(Vec3::new(32.0, 32.0, 0.0)),
   ));
 
   // circular base

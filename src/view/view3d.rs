@@ -1,7 +1,8 @@
 use crate::{
   cache::{Cache, Saveable},
+  hide_cursor,
   input::EditorActions,
-  EditorState,
+  show_cursor, EditorState,
 };
 use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::ActionState;
@@ -25,6 +26,7 @@ impl Plugin for View3dPlugin {
         Update,
         (
           (
+            EditorCamera3d::handle_input,
             EditorCamera3d::movement_system,
             EditorCamera3d::orbit_self_system,
             EditorCamera3d::zoom_system,
@@ -126,6 +128,36 @@ impl EditorCamera3d {
     for (entity, mut cam) in &mut q_other_cams {
       commands.entity(entity).remove::<ActiveEditorCamera>();
       cam.is_active = false;
+    }
+  }
+
+  pub fn handle_input(
+    q_action_states: Query<&ActionState<EditorActions>>,
+    mut windows: Query<&mut Window>,
+  ) {
+    for action_state in &q_action_states {
+      if action_state.just_pressed(&EditorActions::OrbitCamera)
+        || action_state.just_pressed(&EditorActions::PanCamera)
+      {
+        let Ok(mut window) = windows.get_single_mut() else {
+          return;
+        };
+
+        hide_cursor(&mut window);
+        continue;
+      }
+
+      if (action_state.just_released(&EditorActions::OrbitCamera)
+        && action_state.released(&EditorActions::PanCamera))
+        || (action_state.just_released(&EditorActions::PanCamera)
+          && action_state.released(&EditorActions::OrbitCamera))
+      {
+        let Ok(mut window) = windows.get_single_mut() else {
+          return;
+        };
+
+        show_cursor(&mut window);
+      }
     }
   }
 
@@ -259,7 +291,9 @@ impl EditorCamera3d {
         Projection::Perspective(perspective_projection) => {
           perspective_projection.fov *= zoom;
         }
-        Projection::Orthographic(_orthographic_projection) => {}
+        Projection::Orthographic(orthographic_projection) => {
+          orthographic_projection.scale *= zoom;
+        }
       }
     }
   }

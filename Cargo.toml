@@ -8,7 +8,7 @@ rust-version = "1.83.0"
 async-std = "1.13"
 bevy = { version = "0.15", features = ["default", "serialize"] }
 bevy-inspector-egui = "0.28"
-bevy_egui = "0.31"
+bevy_egui = { version = "0.31", features = ["immutable_ctx"] }
 bevy_mod_debugdump = "0.12"
 const_format = "0.2"
 egui-file-dialog = "0.7"

@@ -2,7 +2,7 @@ use crate::{
   cache::{Cache, Saveable},
   hide_cursor,
   input::EditorActions,
-  show_cursor, EditorState,
+  show_cursor,
 };
 use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::ActionState;
@@ -35,8 +35,7 @@ impl Plugin for View3dPlugin {
           EditorCamera3d::look,
         )
           .chain()
-          .run_if(in_state(EditorState::Editing))
-          .run_if(in_state(ViewState::Camera3D)),
+          .run_if(super::can_run(ViewState::Camera3D)),
       );
   }
 }

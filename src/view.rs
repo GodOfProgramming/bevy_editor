@@ -3,7 +3,7 @@ mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},
-  ui,
+  ui, EditorState,
 };
 use bevy::{prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use serde::{Deserialize, Serialize};
@@ -113,4 +113,28 @@ pub enum ViewState {
 
 impl Saveable for ViewState {
   const KEY: &str = "view_state";
+}
+
+fn can_run(
+  view_state_condition: ViewState,
+) -> impl FnMut(
+  Option<Res<State<EditorState>>>,
+  Option<Res<State<ViewState>>>,
+  Query<&bevy_egui::EguiContext>,
+) -> bool
+     + Clone {
+  move |editor_state: Option<Res<State<EditorState>>>,
+        view_state: Option<Res<State<ViewState>>>,
+        q_egui: Query<&bevy_egui::EguiContext>|
+        -> bool {
+    editor_state
+      .map(|state| *state == EditorState::Editing)
+      .unwrap_or_default()
+      && view_state
+        .map(|state| *state == view_state_condition)
+        .unwrap_or_default()
+      && q_egui
+        .iter()
+        .any(|ctx| ctx.get().memory(|mem| mem.focused().is_none()))
+  }
 }

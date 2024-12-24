@@ -42,7 +42,9 @@ pub struct Editor {
 }
 
 impl Editor {
-  pub fn new(mut app: App) -> Self {
+  pub fn new() -> Self {
+    let mut app = App::new();
+
     app.add_plugins(EditorPlugin);
 
     Self {

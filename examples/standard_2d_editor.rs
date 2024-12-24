@@ -2,7 +2,7 @@ use bevy::{color::palettes::css::PURPLE, prelude::*};
 use bevy_editor::Editor;
 
 fn main() {
-  let mut editor = Editor::new(App::new());
+  let mut editor = Editor::new();
 
   editor
     .add_game_camera::<GameCamera>()

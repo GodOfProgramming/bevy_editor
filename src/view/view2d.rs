@@ -5,7 +5,6 @@ use crate::{
   input::EditorActions,
   show_cursor,
   view::ActiveEditorCamera,
-  EditorState,
 };
 use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::*;
@@ -29,8 +28,7 @@ impl Plugin for View2dPlugin {
           EditorCamera2d::zoom_system,
           EditorCamera2d::pan_system,
         )
-          .run_if(in_state(EditorState::Editing))
-          .run_if(in_state(ViewState::Camera2D)),
+          .run_if(super::can_run(ViewState::Camera2D)),
       );
   }
 }

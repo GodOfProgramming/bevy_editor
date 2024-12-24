@@ -15,7 +15,9 @@ use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::utils::tracing::level_filters::LevelFilter;
 use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
-use bevy_egui::{egui, EguiContext};
+pub use bevy_egui;
+pub use bevy_egui::egui;
+use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::{Cache, Saveable};
 use input::InputPlugin;
@@ -52,14 +54,6 @@ impl Editor {
       scene_type_registry: default(),
       prefab_registrar: default(),
     }
-  }
-
-  pub fn on_enter_editor_hook<System, M>(&mut self, system: System) -> &mut Self
-  where
-    System: IntoSystemConfigs<M>,
-  {
-    self.app.add_systems(OnEnter(EditorState::Editing), system);
-    self
   }
 
   pub fn add_custom_tab(&mut self, f: fn(&mut World, &mut egui::Ui)) -> &mut Self {

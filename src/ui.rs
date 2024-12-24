@@ -78,20 +78,30 @@ impl Plugin for UiPlugin {
 
 #[derive(Resource)]
 pub(crate) struct State {
-  pub(crate) viewport_rect: egui::Rect,
-  selected_entities: SelectedEntities,
   dock_state: DockState<Tabs>,
+  selected_entities: SelectedEntities,
   selection: InspectorSelection,
+  viewport_rect: egui::Rect,
+  mouse_hovered: bool,
 }
 
 impl State {
   pub fn new(have_custom: bool) -> Self {
     Self {
-      viewport_rect: egui::Rect::NOTHING,
       selected_entities: SelectedEntities::default(),
       dock_state: Self::build_dock(have_custom),
       selection: InspectorSelection::Entities,
+      viewport_rect: egui::Rect::NOTHING,
+      mouse_hovered: false,
     }
+  }
+
+  pub fn viewport(&self) -> egui::Rect {
+    self.viewport_rect
+  }
+
+  pub fn hovered(&self) -> bool {
+    self.mouse_hovered
   }
 
   pub fn add_selected(&mut self, entity: Entity, add: bool) {
@@ -111,9 +121,10 @@ impl State {
 
     let mut tab_viewer = TabViewer {
       world,
-      viewport_rect: &mut self.viewport_rect,
       selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
+      viewport_rect: &mut self.viewport_rect,
+      mouse_hovered: &mut self.mouse_hovered,
     };
 
     DockArea::new(&mut self.dock_state)
@@ -164,6 +175,7 @@ struct TabViewer<'a> {
   selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
+  mouse_hovered: &'a mut bool,
 }
 
 impl TabViewer<'_> {
@@ -317,6 +329,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       }
       Tabs::GameView => {
         *self.viewport_rect = ui.clip_rect();
+        *self.mouse_hovered = ui.ui_contains_pointer();
       }
       Tabs::Custom => {
         self

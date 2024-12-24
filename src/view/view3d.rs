@@ -26,11 +26,14 @@ impl Plugin for View3dPlugin {
         Update,
         (
           (
-            EditorCamera3d::handle_input,
             EditorCamera3d::movement_system,
-            EditorCamera3d::orbit_self_system,
-            EditorCamera3d::zoom_system,
-            EditorCamera3d::pan_system,
+            (
+              EditorCamera3d::handle_input,
+              EditorCamera3d::orbit_self_system,
+              EditorCamera3d::zoom_system,
+              EditorCamera3d::pan_system,
+            )
+              .run_if(super::mouse_actions_enabled),
           ),
           EditorCamera3d::look,
         )

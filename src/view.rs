@@ -80,8 +80,9 @@ impl EditorCamera {
     for mut cam in &mut cameras {
       let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
-      let viewport_pos = ui_state.viewport_rect.left_top().to_vec2() * scale_factor;
-      let viewport_size = ui_state.viewport_rect.size() * scale_factor;
+      let viewport = ui_state.viewport();
+      let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
+      let viewport_size = viewport.size() * scale_factor;
 
       let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
       let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
@@ -137,4 +138,8 @@ fn can_run(
         .iter()
         .any(|ctx| ctx.get().memory(|mem| mem.focused().is_none()))
   }
+}
+
+fn mouse_actions_enabled(ui_state: Res<ui::State>) -> bool {
+  ui_state.hovered()
 }

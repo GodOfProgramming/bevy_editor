@@ -23,10 +23,13 @@ impl Plugin for View2dPlugin {
       .add_systems(
         Update,
         (
-          EditorCamera2d::handle_input,
           EditorCamera2d::movement_system,
-          EditorCamera2d::zoom_system,
-          EditorCamera2d::pan_system,
+          (
+            EditorCamera2d::handle_input,
+            EditorCamera2d::zoom_system,
+            EditorCamera2d::pan_system,
+          )
+            .run_if(super::mouse_actions_enabled),
         )
           .run_if(super::can_run(ViewState::Camera2D)),
       );

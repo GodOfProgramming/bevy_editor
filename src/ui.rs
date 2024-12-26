@@ -1,9 +1,7 @@
 use crate::assets::Prefabs;
 use crate::view::{view2d, view3d, EditorCamera2d, EditorCamera3d, ViewState};
 use crate::{LogInfo, WorldExtensions};
-use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
-use bevy::tasks::IoTaskPool;
 use bevy::{
   asset::{ReflectAsset, UntypedAssetId},
   reflect::TypeRegistry,
@@ -16,31 +14,6 @@ use bevy_inspector_egui::bevy_inspector::{
 };
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
-use std::marker::PhantomData;
-
-#[derive(Resource)]
-pub struct SystemGraph<L: ScheduleLabel> {
-  graph: String,
-  _pd: PhantomData<L>,
-}
-
-impl<L> SystemGraph<L>
-where
-  L: ScheduleLabel,
-{
-  pub fn new(app: &mut App, schedule: L) -> Self {
-    let graph = bevy_mod_debugdump::schedule_graph_dot(
-      app,
-      schedule,
-      &bevy_mod_debugdump::schedule_graph::Settings::default(),
-    );
-
-    Self {
-      graph,
-      _pd: default(),
-    }
-  }
-}
 
 #[derive(Resource)]
 pub struct CustomTab(pub fn(&mut World, &mut egui::Ui));

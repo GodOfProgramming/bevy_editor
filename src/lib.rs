@@ -25,7 +25,7 @@ use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 pub use serde;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
-use ui::{CustomTab, SystemGraph, UiPlugin};
+use ui::{CustomTab, UiPlugin};
 pub use util::*;
 use view::{
   ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
@@ -190,9 +190,6 @@ impl Editor {
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar);
 
-    let update_graph = SystemGraph::new(&mut app, Update);
-    app.insert_resource(update_graph);
-
     debug!("Launching Editor");
 
     app.run()
@@ -314,11 +311,7 @@ impl EditorPlugin {
     for target in q_targets.iter() {
       commands
         .entity(target)
-        .remove::<RayCastPickable>()
-        .insert(PickingBehavior {
-          is_hoverable: false,
-          should_block_lower: false,
-        });
+        .remove::<(RayCastPickable, PickingBehavior)>();
     }
   }
 
@@ -350,13 +343,13 @@ impl EditorPlugin {
   ) {
     for entity in &q_entities {
       debug!("Registered Picking: {}", entity);
-      commands
-        .entity(entity)
-        .insert(RayCastPickable)
-        .insert(PickingBehavior {
+      commands.entity(entity).insert((
+        RayCastPickable,
+        PickingBehavior {
           is_hoverable: true,
           should_block_lower: true,
-        });
+        },
+      ));
     }
   }
 
@@ -368,14 +361,13 @@ impl EditorPlugin {
   ) {
     let mut egui = q_egui.single_mut();
     let egui_context = egui.get_mut();
+    let modifiers = egui_context.input(|i| i.modifiers);
 
     for click in click_events
       .read()
       .filter(|evt| evt.button == PointerButton::Primary)
     {
       let target = click.target;
-
-      let modifiers = egui_context.input(|i| i.modifiers);
 
       if q_raycast_pickables.get(target).is_ok() {
         ui_state.add_selected(target, modifiers.ctrl);

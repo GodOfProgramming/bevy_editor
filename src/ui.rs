@@ -1,3 +1,5 @@
+mod control_panel;
+
 use crate::assets::Prefabs;
 use crate::view::{view2d, view3d, EditorCamera2d, EditorCamera3d, ViewState};
 use crate::{LogInfo, WorldExtensions};
@@ -7,13 +9,13 @@ use bevy::{
   reflect::TypeRegistry,
 };
 use bevy_egui::{egui, EguiPlugin};
+use bevy_inspector_egui::bevy_inspector::hierarchy;
 use bevy_inspector_egui::bevy_inspector::{
-  self,
-  hierarchy::{hierarchy_ui, SelectedEntities},
-  ui_for_entities_shared_components, ui_for_entity_with_children,
+  self, hierarchy::hierarchy_ui, ui_for_entities_shared_components, ui_for_entity_with_children,
 };
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use std::any::TypeId;
+use std::ops::{Deref, DerefMut};
 
 #[derive(Resource)]
 pub struct CustomTab(pub fn(&mut World, &mut egui::Ui));
@@ -24,9 +26,10 @@ pub fn render(world: &mut World) {
   });
 }
 
-#[derive(Eq, PartialEq)]
+pub trait Ui {}
+
 enum InspectorSelection {
-  Entities,
+  Entities(SelectedEntities),
   Resource(TypeId, String),
   Asset(TypeId, String, UntypedAssetId),
 }
@@ -49,10 +52,25 @@ impl Plugin for UiPlugin {
   }
 }
 
+#[derive(Default, Debug)]
+pub struct SelectedEntities(hierarchy::SelectedEntities);
+
+impl Deref for SelectedEntities {
+  type Target = hierarchy::SelectedEntities;
+  fn deref(&self) -> &Self::Target {
+    &self.0
+  }
+}
+
+impl DerefMut for SelectedEntities {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.0
+  }
+}
+
 #[derive(Resource)]
 pub(crate) struct State {
   dock_state: DockState<Tabs>,
-  selected_entities: SelectedEntities,
   selection: InspectorSelection,
   viewport_rect: egui::Rect,
   mouse_hovered: bool,
@@ -61,9 +79,8 @@ pub(crate) struct State {
 impl State {
   pub fn new(have_custom: bool) -> Self {
     Self {
-      selected_entities: SelectedEntities::default(),
       dock_state: Self::build_dock(have_custom),
-      selection: InspectorSelection::Entities,
+      selection: InspectorSelection::Entities(SelectedEntities::default()),
       viewport_rect: egui::Rect::NOTHING,
       mouse_hovered: false,
     }
@@ -78,8 +95,13 @@ impl State {
   }
 
   pub fn add_selected(&mut self, entity: Entity, add: bool) {
-    self.selected_entities.select_maybe_add(entity, add);
-    self.selection = InspectorSelection::Entities;
+    if let InspectorSelection::Entities(selected_entities) = &mut self.selection {
+      selected_entities.select_maybe_add(entity, add);
+    } else {
+      let mut selected_entities = SelectedEntities::default();
+      selected_entities.select_replace(entity);
+      self.selection = InspectorSelection::Entities(selected_entities);
+    }
   }
 
   pub(crate) fn ui(&mut self, world: &mut World) {
@@ -94,7 +116,6 @@ impl State {
 
     let mut tab_viewer = TabViewer {
       world,
-      selected_entities: &mut self.selected_entities,
       selection: &mut self.selection,
       viewport_rect: &mut self.viewport_rect,
       mouse_hovered: &mut self.mouse_hovered,
@@ -145,7 +166,6 @@ enum Tabs {
 
 struct TabViewer<'a> {
   world: &'a mut World,
-  selected_entities: &'a mut SelectedEntities,
   selection: &'a mut InspectorSelection,
   viewport_rect: &'a mut egui::Rect,
   mouse_hovered: &'a mut bool,
@@ -168,10 +188,14 @@ impl TabViewer<'_> {
           self.world.set_state(view);
         }
 
-        if self.selected_entities.len() == 1 {
+        let InspectorSelection::Entities(selected_entities) = self.selection else {
+          return;
+        };
+
+        if selected_entities.len() == 1 {
           if ui.button("Move To Selected").clicked() {
             'move_block: {
-              let entity = self.selected_entities.iter().next().unwrap();
+              let entity = selected_entities.iter().next().unwrap();
               let entity = self.world.entity(entity);
               let Some(transform) = entity.get_components::<&Transform>() else {
                 break 'move_block;
@@ -201,7 +225,7 @@ impl TabViewer<'_> {
 
           if ui.button("Look At Selected").clicked() {
             'move_block: {
-              let entity = self.selected_entities.iter().next().unwrap();
+              let entity = selected_entities.iter().next().unwrap();
               let entity = self.world.entity(entity);
               let Some(transform) = entity.get_components::<&Transform>() else {
                 break 'move_block;
@@ -359,8 +383,13 @@ impl egui_dock::TabViewer for TabViewer<'_> {
           });
       }
       Tabs::Hierarchy => {
-        if hierarchy_ui(self.world, ui, self.selected_entities) {
-          *self.selection = InspectorSelection::Entities;
+        if let InspectorSelection::Entities(selected_entities) = self.selection {
+          hierarchy_ui(self.world, ui, selected_entities);
+        } else {
+          let mut selected_entities = SelectedEntities::default();
+          if hierarchy_ui(self.world, ui, &mut selected_entities) {
+            *self.selection = InspectorSelection::Entities(selected_entities);
+          }
         }
       }
       Tabs::Prefabs => {
@@ -372,18 +401,30 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       Tabs::Assets => {
         self.asset_ui(ui, &type_registry);
       }
-      Tabs::Inspector => match *self.selection {
-        InspectorSelection::Entities => match self.selected_entities.as_slice() {
+      Tabs::Inspector => match self.selection {
+        InspectorSelection::Entities(selected_entities) => match selected_entities.as_slice() {
           &[entity] => ui_for_entity_with_children(self.world, entity, ui),
           entities => ui_for_entities_shared_components(self.world, entities, ui),
         },
         InspectorSelection::Resource(type_id, ref name) => {
           ui.label(name);
-          bevy_inspector::by_type_id::ui_for_resource(self.world, type_id, ui, name, &type_registry)
+          bevy_inspector::by_type_id::ui_for_resource(
+            self.world,
+            *type_id,
+            ui,
+            name,
+            &type_registry,
+          )
         }
         InspectorSelection::Asset(type_id, ref name, handle) => {
           ui.label(name);
-          bevy_inspector::by_type_id::ui_for_asset(self.world, type_id, handle, ui, &type_registry);
+          bevy_inspector::by_type_id::ui_for_asset(
+            self.world,
+            *type_id,
+            *handle,
+            ui,
+            &type_registry,
+          );
         }
       },
     }

@@ -77,7 +77,7 @@ struct CubeParams<'w, 's> {
 impl StaticPrefab for Cube {
   type Params<'w, 's> = CubeParams<'w, 's>;
 
-  fn spawn(mut params: Self::Params<'_, '_>) -> impl Bundle {
+  fn spawn(_id: Entity, mut params: Self::Params<'_, '_>) -> impl Bundle {
     let offset = Vec2::new(
       params.spiral.r * params.spiral.theta.cos(),
       params.spiral.r * params.spiral.theta.sin(),

@@ -1,5 +1,5 @@
-mod view2d;
-mod view3d;
+pub mod view2d;
+pub mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},

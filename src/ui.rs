@@ -1,5 +1,5 @@
 use crate::assets::Prefabs;
-use crate::view::ViewState;
+use crate::view::{view2d, view3d, EditorCamera2d, EditorCamera3d, ViewState};
 use crate::{LogInfo, WorldExtensions};
 use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
@@ -180,50 +180,97 @@ struct TabViewer<'a> {
 
 impl TabViewer<'_> {
   fn control_panel_ui(&mut self, ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-      match self.world.get_state() {
-        crate::EditorState::Editing => {
-          if ui.button("▶").clicked() {
-            self.world.set_state(crate::EditorState::Testing);
-          }
-
-          let mut view = self.world.get_state::<ViewState>();
-          let prev_view = view;
-          ui.push_id("view-selector", |ui| {
-            bevy_inspector::ui_for_value(&mut view, ui, self.world);
-          });
-          if prev_view != view {
-            self.world.set_state(view);
-          }
-
-          if ui.button("Dump Update Graph").clicked() {
-            let Some(update) = self.world.get_resource::<SystemGraph<Update>>() else {
-              return;
-            };
-
-            let graph = update.graph.clone();
-            let _ = IoTaskPool::get().spawn(async move {
-              if let Err(e) = async_std::fs::write("update.dot", graph).await {
-                error!("Failed to save update graph: {e}");
-              }
-            });
-          }
+    match self.world.get_state() {
+      crate::EditorState::Editing => {
+        if ui.button("▶").clicked() {
+          self.world.set_state(crate::EditorState::Testing);
         }
-        crate::EditorState::Testing => {
-          if ui.button("⏸").clicked() {
-            self.world.set_state(crate::EditorState::Editing);
-          }
-        }
-      };
 
-      self
-        .world
-        .resource_scope(|world, mut log_info: Mut<LogInfo>| {
-          ui.push_id("log-level-selector", |ui| {
-            bevy_inspector::ui_for_value(&mut log_info.level, ui, world);
-          });
+        let mut view = self.world.get_state::<ViewState>();
+        let prev_view = view;
+        ui.push_id("view-selector", |ui| {
+          bevy_inspector::ui_for_value(&mut view, ui, self.world);
         });
-    });
+        if prev_view != view {
+          self.world.set_state(view);
+        }
+
+        if self.selected_entities.len() == 1 {
+          if ui.button("Move To Selected").clicked() {
+            'move_block: {
+              let entity = self.selected_entities.iter().next().unwrap();
+              let entity = self.world.entity(entity);
+              let Some(transform) = entity.get_components::<&Transform>() else {
+                break 'move_block;
+              };
+
+              let entity_pos = transform.translation;
+
+              fn move_to<C: Component>(world: &mut World, pos: Vec3) {
+                let mut q_cam = world.query_filtered::<&mut Transform, With<C>>();
+
+                for mut cam_transform in q_cam.iter_mut(world) {
+                  cam_transform.translation = pos;
+                }
+              }
+
+              match view {
+                ViewState::Camera2D => {
+                  move_to::<EditorCamera2d>(self.world, entity_pos);
+                }
+                ViewState::Camera3D => {
+                  move_to::<EditorCamera3d>(self.world, entity_pos);
+                }
+                _ => (),
+              }
+            }
+          }
+
+          if ui.button("Look At Selected").clicked() {
+            'move_block: {
+              let entity = self.selected_entities.iter().next().unwrap();
+              let entity = self.world.entity(entity);
+              let Some(transform) = entity.get_components::<&Transform>() else {
+                break 'move_block;
+              };
+
+              let entity_pos = transform.translation;
+
+              fn look_at<C: Component>(world: &mut World, pos: Vec3, up: Vec3) {
+                let mut q_cam = world.query_filtered::<&mut Transform, With<C>>();
+
+                for mut cam_transform in q_cam.iter_mut(world) {
+                  cam_transform.look_at(pos, up);
+                }
+              }
+
+              match view {
+                ViewState::Camera2D => {
+                  look_at::<EditorCamera2d>(self.world, entity_pos, view2d::UP);
+                }
+                ViewState::Camera3D => {
+                  look_at::<EditorCamera3d>(self.world, entity_pos, view3d::UP);
+                }
+                _ => (),
+              }
+            }
+          }
+        }
+      }
+      crate::EditorState::Testing => {
+        if ui.button("⏸").clicked() {
+          self.world.set_state(crate::EditorState::Editing);
+        }
+      }
+    };
+
+    self
+      .world
+      .resource_scope(|world, mut log_info: Mut<LogInfo>| {
+        ui.push_id("log-level-selector", |ui| {
+          bevy_inspector::ui_for_value(&mut log_info.level, ui, world);
+        });
+      });
   }
 
   fn prefab_ui(&mut self, ui: &mut egui::Ui) {

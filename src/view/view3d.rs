@@ -11,7 +11,7 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 
 use super::{ActiveEditorCamera, EditorCamera, ViewState};
 
-const UP: Vec3 = Vec3::Y;
+pub const UP: Vec3 = Vec3::Y;
 
 pub struct View3dPlugin;
 

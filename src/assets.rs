@@ -103,9 +103,10 @@ impl PrefabRegistrar {
 
       // the below is what's stored in Prefabs
       move |world| {
+        let entity_id = world.spawn_empty().id();
         let params = state.get_mut(world);
-        let bundle = T::spawn(params);
-        world.spawn(bundle);
+        let bundle = T::spawn(entity_id, params);
+        world.entity_mut(entity_id).insert(bundle);
       }
     });
   }
@@ -177,7 +178,7 @@ pub trait StaticPrefab: GetTypeRegistration + Sized {
     Item<'world, 'system> = Self::Params<'world, 'system>,
   >;
 
-  fn spawn(params: Self::Params<'_, '_>) -> impl Bundle;
+  fn spawn(id: Entity, params: Self::Params<'_, '_>) -> impl Bundle;
 }
 
 pub trait Prefab: GetTypeRegistration + Bundle + Clone {

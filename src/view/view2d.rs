@@ -10,7 +10,7 @@ use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::*;
 use serde::{Deserialize, Serialize};
 
-const UP: Vec3 = Vec3::Y;
+pub const UP: Vec3 = Vec3::Y;
 
 pub struct View2dPlugin;
 

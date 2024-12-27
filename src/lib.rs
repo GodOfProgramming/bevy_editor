@@ -25,7 +25,7 @@ use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 pub use serde;
 use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
-use ui::{CustomTab, UiPlugin};
+use ui::UiPlugin;
 pub use util::*;
 use view::{
   ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
@@ -54,11 +54,6 @@ impl Editor {
       scene_type_registry: default(),
       prefab_registrar: default(),
     }
-  }
-
-  pub fn add_custom_tab(&mut self, f: fn(&mut World, &mut egui::Ui)) -> &mut Self {
-    self.app.insert_resource(CustomTab(f));
-    self
   }
 
   pub fn add_game_camera<C>(&mut self) -> &mut Self
@@ -284,6 +279,7 @@ impl Plugin for EditorPlugin {
               EditorCamera::on_app_exit,
               EditorCamera2d::on_app_exit,
               EditorCamera3d::on_app_exit,
+              ui::on_app_exit,
             ),
             Self::on_app_exit,
           )
@@ -354,7 +350,7 @@ impl EditorPlugin {
   }
 
   fn handle_pick_events(
-    mut ui_state: ResMut<ui::State>,
+    mut selection: ResMut<ui::InspectorSelection>,
     mut click_events: EventReader<Pointer<Click>>,
     mut q_egui: Query<&mut EguiContext>,
     q_raycast_pickables: Query<&RayCastPickable>,
@@ -370,7 +366,7 @@ impl EditorPlugin {
       let target = click.target;
 
       if q_raycast_pickables.get(target).is_ok() {
-        ui_state.add_selected(target, modifiers.ctrl);
+        selection.add_selected(target, modifiers.ctrl);
       }
     }
   }
@@ -397,7 +393,7 @@ impl EditorPlugin {
 
   fn on_app_exit(app_exit: EventReader<AppExit>, log_info: Res<LogInfo>, mut cache: ResMut<Cache>) {
     if !app_exit.is_empty() {
-      cache.store(log_info.clone());
+      cache.store(log_info.into_inner());
       cache.save();
     }
   }

@@ -219,7 +219,7 @@ impl EditorCamera2d {
   ) {
     if !app_exit.is_empty() {
       for (cam_transform, cam_settings) in &q_cam {
-        cache.store(CameraSaveData {
+        cache.store(&CameraSaveData {
           settings: cam_settings.clone(),
           transform: cam_transform.clone(),
         });

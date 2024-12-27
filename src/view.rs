@@ -57,7 +57,7 @@ impl EditorCamera {
     view_state: Res<State<ViewState>>,
   ) {
     if !app_exit.is_empty() {
-      cache.store(**view_state);
+      cache.store(view_state.get());
     }
   }
 

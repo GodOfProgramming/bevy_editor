@@ -41,11 +41,11 @@ impl Cache {
     }
   }
 
-  pub fn store<S>(&mut self, saveable: S)
+  pub fn store<S>(&mut self, saveable: &S)
   where
     S: Saveable,
   {
-    match ron::ser::to_string(&saveable) {
+    match ron::ser::to_string(saveable) {
       Ok(data) => {
         self.data.insert(S::KEY.to_string(), data);
       }

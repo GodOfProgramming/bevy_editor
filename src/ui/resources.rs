@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use super::{InspectorSelection, ParameterizedUi};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
+use uuid::uuid;
 
 #[derive(Default, Resource, Reflect)]
 pub struct Resources;
@@ -18,6 +19,7 @@ pub struct Params<'w, 's> {
 
 impl ParameterizedUi for Resources {
   type Params<'w, 's> = Params<'w, 's>;
+  const PARAM_UUID: uuid::Uuid = uuid!("54248a54-9544-4e93-9382-3677b8722952");
 
   fn title(&mut self) -> egui::WidgetText {
     stringify!(Resources).into()

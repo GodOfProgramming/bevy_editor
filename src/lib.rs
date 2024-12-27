@@ -279,6 +279,7 @@ impl Plugin for EditorPlugin {
               EditorCamera::on_app_exit,
               EditorCamera2d::on_app_exit,
               EditorCamera3d::on_app_exit,
+              ui::on_app_exit,
             ),
             Self::on_app_exit,
           )
@@ -392,7 +393,7 @@ impl EditorPlugin {
 
   fn on_app_exit(app_exit: EventReader<AppExit>, log_info: Res<LogInfo>, mut cache: ResMut<Cache>) {
     if !app_exit.is_empty() {
-      cache.store(log_info.clone());
+      cache.store(log_info.into_inner());
       cache.save();
     }
   }

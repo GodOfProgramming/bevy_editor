@@ -6,9 +6,10 @@ use crate::{
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use bevy_inspector_egui::reflect_inspector::ui_for_value;
+use uuid::uuid;
 
 #[derive(Default, Resource, Reflect)]
-pub struct ControlPanelUi;
+pub struct ControlPanel;
 
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
@@ -30,8 +31,9 @@ pub struct Params<'w, 's> {
   >,
 }
 
-impl ParameterizedUi for ControlPanelUi {
+impl ParameterizedUi for ControlPanel {
   type Params<'w, 's> = Params<'w, 's>;
+  const PARAM_UUID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
 
   fn title(&mut self) -> egui::WidgetText {
     "Control Panel".into()

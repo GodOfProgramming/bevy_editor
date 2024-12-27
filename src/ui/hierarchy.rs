@@ -2,11 +2,14 @@ use super::{InspectorSelection, SelectedEntities, Ui};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::hierarchy::hierarchy_ui;
+use uuid::uuid;
 
 #[derive(Default, Resource, Reflect)]
 pub struct Hierarchy;
 
 impl Ui for Hierarchy {
+  const UUID: uuid::Uuid = uuid!("860ac319-5c6e-4a2e-83ae-8bb0000d5cb4");
+
   fn title(&mut self) -> egui::WidgetText {
     stringify!(Hierarchy).into()
   }

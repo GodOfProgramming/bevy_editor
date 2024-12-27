@@ -1,11 +1,14 @@
 use super::{InspectorSelection, Ui};
 use bevy::{asset::ReflectAsset, prelude::*};
 use bevy_egui::egui;
+use uuid::uuid;
 
 #[derive(Default, Resource, Reflect)]
 pub struct Assets;
 
 impl Ui for Assets {
+  const UUID: uuid::Uuid = uuid!("4bfee754-f9bc-4695-b215-2a88d9377dfb");
+
   fn title(&mut self) -> egui::WidgetText {
     stringify!(Assets).into()
   }

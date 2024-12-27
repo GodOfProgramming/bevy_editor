@@ -6,6 +6,7 @@ pub mod inspector;
 pub mod prefabs;
 pub mod resources;
 
+use crate::cache::{Cache, Saveable};
 use assets::Assets;
 use bevy::asset::UntypedAssetId;
 use bevy::ecs::system::{SystemParam, SystemState};
@@ -14,15 +15,17 @@ use bevy::reflect::GetTypeRegistration;
 use bevy::utils::HashMap;
 use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector;
-use control_panel::ControlPanelUi;
+use control_panel::ControlPanel;
 use egui_dock::{DockArea, DockState, NodeIndex};
 use game_view::GameView;
 use hierarchy::Hierarchy;
 use inspector::Inspector;
 use prefabs::Prefabs;
 use resources::Resources;
+use serde::{Deserialize, Serialize};
 use std::any::TypeId;
 use std::ops::{Deref, DerefMut};
+use uuid::Uuid;
 
 pub(crate) struct UiPlugin;
 
@@ -48,7 +51,13 @@ pub fn render(world: &mut World) {
   });
 }
 
+pub fn on_app_exit(mut cache: ResMut<Cache>, layout: Res<Layout>) {
+  cache.store(&layout.state);
+}
+
 pub trait Ui: Resource + GetTypeRegistration + Send + Sync + Sized {
+  const UUID: Uuid;
+
   fn title(&mut self) -> egui::WidgetText;
 
   fn can_clear(&self) -> bool {
@@ -80,6 +89,8 @@ trait RegisterParams: ParameterizedUi {
 impl<T> RegisterParams for T where T: ParameterizedUi {}
 
 pub trait ParameterizedUi: Ui {
+  const PARAM_UUID: Uuid;
+
   type Params<'w, 's>: for<'world, 'system> SystemParam<
     Item<'world, 'system> = Self::Params<'world, 'system>,
   >;
@@ -109,6 +120,8 @@ impl<T> Ui for T
 where
   T: ParameterizedUi + 'static,
 {
+  const UUID: Uuid = <T as ParameterizedUi>::PARAM_UUID;
+
   fn title(&mut self) -> egui::WidgetText {
     ParameterizedUi::title(self)
   }
@@ -242,39 +255,74 @@ impl VTable {
   }
 }
 
+#[derive(Serialize, Deserialize)]
+struct LayoutState(DockState<Uuid>);
+
+impl Deref for LayoutState {
+  type Target = DockState<Uuid>;
+  fn deref(&self) -> &Self::Target {
+    &self.0
+  }
+}
+
+impl DerefMut for LayoutState {
+  fn deref_mut(&mut self) -> &mut Self::Target {
+    &mut self.0
+  }
+}
+
+impl Saveable for LayoutState {
+  const KEY: &str = "Layout";
+}
+
 #[derive(Resource)]
-struct Layout {
-  dock: DockState<TypeId>,
-  panels: HashMap<TypeId, VTable>,
+pub(crate) struct Layout {
+  state: LayoutState,
+  panels: HashMap<Uuid, VTable>,
   id: egui::Id,
 }
 
 impl Layout {
-  pub fn new(w: &mut World) -> Self {
+  pub fn new(world: &mut World) -> Self {
     let mut panels = HashMap::new();
-    let p = &mut panels;
 
-    let mut state = DockState::new(vec![ui::<GameView>(p, w)]);
+    fn register<T: Ui + Default>(w: &mut World, p: &mut HashMap<Uuid, VTable>) {
+      w.insert_resource(T::default());
+      p.insert(T::UUID, VTable::new::<T>());
+    }
 
-    let tree = state.main_surface_mut();
+    register::<GameView>(world, &mut panels);
+    register::<Hierarchy>(world, &mut panels);
+    register::<ControlPanel>(world, &mut panels);
+    register::<Inspector>(world, &mut panels);
+    register::<Prefabs>(world, &mut panels);
+    register::<Resources>(world, &mut panels);
+    register::<Assets>(world, &mut panels);
 
-    let root = NodeIndex::root();
+    let state = world
+      .get_resource::<Cache>()
+      .and_then(|cache| cache.get::<LayoutState>())
+      .unwrap_or_else(|| {
+        let mut state = DockState::new(vec![GameView::UUID]);
 
-    let tabs = vec![ui::<Hierarchy>(p, w), ui::<ControlPanelUi>(p, w)];
-    let [central_panel, _left_panel] = tree.split_left(root, 1.0 / 6.0, tabs);
+        let tree = state.main_surface_mut();
 
-    let tabs = vec![ui::<Inspector>(p, w)];
-    let [central_panel, _right_panel] = tree.split_right(central_panel, 4.0 / 5.0, tabs);
+        let root = NodeIndex::root();
 
-    let tabs = vec![
-      ui::<Prefabs>(p, w),
-      ui::<Resources>(p, w),
-      ui::<Assets>(p, w),
-    ];
-    tree.split_below(central_panel, 0.7, tabs);
+        let tabs = vec![Hierarchy::UUID, ControlPanel::UUID];
+        let [central_panel, _left_panel] = tree.split_left(root, 1.0 / 6.0, tabs);
+
+        let tabs = vec![Inspector::UUID];
+        let [central_panel, _right_panel] = tree.split_right(central_panel, 4.0 / 5.0, tabs);
+
+        let tabs = vec![Prefabs::UUID, Resources::UUID, Assets::UUID];
+        tree.split_below(central_panel, 0.7, tabs);
+
+        LayoutState(state)
+      });
 
     Self {
-      dock: state,
+      state,
       panels,
       id: egui::Id::new(TypeId::of::<Self>()),
     }
@@ -304,16 +352,18 @@ impl Layout {
           panels: &mut self.panels,
           world,
         };
-        DockArea::new(&mut self.dock)
+        DockArea::new(&mut self.state)
           .id(self.id)
           .show_inside(ui, &mut tab_viewer);
       });
   }
 
   fn menu_bar_ui(&mut self, ui: &mut egui::Ui) {
-    ui.menu_button("File", |ui| {
-      if ui.button("Open Scene").clicked() {
-        debug!("Do scene open dialog");
+    ui.menu_button("Tools", |ui| {
+      if ui.button("Generate UUID").clicked() {
+        ui.output_mut(|output| {
+          output.copied_text = Uuid::new_v4().to_string();
+        });
       }
     });
   }
@@ -321,11 +371,11 @@ impl Layout {
 
 struct TabViewer<'a> {
   world: &'a mut World,
-  panels: &'a mut HashMap<TypeId, VTable>,
+  panels: &'a mut HashMap<Uuid, VTable>,
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
-  type Tab = TypeId;
+  type Tab = Uuid;
 
   fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
     (self.panels.get_mut(tab).unwrap().title)(self.world)
@@ -361,14 +411,4 @@ impl egui_dock::TabViewer for TabViewer<'_> {
   fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
     egui::Id::new(tab)
   }
-}
-
-fn ui<U: Ui>(panels: &mut HashMap<TypeId, VTable>, world: &mut World) -> TypeId
-where
-  U: Default + 'static,
-{
-  let type_id = TypeId::of::<U>();
-  panels.insert(type_id, VTable::new::<U>());
-  world.insert_resource(U::default());
-  type_id
 }

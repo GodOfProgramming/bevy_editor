@@ -5,11 +5,14 @@ use bevy_inspector_egui::bevy_inspector::{
   by_type_id::{ui_for_asset, ui_for_resource},
   ui_for_entities_shared_components, ui_for_entity_with_children,
 };
+use uuid::uuid;
 
 #[derive(Default, Resource, Reflect)]
 pub struct Inspector;
 
 impl Ui for Inspector {
+  const UUID: uuid::Uuid = uuid!("10bb68b8-c247-4792-89e9-61d1b9682a72");
+
   fn title(&mut self) -> egui::WidgetText {
     stringify!(Inspector).into()
   }

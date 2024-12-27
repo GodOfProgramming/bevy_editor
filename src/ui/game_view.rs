@@ -2,6 +2,7 @@ use super::ParameterizedUi;
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use std::marker::PhantomData;
+use uuid::uuid;
 
 #[derive(Default, Resource, Reflect)]
 pub struct GameView {
@@ -30,6 +31,7 @@ pub struct Params<'w, 's> {
 
 impl ParameterizedUi for GameView {
   type Params<'w, 's> = Params<'w, 's>;
+  const PARAM_UUID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
 
   fn title(&mut self) -> egui::WidgetText {
     "Game View".into()

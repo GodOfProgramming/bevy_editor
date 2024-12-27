@@ -8,14 +8,11 @@ use uuid::uuid;
 pub struct Prefabs;
 
 impl UiComponent for Prefabs {
+  const COMPONENT_NAME: &str = stringify!(Prefabs);
   const ID: PersistentId = PersistentId(uuid!("fa977fad-ed99-4842-bab4-7c00641b39b0"));
 
   fn spawn(_world: &mut World) -> Self {
     default()
-  }
-
-  fn title(_entity: Entity, _world: &mut World) -> egui::WidgetText {
-    stringify!(Prefabs).into()
   }
 
   fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {

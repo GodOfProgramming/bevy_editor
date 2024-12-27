@@ -23,15 +23,13 @@ impl GameView {
 }
 
 impl Ui for GameView {
-  type Params<'w, 's> = NoParams;
+  const NAME: &str = "Game View";
   const UUID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
+
+  type Params<'w, 's> = NoParams;
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
-  }
-
-  fn title(&mut self, _params: Self::Params<'_, '_>) -> egui::WidgetText {
-    "Game View".into()
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {

@@ -8,14 +8,11 @@ use uuid::uuid;
 pub struct Hierarchy;
 
 impl UiComponent for Hierarchy {
+  const COMPONENT_NAME: &str = stringify!(Hierarchy);
   const ID: PersistentId = PersistentId(uuid!("860ac319-5c6e-4a2e-83ae-8bb0000d5cb4"));
 
   fn spawn(_world: &mut World) -> Self {
     default()
-  }
-
-  fn title(_entity: Entity, _world: &mut World) -> egui::WidgetText {
-    stringify!(Hierarchy).into()
   }
 
   fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {

@@ -49,8 +49,8 @@ fn init_resources(world: &mut World) {
 }
 
 pub fn render(world: &mut World) {
-  world.resource_scope(|world, mut ui_state: Mut<Layout>| {
-    ui_state.render(world);
+  world.resource_scope(|world, mut layout: Mut<Layout>| {
+    layout.render(world);
   });
 }
 
@@ -60,11 +60,15 @@ pub fn on_app_exit(mut cache: ResMut<Cache>, layout: Res<Layout>, q_uuids: Query
 }
 
 pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
+  const COMPONENT_NAME: &str;
   const ID: PersistentId;
 
   fn spawn(world: &mut World) -> Self;
 
-  fn title(entity: Entity, world: &mut World) -> egui::WidgetText;
+  #[allow(unused_variables)]
+  fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
+    Self::COMPONENT_NAME.into()
+  }
 
   #[allow(unused_variables)]
   fn can_clear(entity: Entity, world: &mut World) -> bool {
@@ -146,6 +150,7 @@ impl<T> UiExtensions for T where T: Ui {}
 pub struct NoParams;
 
 pub trait Ui: UiComponent {
+  const NAME: &str;
   const UUID: Uuid;
 
   type Params<'w, 's>: for<'world, 'system> SystemParam<
@@ -154,7 +159,10 @@ pub trait Ui: UiComponent {
 
   fn spawn(params: Self::Params<'_, '_>) -> Self;
 
-  fn title(&mut self, params: Self::Params<'_, '_>) -> egui::WidgetText;
+  #[allow(unused_variables)]
+  fn title(&mut self, params: Self::Params<'_, '_>) -> egui::WidgetText {
+    Self::NAME.into()
+  }
 
   #[allow(unused_variables)]
   fn can_clear(&self, params: Self::Params<'_, '_>) -> bool {
@@ -181,6 +189,7 @@ impl<T> UiComponent for T
 where
   T: Ui + 'static,
 {
+  const COMPONENT_NAME: &str = Self::NAME;
   const ID: PersistentId = PersistentId(<T as Ui>::UUID);
 
   fn spawn(world: &mut World) -> Self {
@@ -294,7 +303,12 @@ impl VTable {
     Self {
       spawn: |world| {
         let instance = T::spawn(world);
-        world.spawn((instance, T::ID)).id()
+        let entity_id = world.spawn((instance, T::ID)).id();
+        world
+          .entity_mut(entity_id)
+          .insert(Name::new(T::COMPONENT_NAME));
+        info!("Spawned UI component {}", T::COMPONENT_NAME);
+        entity_id
       },
       title: T::title,
       can_clear: T::can_clear,

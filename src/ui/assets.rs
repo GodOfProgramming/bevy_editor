@@ -12,15 +12,13 @@ pub struct Params<'w, 's> {
 }
 
 impl Ui for Assets {
-  type Params<'w, 's> = Params<'w, 's>;
+  const NAME: &str = stringify!(Assets);
   const UUID: uuid::Uuid = uuid!("4bfee754-f9bc-4695-b215-2a88d9377dfb");
+
+  type Params<'w, 's> = Params<'w, 's>;
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
-  }
-
-  fn title(&mut self, _params: Self::Params<'_, '_>) -> egui::WidgetText {
-    stringify!(Assets).into()
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {

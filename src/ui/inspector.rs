@@ -11,14 +11,11 @@ use uuid::uuid;
 pub struct Inspector;
 
 impl UiComponent for Inspector {
+  const COMPONENT_NAME: &str = stringify!(Inspector);
   const ID: PersistentId = PersistentId(uuid!("10bb68b8-c247-4792-89e9-61d1b9682a72"));
 
   fn spawn(_world: &mut World) -> Self {
     default()
-  }
-
-  fn title(_entity: Entity, _world: &mut World) -> egui::WidgetText {
-    stringify!(Inspector).into()
   }
 
   fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {

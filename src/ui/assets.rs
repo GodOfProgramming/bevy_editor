@@ -2,10 +2,14 @@ use super::{InspectorSelection, Ui};
 use bevy::{asset::ReflectAsset, prelude::*};
 use bevy_egui::egui;
 
-#[derive(Resource, Default)]
-pub struct AssetsUi;
+#[derive(Default, Resource, Reflect)]
+pub struct Assets;
 
-impl Ui for AssetsUi {
+impl Ui for Assets {
+  fn title(&mut self) -> egui::WidgetText {
+    stringify!(Assets).into()
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, world: &mut World) {
     let type_registry = world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();

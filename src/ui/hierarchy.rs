@@ -3,10 +3,14 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::hierarchy::hierarchy_ui;
 
-#[derive(Resource, Default)]
-pub struct HierarchyUi;
+#[derive(Default, Resource, Reflect)]
+pub struct Hierarchy;
 
-impl Ui for HierarchyUi {
+impl Ui for Hierarchy {
+  fn title(&mut self) -> egui::WidgetText {
+    stringify!(Hierarchy).into()
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, world: &mut World) {
     world.resource_scope(|world, mut selection: Mut<InspectorSelection>| {
       if let InspectorSelection::Entities(selected_entities) = selection.as_mut() {

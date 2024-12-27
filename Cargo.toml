@@ -11,7 +11,7 @@ bevy-inspector-egui = "0.28"
 bevy_egui = { version = "0.31", features = ["immutable_ctx"] }
 const_format = "0.2"
 egui-file-dialog = "0.7"
-egui_dock = "0.14"
+egui_dock = { version = "0.14", features = ["serde"] }
 leafwing-input-manager = "0.16"
 platform-dirs = "0.3"
 ron = "0.8"

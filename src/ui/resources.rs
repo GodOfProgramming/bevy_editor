@@ -4,7 +4,7 @@ use super::{InspectorSelection, ParameterizedUi};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 
-#[derive(Resource, Default)]
+#[derive(Default, Resource, Reflect)]
 pub struct Resources;
 
 #[derive(SystemParam)]
@@ -18,6 +18,10 @@ pub struct Params<'w, 's> {
 
 impl ParameterizedUi for Resources {
   type Params<'w, 's> = Params<'w, 's>;
+
+  fn title(&mut self) -> egui::WidgetText {
+    stringify!(Resources).into()
+  }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
     let type_registry = params.type_registry.read();

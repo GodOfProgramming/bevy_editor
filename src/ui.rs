@@ -6,19 +6,20 @@ pub mod inspector;
 pub mod prefabs;
 pub mod resources;
 
-use assets::AssetsUi;
+use assets::Assets;
 use bevy::asset::UntypedAssetId;
 use bevy::ecs::system::{SystemParam, SystemState};
 use bevy::prelude::*;
+use bevy::reflect::GetTypeRegistration;
 use bevy::utils::HashMap;
 use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector;
 use control_panel::ControlPanelUi;
 use egui_dock::{DockArea, DockState, NodeIndex};
 use game_view::GameView;
-use hierarchy::HierarchyUi;
+use hierarchy::Hierarchy;
 use inspector::Inspector;
-use prefabs::PrefabsUi;
+use prefabs::Prefabs;
 use resources::Resources;
 use std::any::TypeId;
 use std::ops::{Deref, DerefMut};
@@ -47,37 +48,62 @@ pub fn render(world: &mut World) {
   });
 }
 
-pub trait Ui: Resource + Send + Sync {
-  fn title(&mut self) -> egui::WidgetText {
-    std::any::type_name::<Self>().into()
-  }
+pub trait Ui: Resource + GetTypeRegistration + Send + Sync + Sized {
+  fn title(&mut self) -> egui::WidgetText;
 
   fn can_clear(&self) -> bool {
     true
   }
 
-  fn on_close(&self, _world: &mut World) {}
+  fn closeable(&mut self) -> bool {
+    false
+  }
+
+  #[allow(unused_variables)]
+  fn on_close(&mut self, world: &mut World) {}
 
   fn render(&mut self, ui: &mut egui::Ui, world: &mut World);
+
+  #[allow(unused_variables)]
+  fn context_menu(&mut self, ui: &mut egui::Ui, world: &mut World) {}
 }
+
+trait RegisterParams: ParameterizedUi {
+  fn register_params(world: &mut World) {
+    if !world.is_resource_added::<ComponentState<Self>>() {
+      let state = SystemState::<<Self as ParameterizedUi>::Params<'_, '_>>::new(world);
+      world.insert_resource(UiComponentState(state));
+    }
+  }
+}
+
+impl<T> RegisterParams for T where T: ParameterizedUi {}
 
 pub trait ParameterizedUi: Ui {
   type Params<'w, 's>: for<'world, 'system> SystemParam<
     Item<'world, 'system> = Self::Params<'world, 'system>,
   >;
 
-  fn title(&mut self) -> egui::WidgetText {
-    std::any::type_name::<Self>().into()
-  }
+  fn title(&mut self) -> egui::WidgetText;
 
   fn can_clear(&self) -> bool {
     true
   }
 
-  fn on_close(&self, _world: &mut World) {}
+  fn closeable(&mut self) -> bool {
+    false
+  }
+
+  #[allow(unused_variables)]
+  fn on_close(&mut self, params: Self::Params<'_, '_>) {}
 
   fn render(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>);
+
+  #[allow(unused_variables)]
+  fn context_menu(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>) {}
 }
+
+type ComponentState<'w, 's, T> = UiComponentState<<T as ParameterizedUi>::Params<'w, 's>>;
 
 impl<T> Ui for T
 where
@@ -91,22 +117,32 @@ where
     ParameterizedUi::can_clear(self)
   }
 
-  fn on_close(&self, world: &mut World) {
-    ParameterizedUi::on_close(self, world);
+  fn closeable(&mut self) -> bool {
+    ParameterizedUi::closeable(self)
+  }
+
+  fn on_close(&mut self, world: &mut World) {
+    T::register_params(world);
+    world.resource_scope(|world, mut params: Mut<ComponentState<Self>>| {
+      let params = params.get_mut(world);
+      ParameterizedUi::on_close(self, params);
+    });
   }
 
   fn render(&mut self, ui: &mut egui::Ui, world: &mut World) {
-    if !world.is_resource_added::<UiComponentState<<Self as ParameterizedUi>::Params<'_, '_>>>() {
-      let state = SystemState::<<Self as ParameterizedUi>::Params<'_, '_>>::new(world);
-      world.insert_resource(UiComponentState(state));
-    }
+    T::register_params(world);
+    world.resource_scope(|world, mut params: Mut<ComponentState<Self>>| {
+      let params = params.get_mut(world);
+      ParameterizedUi::render(self, ui, params);
+    });
+  }
 
-    world.resource_scope(
-      |world, mut params: Mut<UiComponentState<<Self as ParameterizedUi>::Params<'_, '_>>>| {
-        let params = params.get_mut(world);
-        ParameterizedUi::render(self, ui, params);
-      },
-    );
+  fn context_menu(&mut self, ui: &mut egui::Ui, world: &mut World) {
+    T::register_params(world);
+    world.resource_scope(|world, mut params: Mut<ComponentState<Self>>| {
+      let params = params.get_mut(world);
+      ParameterizedUi::context_menu(self, ui, params);
+    });
   }
 }
 
@@ -172,8 +208,10 @@ impl DerefMut for SelectedEntities {
 struct VTable {
   title: fn(&mut World) -> egui::WidgetText,
   can_clear: fn(&World) -> bool,
+  closable: fn(&mut World) -> bool,
   on_close: fn(&mut World),
   render: fn(&mut egui::Ui, &mut World),
+  context_menu: fn(&mut egui::Ui, &mut World),
 }
 
 impl VTable {
@@ -184,15 +222,20 @@ impl VTable {
     Self {
       title: |world| world.resource_mut::<T>().title(),
       can_clear: |world| world.resource::<T>().can_clear(),
+      closable: |world| world.resource_mut::<T>().closeable(),
       on_close: |world| {
-        world.resource_scope(|world, res: Mut<T>| {
+        world.resource_scope(|world, mut res: Mut<T>| {
           res.on_close(world);
         });
-        world.remove_resource::<T>();
       },
       render: |ui, world| {
         world.resource_scope(|world, mut res: Mut<T>| {
           res.render(ui, world);
+        });
+      },
+      context_menu: |ui, world| {
+        world.resource_scope(|world, mut res: Mut<T>| {
+          res.context_menu(ui, world);
         });
       },
     }
@@ -203,6 +246,7 @@ impl VTable {
 struct Layout {
   dock: DockState<TypeId>,
   panels: HashMap<TypeId, VTable>,
+  id: egui::Id,
 }
 
 impl Layout {
@@ -216,55 +260,68 @@ impl Layout {
 
     let root = NodeIndex::root();
 
-    let tabs = vec![ui::<HierarchyUi>(p, w), ui::<ControlPanelUi>(p, w)];
+    let tabs = vec![ui::<Hierarchy>(p, w), ui::<ControlPanelUi>(p, w)];
     let [central_panel, _left_panel] = tree.split_left(root, 1.0 / 6.0, tabs);
 
     let tabs = vec![ui::<Inspector>(p, w)];
     let [central_panel, _right_panel] = tree.split_right(central_panel, 4.0 / 5.0, tabs);
 
     let tabs = vec![
-      ui::<PrefabsUi>(p, w),
+      ui::<Prefabs>(p, w),
       ui::<Resources>(p, w),
-      ui::<AssetsUi>(p, w),
+      ui::<Assets>(p, w),
     ];
     tree.split_below(central_panel, 0.7, tabs);
 
     Self {
       dock: state,
       panels,
+      id: egui::Id::new(TypeId::of::<Self>()),
     }
   }
 
   fn render(&mut self, world: &mut World) {
-    let Ok(mut ctx) = world
+    let Ok(ctx) = world
       .query::<&mut bevy_egui::EguiContext>()
       .get_single_mut(world)
+      .map(|ctx| ctx.get().clone())
     else {
       return;
-    };
-
-    let ctx = ctx.get_mut().clone();
-
-    let mut tab_viewer = TabViewer {
-      panels: &mut self.panels,
-      world,
     };
 
     egui::CentralPanel::default()
       .frame(
         egui::Frame::central_panel(&ctx.style())
-          .inner_margin(0.)
+          .inner_margin(0.0)
           .fill(egui::Color32::TRANSPARENT),
       )
       .show(&ctx, |ui| {
-        DockArea::new(&mut self.dock).show_inside(ui, &mut tab_viewer);
+        egui::menu::bar(ui, |ui| {
+          self.menu_bar_ui(ui);
+        });
+
+        let mut tab_viewer = TabViewer {
+          panels: &mut self.panels,
+          world,
+        };
+        DockArea::new(&mut self.dock)
+          .id(self.id)
+          .show_inside(ui, &mut tab_viewer);
       });
+  }
+
+  fn menu_bar_ui(&mut self, ui: &mut egui::Ui) {
+    ui.menu_button("File", |ui| {
+      if ui.button("Open Scene").clicked() {
+        debug!("Do scene open dialog");
+      }
+    });
   }
 }
 
 struct TabViewer<'a> {
-  panels: &'a mut HashMap<TypeId, VTable>,
   world: &'a mut World,
+  panels: &'a mut HashMap<TypeId, VTable>,
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
@@ -278,17 +335,31 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     (self.panels.get(tab).unwrap().can_clear)(self.world)
   }
 
+  fn closeable(&mut self, tab: &mut Self::Tab) -> bool {
+    (self.panels.get(tab).unwrap().closable)(self.world)
+  }
+
+  fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
+    (self.panels.get(tab).unwrap().on_close)(self.world);
+    true
+  }
+
   fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
     (self.panels.get_mut(tab).unwrap().render)(ui, self.world);
   }
 
-  fn closeable(&mut self, _tab: &mut Self::Tab) -> bool {
-    false
+  fn context_menu(
+    &mut self,
+    ui: &mut egui::Ui,
+    tab: &mut Self::Tab,
+    _surface: egui_dock::SurfaceIndex,
+    _node: NodeIndex,
+  ) {
+    (self.panels.get_mut(tab).unwrap().context_menu)(ui, self.world);
   }
 
-  fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
-    (self.panels.get_mut(tab).unwrap().on_close)(self.world);
-    true
+  fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
+    egui::Id::new(tab)
   }
 }
 

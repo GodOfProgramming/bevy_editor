@@ -7,7 +7,7 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use bevy_inspector_egui::reflect_inspector::ui_for_value;
 
-#[derive(Resource, Default)]
+#[derive(Default, Resource, Reflect)]
 pub struct ControlPanelUi;
 
 #[derive(SystemParam)]
@@ -19,13 +19,23 @@ pub struct Params<'w, 's> {
   view_state: Res<'w, State<ViewState>>,
   next_view_state: ResMut<'w, NextState<ViewState>>,
   log_info: ResMut<'w, LogInfo>,
-  q_transforms: Query<'w, 's, &'static Transform>,
-  q_2d_cam: Query<'w, 's, &'static mut Transform, With<EditorCamera2d>>,
-  q_3d_cam: Query<'w, 's, &'static mut Transform, With<EditorCamera3d>>,
+  q_transforms: ParamSet<
+    'w,
+    's,
+    (
+      Query<'w, 's, &'static Transform>,
+      Query<'w, 's, &'static mut Transform, With<EditorCamera2d>>,
+      Query<'w, 's, &'static mut Transform, With<EditorCamera3d>>,
+    ),
+  >,
 }
 
 impl ParameterizedUi for ControlPanelUi {
   type Params<'w, 's> = Params<'w, 's>;
+
+  fn title(&mut self) -> egui::WidgetText {
+    "Control Panel".into()
+  }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
     let type_registry = params.type_registry.as_ref().read();
@@ -54,7 +64,8 @@ impl ParameterizedUi for ControlPanelUi {
             'move_block: {
               let entity = selected_entities.iter().next().unwrap();
 
-              let Ok(transform) = params.q_transforms.get(entity) else {
+              let all_transforms = params.q_transforms.p0();
+              let Ok(transform) = all_transforms.get(entity) else {
                 break 'move_block;
               };
 
@@ -62,12 +73,12 @@ impl ParameterizedUi for ControlPanelUi {
 
               match view {
                 ViewState::Camera2D => {
-                  for mut cam_transform in &mut params.q_2d_cam {
+                  for mut cam_transform in &mut params.q_transforms.p1() {
                     cam_transform.translation = entity_pos;
                   }
                 }
                 ViewState::Camera3D => {
-                  for mut cam_transform in &mut params.q_3d_cam {
+                  for mut cam_transform in &mut params.q_transforms.p2() {
                     cam_transform.translation = entity_pos;
                   }
                 }
@@ -79,7 +90,8 @@ impl ParameterizedUi for ControlPanelUi {
           if ui.button("Look At Selected").clicked() {
             'look_block: {
               let entity = selected_entities.iter().next().unwrap();
-              let Ok(transform) = params.q_transforms.get(entity) else {
+              let all_transforms = params.q_transforms.p0();
+              let Ok(transform) = all_transforms.get(entity) else {
                 break 'look_block;
               };
 
@@ -87,12 +99,12 @@ impl ParameterizedUi for ControlPanelUi {
 
               match view {
                 ViewState::Camera2D => {
-                  for mut cam_transform in &mut params.q_2d_cam {
+                  for mut cam_transform in &mut params.q_transforms.p1() {
                     cam_transform.look_at(entity_pos, view2d::UP);
                   }
                 }
                 ViewState::Camera3D => {
-                  for mut cam_transform in &mut params.q_3d_cam {
+                  for mut cam_transform in &mut params.q_transforms.p2() {
                     cam_transform.look_at(entity_pos, view3d::UP);
                   }
                 }

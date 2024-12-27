@@ -6,10 +6,14 @@ use bevy_inspector_egui::bevy_inspector::{
   ui_for_entities_shared_components, ui_for_entity_with_children,
 };
 
-#[derive(Resource, Default)]
+#[derive(Default, Resource, Reflect)]
 pub struct Inspector;
 
 impl Ui for Inspector {
+  fn title(&mut self) -> egui::WidgetText {
+    stringify!(Inspector).into()
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, world: &mut World) {
     let type_registry = world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();

@@ -3,7 +3,7 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::hierarchy::hierarchy_ui;
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct HierarchyUi;
 
 impl Ui for HierarchyUi {

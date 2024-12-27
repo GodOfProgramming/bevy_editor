@@ -2,7 +2,7 @@ use super::{InspectorSelection, Ui};
 use bevy::{asset::ReflectAsset, prelude::*};
 use bevy_egui::egui;
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct AssetsUi;
 
 impl Ui for AssetsUi {

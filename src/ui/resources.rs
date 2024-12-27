@@ -4,7 +4,7 @@ use super::{InspectorSelection, ParameterizedUi};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct Resources;
 
 #[derive(SystemParam)]

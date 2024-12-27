@@ -6,7 +6,7 @@ use bevy_inspector_egui::bevy_inspector::{
   ui_for_entities_shared_components, ui_for_entity_with_children,
 };
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct Inspector;
 
 impl Ui for Inspector {

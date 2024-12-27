@@ -7,7 +7,7 @@ use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use bevy_inspector_egui::reflect_inspector::ui_for_value;
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct ControlPanelUi;
 
 #[derive(SystemParam)]

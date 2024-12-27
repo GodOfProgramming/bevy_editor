@@ -3,7 +3,8 @@ pub mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},
-  ui, EditorState,
+  ui::game_view::GameView,
+  EditorState,
 };
 use bevy::{prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use serde::{Deserialize, Serialize};
@@ -65,7 +66,7 @@ impl EditorCamera {
     primary_window: Query<&mut Window, With<PrimaryWindow>>,
     q_egui_settings: Query<&bevy_egui::EguiSettings>,
     mut cameras: Query<&mut Camera>,
-    ui_state: Res<ui::State>,
+    game_view: Res<GameView>,
   ) {
     let Ok(window) = primary_window.get_single() else {
       warn!("Found no window");
@@ -80,7 +81,7 @@ impl EditorCamera {
     for mut cam in &mut cameras {
       let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
-      let viewport = ui_state.viewport();
+      let viewport = game_view.viewport();
       let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
       let viewport_size = viewport.size() * scale_factor;
 
@@ -140,6 +141,6 @@ fn can_run(
   }
 }
 
-fn mouse_actions_enabled(ui_state: Res<ui::State>) -> bool {
-  ui_state.hovered()
+fn mouse_actions_enabled(game_view: Res<GameView>) -> bool {
+  game_view.hovered()
 }

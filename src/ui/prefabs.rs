@@ -3,7 +3,7 @@ use crate::assets::Prefabs;
 use bevy::prelude::*;
 use bevy_egui::egui;
 
-#[derive(Default)]
+#[derive(Resource, Default)]
 pub struct PrefabsUi;
 
 impl Ui for PrefabsUi {

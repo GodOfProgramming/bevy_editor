@@ -10,6 +10,7 @@ use assets::AssetsUi;
 use bevy::asset::UntypedAssetId;
 use bevy::ecs::system::{SystemParam, SystemState};
 use bevy::prelude::*;
+use bevy::utils::HashMap;
 use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector;
 use control_panel::ControlPanelUi;
@@ -28,24 +29,25 @@ impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
     debug!("Building UI Plugin");
     app
-      .insert_resource(InspectorSelection::Entities(SelectedEntities::default()))
       .add_plugins(EguiPlugin)
-      .add_systems(Startup, on_start)
+      .add_systems(PreStartup, init_resources)
       .add_systems(Update, render);
   }
 }
 
-fn on_start(mut commands: Commands) {
-  commands.insert_resource(State::new());
+fn init_resources(world: &mut World) {
+  let layout = Layout::new(world);
+  world.insert_resource(layout);
+  world.insert_resource(InspectorSelection::Entities(SelectedEntities::default()));
 }
 
 pub fn render(world: &mut World) {
-  world.resource_scope(|world, mut ui_state: Mut<State>| {
+  world.resource_scope(|world, mut ui_state: Mut<Layout>| {
     ui_state.render(world);
   });
 }
 
-pub trait Ui: Send + Sync {
+pub trait Ui: Resource + Send + Sync {
   fn title(&mut self) -> egui::WidgetText {
     std::any::type_name::<Self>().into()
   }
@@ -53,6 +55,8 @@ pub trait Ui: Send + Sync {
   fn can_clear(&self) -> bool {
     true
   }
+
+  fn on_close(&self, _world: &mut World) {}
 
   fn render(&mut self, ui: &mut egui::Ui, world: &mut World);
 }
@@ -70,6 +74,8 @@ pub trait ParameterizedUi: Ui {
     true
   }
 
+  fn on_close(&self, _world: &mut World) {}
+
   fn render(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>);
 }
 
@@ -85,14 +91,18 @@ where
     ParameterizedUi::can_clear(self)
   }
 
+  fn on_close(&self, world: &mut World) {
+    ParameterizedUi::on_close(self, world);
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, world: &mut World) {
-    if !world.is_resource_added::<UiState<<Self as ParameterizedUi>::Params<'_, '_>>>() {
+    if !world.is_resource_added::<UiComponentState<<Self as ParameterizedUi>::Params<'_, '_>>>() {
       let state = SystemState::<<Self as ParameterizedUi>::Params<'_, '_>>::new(world);
-      world.insert_resource(UiState(state));
+      world.insert_resource(UiComponentState(state));
     }
 
     world.resource_scope(
-      |world, mut params: Mut<UiState<<Self as ParameterizedUi>::Params<'_, '_>>>| {
+      |world, mut params: Mut<UiComponentState<<Self as ParameterizedUi>::Params<'_, '_>>>| {
         let params = params.get_mut(world);
         ParameterizedUi::render(self, ui, params);
       },
@@ -100,28 +110,12 @@ where
   }
 }
 
-#[derive(Component)]
-pub struct UiComponent(Box<dyn Ui>);
-
-impl Deref for UiComponent {
-  type Target = Box<dyn Ui>;
-  fn deref(&self) -> &Self::Target {
-    &self.0
-  }
-}
-
-impl DerefMut for UiComponent {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    &mut self.0
-  }
-}
-
 #[derive(Resource)]
-struct UiState<P>(SystemState<P>)
+struct UiComponentState<P>(SystemState<P>)
 where
   P: SystemParam + 'static;
 
-impl<P> Deref for UiState<P>
+impl<P> Deref for UiComponentState<P>
 where
   P: SystemParam + 'static,
 {
@@ -131,7 +125,7 @@ where
   }
 }
 
-impl<P> DerefMut for UiState<P>
+impl<P> DerefMut for UiComponentState<P>
 where
   P: SystemParam + 'static,
 {
@@ -175,46 +169,70 @@ impl DerefMut for SelectedEntities {
   }
 }
 
-#[derive(Resource)]
-pub(crate) struct State {
-  dock: DockState<Box<dyn Ui>>,
-  viewport_rect: egui::Rect,
-  game_view_hovered: bool,
+struct VTable {
+  title: fn(&mut World) -> egui::WidgetText,
+  can_clear: fn(&World) -> bool,
+  on_close: fn(&mut World),
+  render: fn(&mut egui::Ui, &mut World),
 }
 
-impl State {
-  pub fn new() -> Self {
-    let mut state = DockState::new(vec![ui::<GameView>()]);
+impl VTable {
+  pub fn new<T>() -> Self
+  where
+    T: Ui,
+  {
+    Self {
+      title: |world| world.resource_mut::<T>().title(),
+      can_clear: |world| world.resource::<T>().can_clear(),
+      on_close: |world| {
+        world.resource_scope(|world, res: Mut<T>| {
+          res.on_close(world);
+        });
+        world.remove_resource::<T>();
+      },
+      render: |ui, world| {
+        world.resource_scope(|world, mut res: Mut<T>| {
+          res.render(ui, world);
+        });
+      },
+    }
+  }
+}
+
+#[derive(Resource)]
+struct Layout {
+  dock: DockState<TypeId>,
+  panels: HashMap<TypeId, VTable>,
+}
+
+impl Layout {
+  pub fn new(w: &mut World) -> Self {
+    let mut panels = HashMap::new();
+    let p = &mut panels;
+
+    let mut state = DockState::new(vec![ui::<GameView>(p, w)]);
 
     let tree = state.main_surface_mut();
 
     let root = NodeIndex::root();
 
-    let tabs = vec![ui::<HierarchyUi>(), ui::<ControlPanelUi>()];
+    let tabs = vec![ui::<HierarchyUi>(p, w), ui::<ControlPanelUi>(p, w)];
     let [central_panel, _left_panel] = tree.split_left(root, 1.0 / 6.0, tabs);
 
-    let tabs = vec![ui::<Inspector>()];
+    let tabs = vec![ui::<Inspector>(p, w)];
     let [central_panel, _right_panel] = tree.split_right(central_panel, 4.0 / 5.0, tabs);
 
-    let tabs = vec![ui::<PrefabsUi>(), ui::<Resources>(), ui::<AssetsUi>()];
+    let tabs = vec![
+      ui::<PrefabsUi>(p, w),
+      ui::<Resources>(p, w),
+      ui::<AssetsUi>(p, w),
+    ];
     tree.split_below(central_panel, 0.7, tabs);
 
     Self {
       dock: state,
-      viewport_rect: egui::Rect::NOTHING,
-      game_view_hovered: false,
+      panels,
     }
-  }
-
-  pub fn viewport(&self) -> egui::Rect {
-    egui::Rect {
-      max: egui::Pos2::new(self.viewport_rect.max.x, self.viewport_rect.max.y),
-      min: egui::Pos2::new(self.viewport_rect.min.x, self.viewport_rect.min.y),
-    }
-  }
-
-  pub fn hovered(&self) -> bool {
-    self.game_view_hovered
   }
 
   fn render(&mut self, world: &mut World) {
@@ -227,7 +245,10 @@ impl State {
 
     let ctx = ctx.get_mut().clone();
 
-    let mut tab_viewer = TabViewer { world };
+    let mut tab_viewer = TabViewer {
+      panels: &mut self.panels,
+      world,
+    };
 
     egui::CentralPanel::default()
       .frame(
@@ -242,37 +263,41 @@ impl State {
 }
 
 struct TabViewer<'a> {
+  panels: &'a mut HashMap<TypeId, VTable>,
   world: &'a mut World,
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
-  type Tab = Box<dyn Ui>;
+  type Tab = TypeId;
 
-  fn title(&mut self, window: &mut Self::Tab) -> egui::WidgetText {
-    window.title()
+  fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
+    (self.panels.get_mut(tab).unwrap().title)(self.world)
   }
 
-  fn clear_background(&self, window: &Self::Tab) -> bool {
-    window.can_clear()
+  fn clear_background(&self, tab: &Self::Tab) -> bool {
+    (self.panels.get(tab).unwrap().can_clear)(self.world)
   }
 
   fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
-    tab.render(ui, self.world);
+    (self.panels.get_mut(tab).unwrap().render)(ui, self.world);
   }
 
   fn closeable(&mut self, _tab: &mut Self::Tab) -> bool {
     false
   }
 
-  fn on_close(&mut self, _tab: &mut Self::Tab) -> bool {
-    // self.world.despawn(tab)
-    false
+  fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
+    (self.panels.get_mut(tab).unwrap().on_close)(self.world);
+    true
   }
 }
 
-fn ui<U: Ui>() -> Box<dyn Ui>
+fn ui<U: Ui>(panels: &mut HashMap<TypeId, VTable>, world: &mut World) -> TypeId
 where
   U: Default + 'static,
 {
-  Box::new(U::default())
+  let type_id = TypeId::of::<U>();
+  panels.insert(type_id, VTable::new::<U>());
+  world.insert_resource(U::default());
+  type_id
 }

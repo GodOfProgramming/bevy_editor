@@ -1,4 +1,4 @@
-use super::{InspectorSelection, ParameterizedUi};
+use super::{InspectorSelection, Ui};
 use crate::{
   view::{view2d, view3d, EditorCamera2d, EditorCamera3d, ViewState},
   EditorState, LogInfo,
@@ -8,7 +8,7 @@ use bevy_egui::egui;
 use bevy_inspector_egui::reflect_inspector::ui_for_value;
 use uuid::uuid;
 
-#[derive(Default, Resource, Reflect)]
+#[derive(Default, Component, Reflect)]
 pub struct ControlPanel;
 
 #[derive(SystemParam)]
@@ -31,9 +31,13 @@ pub struct Params<'w, 's> {
   >,
 }
 
-impl ParameterizedUi for ControlPanel {
+impl Ui for ControlPanel {
   type Params<'w, 's> = Params<'w, 's>;
-  const PARAM_UUID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
+  const UUID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
+
+  fn spawn(_params: Self::Params<'_, '_>) -> Self {
+    default()
+  }
 
   fn title(&mut self) -> egui::WidgetText {
     "Control Panel".into()

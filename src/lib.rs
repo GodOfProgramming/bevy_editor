@@ -24,8 +24,7 @@ use input::InputPlugin;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 pub use serde;
 use serde::{Deserialize, Serialize};
-use std::ops::{Deref, DerefMut};
-use ui::UiPlugin;
+use ui::{Ui, UiPlugin};
 pub use util::*;
 use view::{
   ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
@@ -37,13 +36,17 @@ pub enum EditorState {
   Testing,
 }
 
+#[derive(Deref, DerefMut)]
 pub struct Editor {
+  #[deref]
   app: App,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
 }
 
 impl Editor {
+  const COLOR: Srgba = tailwind::GREEN_700;
+
   pub fn new() -> Self {
     let mut app = App::new();
 
@@ -56,101 +59,7 @@ impl Editor {
     }
   }
 
-  pub fn add_game_camera<C>(&mut self) -> &mut Self
-  where
-    C: Component,
-  {
-    const COLOR: Srgba = tailwind::GREEN_700;
-
-    fn swap_cameras<Enabled, Disabled>(
-      mut q_enabled_cameras: Query<&mut Camera, (With<Enabled>, Without<Disabled>)>,
-      mut q_disabled_cameras: Query<&mut Camera, (With<Disabled>, Without<Enabled>)>,
-    ) where
-      Enabled: Component,
-      Disabled: Component,
-    {
-      for mut cam in &mut q_enabled_cameras {
-        cam.is_active = true;
-      }
-
-      for mut cam in &mut q_disabled_cameras {
-        cam.is_active = false;
-      }
-    }
-
-    fn render_2d_cameras<C: Component>(
-      mut gizmos: Gizmos,
-      q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
-    ) {
-      for (transform, projection) in &q_cam {
-        let rect_pos = transform.translation;
-        gizmos.rect(rect_pos, projection.area.max - projection.area.min, COLOR);
-      }
-    }
-
-    fn render_3d_cameras<C: Component>(
-      mut gizmos: Gizmos,
-      q_cam: Query<(&Transform, &Projection), (With<Camera3d>, With<C>)>,
-    ) {
-      fn show_camera(transform: &Transform, scaler: f32, gizmos: &mut Gizmos) {
-        gizmos.cuboid(transform.clone(), COLOR);
-
-        let forward = transform.forward().as_vec3();
-
-        let rect_pos = transform.translation + forward;
-        let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
-        let rect_dim = Vec2::new(1.0 * scaler, 1.0);
-
-        gizmos.rect(rect_iso, rect_dim, COLOR);
-
-        let start = transform.translation + forward * transform.scale / 2.0;
-
-        let rect_corners = [
-          rect_dim,
-          -rect_dim,
-          rect_dim.with_x(-rect_dim.x),
-          rect_dim.with_y(-rect_dim.y),
-        ]
-        .map(|corner| Vec3::from((corner / 2.0, 0.0)))
-        .map(|corner| rect_iso * corner);
-
-        for corner in rect_corners {
-          gizmos.line(start, corner, COLOR);
-        }
-      }
-
-      for (transform, projection) in &q_cam {
-        match projection {
-          Projection::Perspective(perspective) => {
-            show_camera(transform, perspective.aspect_ratio, &mut gizmos);
-          }
-          Projection::Orthographic(orthographic) => {
-            show_camera(transform, orthographic.scale, &mut gizmos);
-          }
-        }
-      }
-    }
-
-    self
-      .app
-      .add_systems(PostStartup, swap_cameras::<ActiveEditorCamera, C>)
-      .add_systems(
-        OnEnter(EditorState::Testing),
-        swap_cameras::<C, ActiveEditorCamera>,
-      )
-      .add_systems(
-        OnEnter(EditorState::Editing),
-        swap_cameras::<ActiveEditorCamera, C>,
-      )
-      .add_systems(
-        Update,
-        (
-          render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
-          render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
-        )
-          .run_if(in_state(EditorState::Editing)),
-      );
-
+  pub fn register_ui<U: Ui>(&mut self) -> &mut Self {
     self
   }
 
@@ -171,6 +80,33 @@ impl Editor {
   {
     self.register_type::<T>();
     self.app.add_plugins(PrefabPlugin::<T>::default());
+    self
+  }
+
+  pub fn add_game_camera<C>(&mut self) -> &mut Self
+  where
+    C: Component,
+  {
+    self
+      .app
+      .add_systems(PostStartup, Self::swap_cameras::<ActiveEditorCamera, C>)
+      .add_systems(
+        OnEnter(EditorState::Testing),
+        Self::swap_cameras::<C, ActiveEditorCamera>,
+      )
+      .add_systems(
+        OnEnter(EditorState::Editing),
+        Self::swap_cameras::<ActiveEditorCamera, C>,
+      )
+      .add_systems(
+        Update,
+        (
+          Self::render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
+          Self::render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
+        )
+          .run_if(in_state(EditorState::Editing)),
+      );
+
     self
   }
 
@@ -197,18 +133,78 @@ impl Editor {
     self.scene_type_registry.write().register::<T>();
     self.app.register_type::<T>();
   }
-}
 
-impl Deref for Editor {
-  type Target = App;
-  fn deref(&self) -> &Self::Target {
-    &self.app
+  fn swap_cameras<Enabled, Disabled>(
+    mut q_enabled_cameras: Query<&mut Camera, (With<Enabled>, Without<Disabled>)>,
+    mut q_disabled_cameras: Query<&mut Camera, (With<Disabled>, Without<Enabled>)>,
+  ) where
+    Enabled: Component,
+    Disabled: Component,
+  {
+    for mut cam in &mut q_enabled_cameras {
+      cam.is_active = true;
+    }
+
+    for mut cam in &mut q_disabled_cameras {
+      cam.is_active = false;
+    }
   }
-}
 
-impl DerefMut for Editor {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    &mut self.app
+  fn render_2d_cameras<C: Component>(
+    mut gizmos: Gizmos,
+    q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
+  ) {
+    for (transform, projection) in &q_cam {
+      let rect_pos = transform.translation;
+      gizmos.rect(
+        rect_pos,
+        projection.area.max - projection.area.min,
+        Self::COLOR,
+      );
+    }
+  }
+
+  fn render_3d_cameras<C: Component>(
+    mut gizmos: Gizmos,
+    q_cam: Query<(&Transform, &Projection), (With<Camera3d>, With<C>)>,
+  ) {
+    for (transform, projection) in &q_cam {
+      match projection {
+        Projection::Perspective(perspective) => {
+          Self::show_camera(transform, perspective.aspect_ratio, &mut gizmos);
+        }
+        Projection::Orthographic(orthographic) => {
+          Self::show_camera(transform, orthographic.scale, &mut gizmos);
+        }
+      }
+    }
+  }
+
+  fn show_camera(transform: &Transform, scaler: f32, gizmos: &mut Gizmos) {
+    gizmos.cuboid(transform.clone(), Self::COLOR);
+
+    let forward = transform.forward().as_vec3();
+
+    let rect_pos = transform.translation + forward;
+    let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
+    let rect_dim = Vec2::new(1.0 * scaler, 1.0);
+
+    gizmos.rect(rect_iso, rect_dim, Self::COLOR);
+
+    let start = transform.translation + forward * transform.scale / 2.0;
+
+    let rect_corners = [
+      rect_dim,
+      -rect_dim,
+      rect_dim.with_x(-rect_dim.x),
+      rect_dim.with_y(-rect_dim.y),
+    ]
+    .map(|corner| Vec3::from((corner / 2.0, 0.0)))
+    .map(|corner| rect_iso * corner);
+
+    for corner in rect_corners {
+      gizmos.line(start, corner, Self::COLOR);
+    }
   }
 }
 

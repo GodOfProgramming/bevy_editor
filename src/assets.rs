@@ -7,10 +7,7 @@ use bevy::{
   utils::hashbrown::HashMap,
 };
 use serde::Deserialize;
-use std::{
-  marker::PhantomData,
-  ops::{Deref, DerefMut},
-};
+use std::marker::PhantomData;
 
 pub struct PrefabPlugin<T> {
   _pd: PhantomData<T>,
@@ -126,7 +123,7 @@ impl PrefabRegistrar {
 type SpawnFn = dyn FnMut(&mut World) + Send + Sync;
 type PrefabSpawnMap = HashMap<String, Box<SpawnFn>>;
 
-#[derive(Resource)]
+#[derive(Resource, Deref, DerefMut)]
 pub struct Prefabs(PrefabSpawnMap);
 
 impl Prefabs {
@@ -156,20 +153,6 @@ impl Prefabs {
     if let Some(spawn_fn) = self.get_mut(id.as_ref()) {
       (spawn_fn)(world);
     }
-  }
-}
-
-impl Deref for Prefabs {
-  type Target = PrefabSpawnMap;
-
-  fn deref(&self) -> &Self::Target {
-    &self.0
-  }
-}
-
-impl DerefMut for Prefabs {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    &mut self.0
   }
 }
 

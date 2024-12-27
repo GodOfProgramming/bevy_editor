@@ -1,10 +1,9 @@
-use super::ParameterizedUi;
-use bevy::{ecs::system::SystemParam, prelude::*};
+use super::{NoParams, Ui};
+use bevy::prelude::*;
 use bevy_egui::egui;
-use std::marker::PhantomData;
 use uuid::uuid;
 
-#[derive(Default, Resource, Reflect)]
+#[derive(Default, Component, Reflect)]
 pub struct GameView {
   viewport_rect: Rect,
   mouse_hovered: bool,
@@ -23,15 +22,13 @@ impl GameView {
   }
 }
 
-#[derive(SystemParam)]
-pub struct Params<'w, 's> {
-  #[system_param(ignore)]
-  _pd: PhantomData<(&'w (), &'s ())>,
-}
+impl Ui for GameView {
+  type Params<'w, 's> = NoParams;
+  const UUID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
 
-impl ParameterizedUi for GameView {
-  type Params<'w, 's> = Params<'w, 's>;
-  const PARAM_UUID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
+  fn spawn(_params: Self::Params<'_, '_>) -> Self {
+    default()
+  }
 
   fn title(&mut self) -> egui::WidgetText {
     "Game View".into()

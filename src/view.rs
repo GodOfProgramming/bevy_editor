@@ -66,7 +66,7 @@ impl EditorCamera {
     primary_window: Query<&mut Window, With<PrimaryWindow>>,
     q_egui_settings: Query<&bevy_egui::EguiSettings>,
     mut cameras: Query<&mut Camera>,
-    game_view: Res<GameView>,
+    q_game_views: Query<&GameView>,
   ) {
     let Ok(window) = primary_window.get_single() else {
       warn!("Found no window");
@@ -75,6 +75,11 @@ impl EditorCamera {
 
     let Ok(egui_settings) = q_egui_settings.get_single() else {
       warn!("Found no egui settings");
+      return;
+    };
+
+    let Ok(game_view) = q_game_views.get_single() else {
+      warn!("Found no or multiple game views");
       return;
     };
 
@@ -141,6 +146,6 @@ fn can_run(
   }
 }
 
-fn mouse_actions_enabled(game_view: Res<GameView>) -> bool {
-  game_view.hovered()
+fn mouse_actions_enabled(q_game_views: Query<&GameView>) -> bool {
+  q_game_views.iter().any(|gv| gv.hovered())
 }

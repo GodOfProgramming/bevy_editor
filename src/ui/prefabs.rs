@@ -1,20 +1,24 @@
-use super::Ui;
+use super::{PersistentId, UiComponent};
 use crate::assets;
 use bevy::prelude::*;
 use bevy_egui::egui;
 use uuid::uuid;
 
-#[derive(Default, Resource, Reflect)]
+#[derive(Default, Component, Reflect)]
 pub struct Prefabs;
 
-impl Ui for Prefabs {
-  const UUID: uuid::Uuid = uuid!("fa977fad-ed99-4842-bab4-7c00641b39b0");
+impl UiComponent for Prefabs {
+  const ID: PersistentId = PersistentId(uuid!("fa977fad-ed99-4842-bab4-7c00641b39b0"));
 
-  fn title(&mut self) -> egui::WidgetText {
+  fn spawn(_world: &mut World) -> Self {
+    default()
+  }
+
+  fn title(_entity: Entity, _world: &mut World) -> egui::WidgetText {
     stringify!(Prefabs).into()
   }
 
-  fn render(&mut self, ui: &mut egui::Ui, world: &mut World) {
+  fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {
     world.resource_scope(|world, mut prefabs: Mut<assets::Prefabs>| {
       let mut prefab_ids = prefabs.keys().cloned().collect::<Vec<_>>();
 

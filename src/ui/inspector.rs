@@ -1,4 +1,4 @@
-use super::{InspectorSelection, Ui};
+use super::{InspectorSelection, PersistentId, UiComponent};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::{
@@ -7,17 +7,21 @@ use bevy_inspector_egui::bevy_inspector::{
 };
 use uuid::uuid;
 
-#[derive(Default, Resource, Reflect)]
+#[derive(Default, Component, Reflect)]
 pub struct Inspector;
 
-impl Ui for Inspector {
-  const UUID: uuid::Uuid = uuid!("10bb68b8-c247-4792-89e9-61d1b9682a72");
+impl UiComponent for Inspector {
+  const ID: PersistentId = PersistentId(uuid!("10bb68b8-c247-4792-89e9-61d1b9682a72"));
 
-  fn title(&mut self) -> egui::WidgetText {
+  fn spawn(_world: &mut World) -> Self {
+    default()
+  }
+
+  fn title(_entity: Entity, _world: &mut World) -> egui::WidgetText {
     stringify!(Inspector).into()
   }
 
-  fn render(&mut self, ui: &mut egui::Ui, world: &mut World) {
+  fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {
     let type_registry = world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();
 

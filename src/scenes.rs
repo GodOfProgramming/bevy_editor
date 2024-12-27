@@ -1,8 +1,5 @@
 use bevy::{asset::ReflectHandle, prelude::*, reflect::TypeRegistryArc, tasks::IoTaskPool};
-use std::{
-  ops::{Deref, DerefMut},
-  path::PathBuf,
-};
+use std::path::PathBuf;
 
 #[derive(Event)]
 pub struct SaveEvent(PathBuf);
@@ -129,23 +126,8 @@ impl LoadEvent {
 #[derive(Component)]
 pub struct SceneMarker;
 
-#[derive(Default, Clone, Resource)]
-pub struct SceneTypeRegistry {
-  type_registry: TypeRegistryArc,
-}
-
-impl Deref for SceneTypeRegistry {
-  type Target = TypeRegistryArc;
-  fn deref(&self) -> &Self::Target {
-    &self.type_registry
-  }
-}
-
-impl DerefMut for SceneTypeRegistry {
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    &mut self.type_registry
-  }
-}
+#[derive(Default, Deref, DerefMut, Clone, Resource)]
+pub struct SceneTypeRegistry(TypeRegistryArc);
 
 pub fn check_for_saves(world: &mut World) {
   world.resource_scope(|world, save_events: Mut<Events<SaveEvent>>| {

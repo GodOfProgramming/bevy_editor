@@ -30,7 +30,7 @@ impl Ui for GameView {
     default()
   }
 
-  fn title(&mut self) -> egui::WidgetText {
+  fn title(&mut self, _params: Self::Params<'_, '_>) -> egui::WidgetText {
     "Game View".into()
   }
 
@@ -43,7 +43,7 @@ impl Ui for GameView {
     self.mouse_hovered = ui.ui_contains_pointer();
   }
 
-  fn can_clear(&self) -> bool {
+  fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {
     false
   }
 }

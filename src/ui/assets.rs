@@ -19,7 +19,7 @@ impl Ui for Assets {
     default()
   }
 
-  fn title(&mut self) -> egui::WidgetText {
+  fn title(&mut self, _params: Self::Params<'_, '_>) -> egui::WidgetText {
     stringify!(Assets).into()
   }
 

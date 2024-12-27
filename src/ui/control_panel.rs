@@ -39,7 +39,7 @@ impl Ui for ControlPanel {
     default()
   }
 
-  fn title(&mut self) -> egui::WidgetText {
+  fn title(&mut self, _params: Self::Params<'_, '_>) -> egui::WidgetText {
     "Control Panel".into()
   }
 

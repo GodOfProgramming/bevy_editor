@@ -86,40 +86,57 @@ pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
 }
 
 trait RegisterParams: Ui {
-  fn register_params(world: &mut World) {
-    if !world.is_resource_added::<ComponentState<Self>>() {
+  fn register_params(entity: Entity, world: &mut World) {
+    if !world.entity(entity).contains::<ComponentState<Self>>() {
       let state = SystemState::<<Self as Ui>::Params<'_, '_>>::new(world);
-      world.insert_resource(UiComponentState(state));
+      world.entity_mut(entity).insert(UiComponentState(state));
     }
+  }
+
+  fn with_params<T>(
+    entity: Entity,
+    world: &mut World,
+    f: impl FnOnce(Self::Params<'_, '_>) -> T,
+  ) -> T {
+    let world_cell = world.as_unsafe_world_cell();
+    let mut entity = unsafe { world_cell.world_mut() }.entity_mut(entity);
+    let mut params = entity.get_mut::<ComponentState<Self>>().unwrap();
+    let params = params.get_mut(unsafe { world_cell.world_mut() });
+    f(params)
   }
 }
 
 impl<T> RegisterParams for T where T: Ui {}
 
 trait UiExtensions: Ui {
-  fn get_entity<T>(entity: Entity, world: &mut World, f: impl FnOnce(&Self) -> T) -> T {
-    let mut q = world.query::<&Self>();
-    f(q.get(world, entity).unwrap())
+  fn get_entity<T>(
+    entity: Entity,
+    world: &mut World,
+    f: impl FnOnce(&Self, Self::Params<'_, '_>) -> T,
+  ) -> T {
+    Self::register_params(entity, world);
+    let mut q = world.query::<(&Self, &mut ComponentState<Self>)>();
+    let world_cell = world.as_unsafe_world_cell();
+    let (this, mut params) = q
+      .get_mut(unsafe { world_cell.world_mut() }, entity)
+      .unwrap();
+    let params = params.get_mut(unsafe { world_cell.world_mut() });
+    f(this, params)
   }
 
-  fn get_entity_mut<T>(entity: Entity, world: &mut World, f: impl FnOnce(&mut Self) -> T) -> T {
-    let mut q = world.query::<&mut Self>();
-    f(q.get_mut(world, entity).unwrap().as_mut())
-  }
-
-  fn execute<T>(
+  fn get_entity_mut<T>(
     entity: Entity,
     world: &mut World,
     f: impl FnOnce(&mut Self, Self::Params<'_, '_>) -> T,
   ) -> T {
-    Self::register_params(world);
-    world.resource_scope(|world, mut params: Mut<ComponentState<Self>>| {
-      let world_cell = world.as_unsafe_world_cell();
-      Self::get_entity_mut(entity, unsafe { world_cell.world_mut() }, |this| {
-        let params = params.get_mut(unsafe { world_cell.world_mut() });
-        f(this, params)
-      })
-    })
+    Self::register_params(entity, world);
+    let mut q = world.query::<(&mut Self, &mut ComponentState<Self>)>();
+    let world_cell = world.as_unsafe_world_cell();
+    let (mut this, mut params) = q
+      .get_mut(unsafe { world_cell.world_mut() }, entity)
+      .unwrap();
+    let params = params.get_mut(unsafe { world_cell.world_mut() });
+    f(this.as_mut(), params)
   }
 }
 
@@ -137,13 +154,15 @@ pub trait Ui: UiComponent {
 
   fn spawn(params: Self::Params<'_, '_>) -> Self;
 
-  fn title(&mut self) -> egui::WidgetText;
+  fn title(&mut self, params: Self::Params<'_, '_>) -> egui::WidgetText;
 
-  fn can_clear(&self) -> bool {
+  #[allow(unused_variables)]
+  fn can_clear(&self, params: Self::Params<'_, '_>) -> bool {
     true
   }
 
-  fn closeable(&mut self) -> bool {
+  #[allow(unused_variables)]
+  fn closeable(&mut self, params: Self::Params<'_, '_>) -> bool {
     false
   }
 
@@ -165,11 +184,9 @@ where
   const ID: PersistentId = PersistentId(<T as Ui>::UUID);
 
   fn spawn(world: &mut World) -> Self {
-    T::register_params(world);
-    world.resource_scope(|world, mut params: Mut<ComponentState<Self>>| {
-      let params = params.get_mut(world);
-      Ui::spawn(params)
-    })
+    let entity = world.spawn_empty().id();
+    Self::register_params(entity, world);
+    Self::with_params(entity, world, Ui::spawn)
   }
 
   fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
@@ -185,25 +202,25 @@ where
   }
 
   fn on_close(entity: Entity, world: &mut World) {
-    Self::execute(entity, world, |this, params| {
+    Self::get_entity_mut(entity, world, |this, params| {
       this.on_close(params);
     })
   }
 
   fn render(entity: Entity, ui: &mut egui::Ui, world: &mut World) {
-    Self::execute(entity, world, |this, params| {
+    Self::get_entity_mut(entity, world, |this, params| {
       this.render(ui, params);
     })
   }
 
   fn context_menu(entity: Entity, ui: &mut egui::Ui, world: &mut World) {
-    Self::execute(entity, world, |this, params| {
+    Self::get_entity_mut(entity, world, |this, params| {
       this.context_menu(ui, params);
     })
   }
 }
 
-#[derive(Resource)]
+#[derive(Component)]
 struct UiComponentState<P>(SystemState<P>)
 where
   P: SystemParam + 'static;

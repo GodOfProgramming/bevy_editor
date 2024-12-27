@@ -25,7 +25,7 @@ impl Ui for Resources {
     default()
   }
 
-  fn title(&mut self) -> egui::WidgetText {
+  fn title(&mut self, _params: Self::Params<'_, '_>) -> egui::WidgetText {
     stringify!(Resources).into()
   }
 

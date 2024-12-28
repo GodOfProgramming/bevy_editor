@@ -10,7 +10,7 @@ bevy = { version = "0.15", features = ["default", "serialize"] }
 bevy-inspector-egui = "0.28"
 bevy_egui = { version = "0.31", features = ["immutable_ctx"] }
 const_format = "0.2"
-derive_more = "1"
+derive_more = { version = "1", features = ["full"] }
 egui-file-dialog = "0.7"
 egui_dock = { version = "0.14", features = ["serde"] }
 leafwing-input-manager = "0.16"

@@ -48,9 +48,47 @@ impl Editor {
   const COLOR: Srgba = tailwind::GREEN_700;
 
   pub fn new() -> Self {
+    Self::new_with_default_modifications(|p| p)
+  }
+
+  pub fn new_with_default_modifications<P>(f: impl FnOnce(DefaultPlugins) -> P) -> Self
+  where
+    P: PluginGroup,
+  {
     let mut app = App::new();
 
-    app.add_plugins(EditorPlugin);
+    let defaults = DefaultPlugins;
+    let defaults = f(defaults);
+
+    let cache = Cache::load_or_default();
+    let log_info = cache.get::<LogInfo>().unwrap_or_default();
+    let mut window = Window::default();
+    window.title = String::from("Bevy Editor");
+    window.mode = WindowMode::Windowed;
+    window.visible = false;
+    window.enabled_buttons = EnabledButtons {
+      close: true,
+      maximize: true,
+      minimize: false, // minimize causes a crash
+    };
+
+    app
+      .add_plugins(
+        defaults
+          .set(WindowPlugin {
+            primary_window: Some(window),
+            close_when_requested: false,
+            ..default()
+          })
+          .set(LogPlugin {
+            level: log_info.level.into(),
+            filter: DEFAULT_FILTER.to_string(),
+            ..default()
+          }),
+      )
+      .insert_resource(cache)
+      .insert_resource(log_info)
+      .add_plugins(EditorPlugin);
 
     Self {
       app,
@@ -212,33 +250,8 @@ struct EditorPlugin;
 
 impl Plugin for EditorPlugin {
   fn build(&self, app: &mut App) {
-    let mut window = Window::default();
-    window.title = String::from("Bevy Editor");
-    window.mode = WindowMode::Windowed;
-    window.visible = false;
-    window.enabled_buttons = EnabledButtons {
-      close: true,
-      maximize: true,
-      minimize: false, // minimize causes a crash
-    };
-
-    let cache = Cache::load_or_default();
-
-    let log_info = cache.get::<LogInfo>().unwrap_or_default();
-
     app
       .add_plugins((
-        DefaultPlugins
-          .set(WindowPlugin {
-            primary_window: Some(window),
-            close_when_requested: false,
-            ..default()
-          })
-          .set(LogPlugin {
-            level: log_info.level.into(),
-            filter: DEFAULT_FILTER.to_string(),
-            ..default()
-          }),
         ViewPlugin,
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
@@ -248,8 +261,6 @@ impl Plugin for EditorPlugin {
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
       .insert_state(EditorState::Editing)
-      .insert_resource(cache)
-      .insert_resource(log_info)
       .add_systems(Startup, (Self::startup, Self::initialize_types))
       .add_systems(PostStartup, Self::post_startup)
       .add_systems(OnEnter(EditorState::Editing), Self::on_enter)

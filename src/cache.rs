@@ -4,12 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 fn cache_path() -> PathBuf {
+  const FILE: &str = concat!(env!("CARGO_PKG_NAME"), ".cache.ron");
   std::env::current_exe()
     .unwrap()
     .parent()
     .unwrap()
     .to_path_buf()
-    .join("cache.ron")
+    .join(FILE)
 }
 
 #[derive(Resource, Serialize, Deserialize, Default)]

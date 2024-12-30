@@ -14,6 +14,7 @@ derive-new = "0.7"
 derive_more = { version = "1", features = ["full"] }
 egui-file-dialog = "0.7"
 egui_dock = { version = "0.14", features = ["serde"] }
+itertools = "0.13"
 leafwing-input-manager = "0.16"
 parking_lot = "0.12"
 platform-dirs = "0.3"

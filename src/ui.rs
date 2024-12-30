@@ -16,29 +16,39 @@ use bevy::utils::HashMap;
 use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector;
 use control_panel::ControlPanel;
-use egui_dock::{DockArea, DockState, NodeIndex};
+use egui_dock::{DockArea, DockState, NodeIndex, SurfaceIndex};
 use game_view::GameView;
 use hierarchy::Hierarchy;
 use inspector::Inspector;
+use itertools::Itertools;
+use parking_lot::Mutex;
 use prefabs::Prefabs;
 use resources::Resources;
 use serde::{Deserialize, Serialize};
 use std::any::TypeId;
+use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
-pub(crate) struct UiPlugin;
+pub(crate) struct UiPlugin(pub Mutex<RefCell<Option<Layout>>>);
 
 impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
     debug!("Building UI Plugin");
+
+    let mut layout = self.0.lock();
+    let layout = layout.borrow_mut();
+    let layout = layout.take().unwrap();
+
     app
-      .init_resource::<Layout>()
+      .add_event::<AddUiEvent>()
+      .add_event::<RemoveUiEvent>()
+      .insert_resource(layout)
       .init_resource::<InspectorSelection>()
       .add_plugins(EguiPlugin)
       .add_systems(Startup, init_resources)
-      .add_systems(Update, render);
+      .add_systems(Update, (on_remove_ui, (render, on_add_ui)).chain());
   }
 }
 
@@ -77,7 +87,7 @@ pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
 
   #[allow(unused_variables)]
   fn closeable(entity: Entity, world: &mut World) -> bool {
-    false
+    true
   }
 
   #[allow(unused_variables)]
@@ -87,6 +97,10 @@ pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
 
   #[allow(unused_variables)]
   fn context_menu(entity: Entity, ui: &mut egui::Ui, world: &mut World) {}
+
+  fn unique() -> bool {
+    false
+  }
 }
 
 trait RegisterParams: Ui {
@@ -171,7 +185,7 @@ pub trait Ui: UiComponent {
 
   #[allow(unused_variables)]
   fn closeable(&mut self, params: Self::Params<'_, '_>) -> bool {
-    false
+    true
   }
 
   #[allow(unused_variables)]
@@ -181,6 +195,10 @@ pub trait Ui: UiComponent {
 
   #[allow(unused_variables)]
   fn context_menu(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>) {}
+
+  fn unique() -> bool {
+    false
+  }
 }
 
 type ComponentState<'w, 's, T> = UiComponentState<<T as Ui>::Params<'w, 's>>;
@@ -226,6 +244,10 @@ where
     Self::get_entity_mut(entity, world, |this, params| {
       this.context_menu(ui, params);
     })
+  }
+
+  fn unique() -> bool {
+    <Self as Ui>::unique()
   }
 }
 
@@ -282,10 +304,11 @@ impl InspectorSelection {
 pub struct SelectedEntities(bevy_inspector::hierarchy::SelectedEntities);
 
 #[derive(Deref, DerefMut, Component, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct PersistentId(Uuid);
+pub struct PersistentId(pub Uuid);
 
 #[derive(Clone)]
 struct VTable {
+  name: fn() -> &'static str,
   spawn: fn(&mut World) -> Entity,
   title: fn(Entity, &mut World) -> egui::WidgetText,
   can_clear: fn(Entity, &mut World) -> bool,
@@ -293,6 +316,7 @@ struct VTable {
   on_close: fn(Entity, &mut World),
   render: fn(Entity, &mut egui::Ui, &mut World),
   context_menu: fn(Entity, &mut egui::Ui, &mut World),
+  unique: fn() -> bool,
 }
 
 impl VTable {
@@ -301,6 +325,7 @@ impl VTable {
     T: UiComponent,
   {
     Self {
+      name: || T::COMPONENT_NAME,
       spawn: |world| {
         let instance = T::spawn(world);
         let entity_id = world.spawn((instance, T::ID)).id();
@@ -316,6 +341,7 @@ impl VTable {
       on_close: T::on_close,
       render: T::render,
       context_menu: T::context_menu,
+      unique: T::unique,
     }
   }
 }
@@ -480,6 +506,10 @@ impl egui_dock::TabViewer for TabViewer<'_> {
   fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
     let vtable = self.vtable_of(*tab);
     (vtable.on_close)(*tab, &mut self.world.borrow_mut());
+
+    let mut world = self.world.borrow_mut();
+    world.send_event(RemoveUiEvent(*tab));
+
     true
   }
 
@@ -492,14 +522,62 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     &mut self,
     ui: &mut egui::Ui,
     tab: &mut Self::Tab,
-    _surface: egui_dock::SurfaceIndex,
-    _node: NodeIndex,
+    surface: SurfaceIndex,
+    node: NodeIndex,
   ) {
+    ui.menu_button("Insert", |ui| {
+      let unique_tables = self
+        .vtables
+        .iter()
+        .filter(|(_, vtable)| !(vtable.unique)())
+        .map(|(id, vtable)| (id, (vtable.name)()))
+        .sorted_by(|(_, a), (_, b)| a.cmp(b));
+
+      for (id, name) in unique_tables {
+        let vtable = &self.vtables[id];
+        if ui.button(name).clicked() {
+          let mut world = self.world.borrow_mut();
+          let entity = (vtable.spawn)(&mut world);
+          world.send_event(AddUiEvent(surface, node, entity));
+        }
+      }
+    });
+
     let vtable = self.vtable_of(*tab);
     (vtable.context_menu)(*tab, ui, &mut self.world.borrow_mut());
   }
 
   fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
     egui::Id::new(tab)
+  }
+}
+
+#[derive(Event, Clone, Copy)]
+struct AddUiEvent(SurfaceIndex, NodeIndex, Entity);
+
+fn on_add_ui(mut events: EventReader<AddUiEvent>, mut layout: ResMut<Layout>) {
+  for event in events.read() {
+    let AddUiEvent(surface, node, tab) = *event;
+
+    let Some(surface) = layout.state.get_surface_mut(surface) else {
+      continue;
+    };
+
+    let Some(nodes) = surface.node_tree_mut() else {
+      continue;
+    };
+
+    let node = &mut nodes[node];
+    node.append_tab(tab);
+  }
+}
+
+#[derive(Event, Clone, Copy)]
+struct RemoveUiEvent(Entity);
+
+fn on_remove_ui(mut events: EventReader<RemoveUiEvent>, mut commands: Commands) {
+  for event in events.read() {
+    let RemoveUiEvent(tab) = *event;
+    commands.entity(tab).despawn();
   }
 }

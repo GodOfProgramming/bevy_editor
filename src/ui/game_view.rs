@@ -32,6 +32,10 @@ impl Ui for GameView {
     default()
   }
 
+  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
+      false
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {
     let egui_rect = ui.clip_rect();
     self.viewport_rect = Rect {
@@ -43,5 +47,9 @@ impl Ui for GameView {
 
   fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {
     false
+  }
+
+  fn unique() -> bool {
+    true
   }
 }

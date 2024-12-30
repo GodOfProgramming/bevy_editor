@@ -20,6 +20,7 @@ pub struct Params<'w, 's> {
   view_state: Res<'w, State<ViewState>>,
   next_view_state: ResMut<'w, NextState<ViewState>>,
   log_info: ResMut<'w, LogInfo>,
+  q_panels: Query<'w, 's, &'static ControlPanel>,
   q_transforms: ParamSet<
     'w,
     's,
@@ -39,6 +40,10 @@ impl Ui for ControlPanel {
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
+  }
+
+  fn closeable(&mut self, params: Self::Params<'_, '_>) -> bool {
+    params.q_panels.iter().len() > 1
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {

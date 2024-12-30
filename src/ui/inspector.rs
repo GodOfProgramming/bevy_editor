@@ -18,6 +18,11 @@ impl UiComponent for Inspector {
     default()
   }
 
+  fn closeable(_entity: Entity, world: &mut World) -> bool {
+    let mut q = world.query::<&Self>();
+    q.iter(world).len() > 1
+  }
+
   fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {
     let type_registry = world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();

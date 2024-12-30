@@ -1,12 +1,11 @@
 use super::{EditorCamera, ViewState};
 use crate::{
   cache::{Cache, Saveable},
-  hide_cursor,
   input::EditorActions,
-  show_cursor,
+  set_cursor_icon,
   view::ActiveEditorCamera,
 };
-use bevy::{input::mouse::MouseMotion, prelude::*};
+use bevy::{input::mouse::MouseMotion, prelude::*, window::SystemCursorIcon};
 use leafwing_input_manager::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -43,13 +42,21 @@ impl View2dPlugin {
     let CameraSaveData {
       settings,
       transform,
+      orthographic_scale,
     } = cache.get().unwrap_or_default();
+
+    let mut projection = OrthographicProjection::default_2d();
+
+    if let Some(scale) = orthographic_scale {
+      projection.scale = scale;
+    }
 
     commands.spawn((
       Name::new("Editor Camera 2D"),
       EditorCamera2d,
       settings,
       transform,
+      projection,
     ));
   }
 }
@@ -58,6 +65,7 @@ impl View2dPlugin {
 struct CameraSaveData {
   settings: CameraSettings,
   transform: Transform,
+  orthographic_scale: Option<f32>,
 }
 
 impl Saveable for CameraSaveData {
@@ -105,25 +113,18 @@ impl EditorCamera2d {
   }
 
   pub fn handle_input(
+    mut commands: Commands,
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut windows: Query<&mut Window>,
+    window: Single<Entity, With<Window>>,
   ) {
     for action_state in &q_action_states {
       if action_state.just_pressed(&EditorActions::PanCamera) {
-        let Ok(mut window) = windows.get_single_mut() else {
-          return;
-        };
-
-        hide_cursor(&mut window);
+        set_cursor_icon(&mut commands, *window, SystemCursorIcon::Grab);
         continue;
       }
 
       if action_state.just_released(&EditorActions::PanCamera) {
-        let Ok(mut window) = windows.get_single_mut() else {
-          return;
-        };
-
-        show_cursor(&mut window);
+        set_cursor_icon(&mut commands, *window, SystemCursorIcon::default())
       }
     }
   }
@@ -184,7 +185,10 @@ impl EditorCamera2d {
 
   fn pan_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera2d>>,
+    mut q_cam: Query<
+      (&CameraSettings, &mut Transform, &OrthographicProjection),
+      With<EditorCamera2d>,
+    >,
     mut mouse_motion: EventReader<MouseMotion>,
     time: Res<Time>,
   ) {
@@ -196,7 +200,7 @@ impl EditorCamera2d {
       return;
     }
 
-    let (cam_settings, mut cam_transform) = q_cam.single_mut();
+    let (cam_settings, mut cam_transform, projection) = q_cam.single_mut();
 
     let pan = mouse_motion
       .read()
@@ -204,24 +208,27 @@ impl EditorCamera2d {
       .reduce(|c, n| c + n)
       .unwrap_or_default();
 
-    let sensitivity = cam_settings.pan_sensitivity * time.delta_secs();
-    let horizontal = cam_transform.right() * pan.x * sensitivity;
-    let vertical = cam_transform.up() * pan.y * sensitivity;
+    let sensitivity = cam_settings.pan_sensitivity;
+    let modifier = projection.scale * sensitivity * time.delta_secs();
 
-    cam_transform.translation += horizontal;
-    cam_transform.translation -= vertical;
+    let horizontal = cam_transform.right() * pan.x * modifier;
+    let vertical = cam_transform.up() * pan.y * modifier;
+
+    cam_transform.translation -= horizontal;
+    cam_transform.translation += vertical;
   }
 
   pub fn on_app_exit(
     app_exit: EventReader<AppExit>,
     mut cache: ResMut<Cache>,
-    q_cam: Query<(&Transform, &CameraSettings), With<EditorCamera2d>>,
+    q_cam: Query<(&Transform, &CameraSettings, &OrthographicProjection), With<EditorCamera2d>>,
   ) {
     if !app_exit.is_empty() {
-      for (cam_transform, cam_settings) in &q_cam {
+      for (cam_transform, cam_settings, cam_ortho) in &q_cam {
         cache.store(&CameraSaveData {
           settings: cam_settings.clone(),
           transform: cam_transform.clone(),
+          orthographic_scale: Some(cam_ortho.scale),
         });
       }
     }

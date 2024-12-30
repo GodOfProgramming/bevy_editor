@@ -15,6 +15,11 @@ impl UiComponent for Hierarchy {
     default()
   }
 
+  fn closeable(_entity: Entity, world: &mut World) -> bool {
+    let mut q = world.query::<&Self>();
+    q.iter(world).len() > 1
+  }
+
   fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {
     world.resource_scope(|world, mut selection: Mut<InspectorSelection>| {
       if let InspectorSelection::Entities(selected_entities) = selection.as_mut() {

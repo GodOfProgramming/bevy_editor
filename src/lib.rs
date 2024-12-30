@@ -6,6 +6,8 @@ mod ui;
 mod util;
 mod view;
 
+use std::cell::RefCell;
+
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 pub use bevy;
 use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
@@ -21,11 +23,14 @@ use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::{Cache, Saveable};
 use input::InputPlugin;
+use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 pub use serde;
 use serde::{Deserialize, Serialize};
-use ui::{Ui, UiPlugin};
+use ui::{Layout, UiPlugin};
+pub use ui::{PersistentId, Ui, UiComponent};
 pub use util::*;
+pub use uuid;
 use view::{
   ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
 };
@@ -42,6 +47,7 @@ pub struct Editor {
   app: App,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
+  layout: Layout,
 }
 
 impl Editor {
@@ -94,10 +100,12 @@ impl Editor {
       app,
       scene_type_registry: default(),
       prefab_registrar: default(),
+      layout: default(),
     }
   }
 
-  pub fn register_ui<U: Ui>(&mut self) -> &mut Self {
+  pub fn register_ui<U: UiComponent>(&mut self) -> &mut Self {
+    self.layout.register::<U>();
     self
   }
 
@@ -153,9 +161,11 @@ impl Editor {
       mut app,
       scene_type_registry,
       prefab_registrar,
+      layout,
     } = self;
 
     app
+      .add_plugins(UiPlugin(Mutex::new(RefCell::new(Some(layout)))))
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar);
 
@@ -255,7 +265,6 @@ impl Plugin for EditorPlugin {
         ViewPlugin,
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
-        UiPlugin,
         InputPlugin,
       ))
       .add_event::<SaveEvent>()

@@ -5,6 +5,7 @@ use bevy::{
   reflect::GetTypeRegistration,
   state::state::FreelyMutableState,
   window::{CursorGrabMode, PrimaryWindow},
+  winit::cursor::CursorIcon,
 };
 
 #[macro_export]
@@ -34,6 +35,10 @@ pub fn show_cursor(window: &mut Window) {
 pub fn hide_cursor(window: &mut Window) {
   window.cursor_options.visible = false;
   window.cursor_options.grab_mode = CursorGrabMode::Locked;
+}
+
+pub fn set_cursor_icon(commands: &mut Commands, entity: Entity, cursor: impl Into<CursorIcon>) {
+  commands.entity(entity).insert(cursor.into());
 }
 
 pub trait HashValue {

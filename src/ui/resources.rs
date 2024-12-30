@@ -27,6 +27,10 @@ impl Ui for Resources {
     default()
   }
 
+  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
+    false
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
     let type_registry = params.type_registry.read();
 

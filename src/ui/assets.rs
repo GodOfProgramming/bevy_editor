@@ -21,6 +21,10 @@ impl Ui for Assets {
     default()
   }
 
+  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
+    false
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
     let world = params.set.p0();
     let type_registry = world.resource::<AppTypeRegistry>().0.clone();

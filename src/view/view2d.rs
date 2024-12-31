@@ -219,18 +219,15 @@ impl EditorCamera2d {
   }
 
   pub fn on_app_exit(
-    app_exit: EventReader<AppExit>,
     mut cache: ResMut<Cache>,
     q_cam: Query<(&Transform, &CameraSettings, &OrthographicProjection), With<EditorCamera2d>>,
   ) {
-    if !app_exit.is_empty() {
-      for (cam_transform, cam_settings, cam_ortho) in &q_cam {
-        cache.store(&CameraSaveData {
-          settings: cam_settings.clone(),
-          transform: cam_transform.clone(),
-          orthographic_scale: Some(cam_ortho.scale),
-        });
-      }
+    for (cam_transform, cam_settings, cam_ortho) in &q_cam {
+      cache.store(&CameraSaveData {
+        settings: cam_settings.clone(),
+        transform: cam_transform.clone(),
+        orthographic_scale: Some(cam_ortho.scale),
+      });
     }
   }
 }

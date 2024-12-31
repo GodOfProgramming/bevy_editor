@@ -1,12 +1,17 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+  collections::BTreeMap,
+  hash::{DefaultHasher, Hash, Hasher},
+};
 
 use bevy::{
   prelude::*,
   reflect::GetTypeRegistration,
   state::state::FreelyMutableState,
+  utils::HashMap,
   window::{CursorGrabMode, PrimaryWindow},
   winit::cursor::CursorIcon,
 };
+use serde::{Serialize, Serializer};
 
 #[macro_export]
 macro_rules! here {
@@ -131,4 +136,15 @@ impl WorldExtensions for World {
   {
     self.resource_mut::<NextState<T>>().set(state);
   }
+}
+
+pub fn sorted_keys<S, K: Ord + Serialize, V: Serialize>(
+  value: &HashMap<K, V>,
+  serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+  S: Serializer,
+{
+  let ordered: BTreeMap<_, _> = value.iter().collect();
+  ordered.serialize(serializer)
 }

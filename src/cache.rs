@@ -1,10 +1,10 @@
+use crate::util::sorted_keys;
 use bevy::{prelude::*, utils::HashMap};
-use ron::ser::PrettyConfig;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 fn cache_path() -> PathBuf {
-  const FILE: &str = concat!(env!("CARGO_PKG_NAME"), ".cache.ron");
+  const FILE: &str = concat!(env!("CARGO_PKG_NAME"), ".cache.json");
   std::env::current_exe()
     .unwrap()
     .parent()
@@ -13,23 +13,32 @@ fn cache_path() -> PathBuf {
     .join(FILE)
 }
 
-#[derive(Resource, Serialize, Deserialize, Default)]
-pub struct Cache {
-  data: HashMap<String, String>,
-}
+#[derive(Default, Resource, Serialize, Deserialize, Debug)]
+pub struct Cache(#[serde(serialize_with = "sorted_keys")] HashMap<String, serde_json::Value>);
 
 impl Cache {
   pub fn load_or_default() -> Self {
-    match std::fs::read_to_string(cache_path()).map(|data| ron::de::from_str(&data)) {
+    let cache_path = cache_path();
+    println!("Loading cache from: {}", cache_path.display());
+
+    match std::fs::read_to_string(cache_path).map(|data| serde_json::from_str(&data)) {
       Ok(Ok(cache)) => cache,
-      _ => Self::default(),
+      Ok(Err(err)) => {
+        eprintln!("Error deserializing during initial load: {err}");
+        Self::default()
+      }
+      Err(err) => {
+        eprintln!("Error loading cache from disk: {err}");
+        Self::default()
+      }
     }
   }
 
   pub fn save(&self) {
-    match ron::ser::to_string_pretty(self, PrettyConfig::default().struct_names(true))
-      .map(|data| std::fs::write(cache_path(), data))
-    {
+    let cache_path = cache_path();
+    info!("Saving cache to: {}", cache_path.display());
+
+    match serde_json::to_string_pretty(self).map(|data| std::fs::write(cache_path, data)) {
       Ok(Ok(_)) => {
         info!("Saved cache");
       }
@@ -46,9 +55,9 @@ impl Cache {
   where
     S: Saveable,
   {
-    match ron::ser::to_string(saveable) {
-      Ok(data) => {
-        self.data.insert(S::KEY.to_string(), data);
+    match serde_json::to_value(saveable) {
+      Ok(value) => {
+        self.0.insert(S::KEY.to_string(), value);
       }
       Err(e) => {
         error!("Failed to serialize {}: {e}", S::KEY);
@@ -60,8 +69,11 @@ impl Cache {
   where
     S: Saveable,
   {
-    let data = self.data.get(S::KEY).cloned()?;
-    match ron::de::from_str(&data) {
+    match self
+      .0
+      .get(S::KEY)
+      .map(|v| serde_json::from_value(v.clone()))?
+    {
       Ok(value) => Some(value),
       Err(e) => {
         error!("Failed to deserialize {}: {e}", S::KEY);

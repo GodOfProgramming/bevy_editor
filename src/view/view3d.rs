@@ -307,18 +307,15 @@ impl EditorCamera3d {
   }
 
   pub fn on_app_exit(
-    app_exit: EventReader<AppExit>,
     mut cache: ResMut<Cache>,
     q_cam: Query<(&Transform, &CameraState, &CameraSettings), With<EditorCamera3d>>,
   ) {
-    if !app_exit.is_empty() {
-      for (cam_transform, cam_state, cam_settings) in &q_cam {
-        cache.store(&CameraSaveData {
-          state: cam_state.clone(),
-          settings: cam_settings.clone(),
-          transform: cam_transform.clone(),
-        });
-      }
+    for (cam_transform, cam_state, cam_settings) in &q_cam {
+      cache.store(&CameraSaveData {
+        state: cam_state.clone(),
+        settings: cam_settings.clone(),
+        transform: cam_transform.clone(),
+      });
     }
   }
 }

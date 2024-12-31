@@ -51,14 +51,8 @@ impl EditorCamera {
     }
   }
 
-  pub fn on_app_exit(
-    app_exit: EventReader<AppExit>,
-    mut cache: ResMut<Cache>,
-    view_state: Res<State<ViewState>>,
-  ) {
-    if !app_exit.is_empty() {
-      cache.store(view_state.get());
-    }
+  pub fn on_app_exit(mut cache: ResMut<Cache>, view_state: Res<State<ViewState>>) {
+    cache.store(view_state.get());
   }
 
   // make camera only render to view not obstructed by UI

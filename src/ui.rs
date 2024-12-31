@@ -13,9 +13,11 @@ use bevy::ecs::system::{SystemParam, SystemState};
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::utils::HashMap;
+use bevy_egui::egui::text::LayoutJob;
 use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector;
 use control_panel::ControlPanel;
+use derive_more::derive::From;
 use egui_dock::{DockArea, DockState, NodeIndex, SurfaceIndex};
 use game_view::GameView;
 use hierarchy::Hierarchy;
@@ -29,7 +31,7 @@ use std::any::TypeId;
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
-use uuid::Uuid;
+use uuid::{uuid, Uuid};
 
 pub(crate) struct UiPlugin(pub Mutex<RefCell<Option<Layout>>>);
 
@@ -64,9 +66,32 @@ pub fn render(world: &mut World) {
   });
 }
 
-pub fn on_app_exit(mut cache: ResMut<Cache>, layout: Res<Layout>, q_uuids: Query<&PersistentId>) {
-  let new_state = layout.state.map_tabs(|tab| **q_uuids.get(*tab).unwrap());
+pub fn on_app_exit(
+  mut cache: ResMut<Cache>,
+  layout: Res<Layout>,
+  q_uuids: Query<&PersistentId, Without<MissingUi>>,
+  q_missing: Query<&MissingUi>,
+) {
+  let new_state = layout.state.map_tabs(|tab| {
+    if let Ok(missing_uuid) = q_missing.get(*tab) {
+      missing_uuid.1
+    } else {
+      **q_uuids.get(*tab).unwrap()
+    }
+  });
+
   cache.store(&LayoutState(new_state));
+}
+
+trait UiComponentInfo {
+  const VTABLE: VTable;
+}
+
+impl<T> UiComponentInfo for T
+where
+  T: UiComponent,
+{
+  const VTABLE: VTable = VTable::new::<Self>();
 }
 
 pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
@@ -303,8 +328,8 @@ impl InspectorSelection {
 #[derive(Default, Deref, DerefMut, Debug)]
 pub struct SelectedEntities(bevy_inspector::hierarchy::SelectedEntities);
 
-#[derive(Deref, DerefMut, Component, Clone, Copy, Hash, PartialEq, Eq)]
-pub struct PersistentId(pub Uuid);
+#[derive(Default, Deref, DerefMut, Component, Clone, Copy, Hash, PartialEq, Eq, Reflect, From)]
+pub struct PersistentId(#[reflect(ignore)] pub Uuid);
 
 #[derive(Clone)]
 struct VTable {
@@ -320,7 +345,7 @@ struct VTable {
 }
 
 impl VTable {
-  pub fn new<T>() -> Self
+  const fn new<T>() -> Self
   where
     T: UiComponent,
   {
@@ -368,6 +393,7 @@ impl Default for Layout {
       id: egui::Id::new(TypeId::of::<Self>()),
     };
 
+    this.register::<MissingUi>();
     this.register::<GameView>();
     this.register::<Hierarchy>();
     this.register::<ControlPanel>();
@@ -385,7 +411,18 @@ impl Layout {
     let state = world
       .resource_scope(|world, cache: Mut<Cache>| {
         cache.get::<LayoutState>().map(|persistent_layout| {
-          persistent_layout.map_tabs(|tab| (self.vtables[&PersistentId(*tab)].spawn)(world))
+          persistent_layout.map_tabs(|tab| {
+            self
+              .vtables
+              .get(&PersistentId(*tab))
+              .map(|vtable| (vtable.spawn)(world))
+              .unwrap_or_else(|| {
+                let entity_id = world.spawn((MissingUi::new(*tab), MissingUi::ID)).id();
+                world.entity_mut(entity_id).insert(Name::new("Missing Ui"));
+                info!("Failed to find ui with uuid: {tab}");
+                entity_id
+              })
+          })
         })
       })
       .unwrap_or_else(|| {
@@ -418,7 +455,7 @@ impl Layout {
   }
 
   pub fn register<T: UiComponent>(&mut self) {
-    self.vtables.insert(T::ID, VTable::new::<T>());
+    self.vtables.insert(T::ID, T::VTABLE);
   }
 
   fn spawn_type<T: UiComponent>(&self, world: &mut World) -> Entity {
@@ -579,5 +616,42 @@ fn on_remove_ui(mut events: EventReader<RemoveUiEvent>, mut commands: Commands) 
   for event in events.read() {
     let RemoveUiEvent(tab) = *event;
     commands.entity(tab).despawn();
+  }
+}
+
+#[derive(Component, Reflect)]
+pub struct MissingUi(String, Uuid);
+
+impl MissingUi {
+  fn new(id: impl Into<PersistentId>) -> Self {
+    let id = id.into();
+    Self(
+      format!("Failed to find ui component with uuid: {}", id.to_string()),
+      *id,
+    )
+  }
+}
+
+#[derive(SystemParam)]
+pub struct NoUiParams;
+
+impl Ui for MissingUi {
+  const NAME: &str = "No Ui";
+  const UUID: Uuid = uuid!("d0f32ae1-2851-4bcd-a0c9-f83ae030d85f");
+
+  type Params<'w, 's> = NoUiParams;
+
+  fn spawn(_params: Self::Params<'_, '_>) -> Self {
+    Self(default(), default())
+  }
+
+  fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {
+    let mut job = LayoutJob::single_section(self.0.to_owned(), egui::TextFormat::default());
+    job.wrap = egui::text::TextWrapping::default();
+    ui.label(job);
+  }
+
+  fn unique() -> bool {
+    true // prevents this from showing up in the spawn ui menu
   }
 }

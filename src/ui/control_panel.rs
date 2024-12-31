@@ -128,6 +128,7 @@ impl Ui for ControlPanel {
           params.next_editor_state.set(EditorState::Editing);
         }
       }
+      _ => (),
     };
 
     ui.push_id("log-level-selector", |ui| {

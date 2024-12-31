@@ -39,12 +39,14 @@ use view::{
 pub enum EditorState {
   Editing,
   Testing,
+  Exiting,
 }
 
 #[derive(Deref, DerefMut)]
 pub struct Editor {
   #[deref]
   app: App,
+  cache: Cache,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
   layout: Layout,
@@ -92,12 +94,12 @@ impl Editor {
             ..default()
           }),
       )
-      .insert_resource(cache)
       .insert_resource(log_info)
       .add_plugins(EditorPlugin);
 
     Self {
       app,
+      cache,
       scene_type_registry: default(),
       prefab_registrar: default(),
       layout: default(),
@@ -162,10 +164,12 @@ impl Editor {
       scene_type_registry,
       prefab_registrar,
       layout,
+      cache,
     } = self;
 
     app
       .add_plugins(UiPlugin(Mutex::new(RefCell::new(Some(layout)))))
+      .insert_resource(cache)
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar);
 
@@ -275,8 +279,22 @@ impl Plugin for EditorPlugin {
       .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
       .add_systems(OnExit(EditorState::Editing), Self::on_exit)
       .add_systems(
+        OnEnter(EditorState::Exiting),
+        (
+          (
+            EditorCamera::on_app_exit,
+            EditorCamera2d::on_app_exit,
+            EditorCamera3d::on_app_exit,
+            ui::on_app_exit,
+          ),
+          Self::on_app_exit,
+        )
+          .chain(),
+      )
+      .add_systems(
         Update,
         (
+          Self::on_close_requested,
           (
             input::global_input_actions,
             (
@@ -287,17 +305,6 @@ impl Plugin for EditorPlugin {
               Self::draw_mesh_intersections,
             )
               .run_if(in_state(EditorState::Editing)),
-          )
-            .chain(),
-          (
-            Self::on_close_requested,
-            (
-              EditorCamera::on_app_exit,
-              EditorCamera2d::on_app_exit,
-              EditorCamera3d::on_app_exit,
-              ui::on_app_exit,
-            ),
-            Self::on_app_exit,
           )
             .chain(),
         ),
@@ -400,18 +407,22 @@ impl EditorPlugin {
 
   fn on_close_requested(
     close_requests: EventReader<WindowCloseRequested>,
-    mut app_exit: EventWriter<AppExit>,
+    mut next_editor_state: ResMut<NextState<EditorState>>,
   ) {
     if !close_requests.is_empty() {
-      app_exit.send(AppExit::Success);
+      next_editor_state.set(EditorState::Exiting)
     }
   }
 
-  fn on_app_exit(app_exit: EventReader<AppExit>, log_info: Res<LogInfo>, mut cache: ResMut<Cache>) {
-    if !app_exit.is_empty() {
-      cache.store(log_info.into_inner());
-      cache.save();
-    }
+  fn on_app_exit(
+    log_info: Res<LogInfo>,
+    mut cache: ResMut<Cache>,
+    mut app_exit: EventWriter<AppExit>,
+  ) {
+    cache.store(log_info.into_inner());
+    cache.save();
+
+    app_exit.send(AppExit::Success);
   }
 }
 

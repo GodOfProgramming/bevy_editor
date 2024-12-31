@@ -57,26 +57,11 @@ impl EditorCamera {
 
   // make camera only render to view not obstructed by UI
   fn set_viewport(
-    primary_window: Query<&mut Window, With<PrimaryWindow>>,
-    q_egui_settings: Query<&bevy_egui::EguiSettings>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    egui_settings: Single<&bevy_egui::EguiSettings>,
+    game_view: Single<&GameView>,
     mut cameras: Query<&mut Camera>,
-    q_game_views: Query<&GameView>,
   ) {
-    let Ok(window) = primary_window.get_single() else {
-      warn!("Found no window");
-      return;
-    };
-
-    let Ok(egui_settings) = q_egui_settings.get_single() else {
-      warn!("Found no egui settings");
-      return;
-    };
-
-    let Ok(game_view) = q_game_views.get_single() else {
-      warn!("Found no or multiple game views");
-      return;
-    };
-
     for mut cam in &mut cameras {
       let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 

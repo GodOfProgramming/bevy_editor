@@ -63,53 +63,6 @@ impl View3dPlugin {
   }
 }
 
-#[derive(Default, Serialize, Deserialize)]
-struct CameraSaveData {
-  state: CameraState,
-  settings: CameraSettings,
-  transform: Transform,
-}
-
-impl Saveable for CameraSaveData {
-  const KEY: &str = "camera3d";
-}
-
-#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
-pub struct CameraState {
-  face: Vec3,
-  pitch: f32,
-  yaw: f32,
-}
-
-impl Default for CameraState {
-  fn default() -> Self {
-    Self {
-      face: Vec3::X * 10.0,
-      pitch: default(),
-      yaw: default(),
-    }
-  }
-}
-
-#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
-pub struct CameraSettings {
-  move_speed: f32,
-  orbit_sensitivity: f32,
-  zoom_sensitivity: f32,
-  pan_sensitivity: f32,
-}
-
-impl Default for CameraSettings {
-  fn default() -> Self {
-    CameraSettings {
-      move_speed: 10.0,
-      orbit_sensitivity: 0.05,
-      zoom_sensitivity: 5.0,
-      pan_sensitivity: 0.2,
-    }
-  }
-}
-
 #[derive(Component, Default)]
 #[require(EditorCamera, Camera3d, CameraState, CameraSettings)]
 pub struct EditorCamera3d;
@@ -316,6 +269,53 @@ impl EditorCamera3d {
         settings: cam_settings.clone(),
         transform: cam_transform.clone(),
       });
+    }
+  }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct CameraSaveData {
+  state: CameraState,
+  settings: CameraSettings,
+  transform: Transform,
+}
+
+impl Saveable for CameraSaveData {
+  const KEY: &str = "camera3d";
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
+pub struct CameraState {
+  face: Vec3,
+  pitch: f32,
+  yaw: f32,
+}
+
+impl Default for CameraState {
+  fn default() -> Self {
+    Self {
+      face: Vec3::X * 10.0,
+      pitch: default(),
+      yaw: default(),
+    }
+  }
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
+pub struct CameraSettings {
+  move_speed: f32,
+  orbit_sensitivity: f32,
+  zoom_sensitivity: f32,
+  pan_sensitivity: f32,
+}
+
+impl Default for CameraSettings {
+  fn default() -> Self {
+    CameraSettings {
+      move_speed: 10.0,
+      orbit_sensitivity: 0.05,
+      zoom_sensitivity: 5.0,
+      pan_sensitivity: 0.2,
     }
   }
 }

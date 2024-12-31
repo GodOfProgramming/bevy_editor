@@ -5,7 +5,12 @@ use crate::{
   set_cursor_icon,
   view::ActiveEditorCamera,
 };
-use bevy::{input::mouse::MouseMotion, prelude::*, window::SystemCursorIcon};
+use bevy::{
+  input::mouse::MouseMotion,
+  picking::pointer::PointerLocation,
+  prelude::*,
+  window::{PrimaryWindow, SystemCursorIcon},
+};
 use leafwing_input_manager::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +22,7 @@ impl Plugin for View2dPlugin {
   fn build(&self, app: &mut App) {
     app
       .register_type::<CameraSettings>()
+      .register_type::<CameraState>()
       .add_systems(Startup, Self::spawn_camera)
       .add_systems(OnEnter(ViewState::Camera2D), EditorCamera2d::on_enter)
       .add_systems(
@@ -25,9 +31,9 @@ impl Plugin for View2dPlugin {
           EditorCamera2d::movement_system,
           (
             EditorCamera2d::handle_input,
-            EditorCamera2d::zoom_system,
-            EditorCamera2d::pan_system,
+            (EditorCamera2d::zoom_system, EditorCamera2d::pan_system),
           )
+            .chain()
             .run_if(super::mouse_actions_enabled),
         )
           .run_if(super::can_run(ViewState::Camera2D)),
@@ -54,38 +60,11 @@ impl View2dPlugin {
     commands.spawn((
       Name::new("Editor Camera 2D"),
       EditorCamera2d,
+      CameraState::default(),
       settings,
       transform,
       projection,
     ));
-  }
-}
-
-#[derive(Default, Serialize, Deserialize)]
-struct CameraSaveData {
-  settings: CameraSettings,
-  transform: Transform,
-  orthographic_scale: Option<f32>,
-}
-
-impl Saveable for CameraSaveData {
-  const KEY: &str = "camera2d";
-}
-
-#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
-pub struct CameraSettings {
-  move_speed: f32,
-  zoom_sensitivity: f32,
-  pan_sensitivity: f32,
-}
-
-impl Default for CameraSettings {
-  fn default() -> Self {
-    CameraSettings {
-      move_speed: 128.0,
-      zoom_sensitivity: 10.0,
-      pan_sensitivity: 10.0,
-    }
   }
 }
 
@@ -114,17 +93,28 @@ impl EditorCamera2d {
 
   pub fn handle_input(
     mut commands: Commands,
+    mut q_cam_states: Query<(&mut CameraState, &Camera), With<EditorCamera2d>>,
     q_action_states: Query<&ActionState<EditorActions>>,
-    window: Single<Entity, With<Window>>,
+    primary_window: Single<Entity, With<PrimaryWindow>>,
+    q_pointers: Query<&PointerLocation>,
   ) {
     for action_state in &q_action_states {
       if action_state.just_pressed(&EditorActions::PanCamera) {
-        set_cursor_icon(&mut commands, *window, SystemCursorIcon::Grab);
+        set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::Grab);
+
+        for (mut cam_state, camera) in &mut q_cam_states {
+          cam_state.pan_viewport_start = q_pointers
+            .iter()
+            .next()
+            .and_then(|p| p.location.as_ref().zip(camera.viewport.as_ref()))
+            .map(|(location, viewport)| location.position - viewport.physical_position.as_vec2());
+        }
+
         continue;
       }
 
       if action_state.just_released(&EditorActions::PanCamera) {
-        set_cursor_icon(&mut commands, *window, SystemCursorIcon::default())
+        set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::default())
       }
     }
   }
@@ -185,12 +175,17 @@ impl EditorCamera2d {
 
   fn pan_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<
-      (&CameraSettings, &mut Transform, &OrthographicProjection),
+    mut q_cam: Single<
+      (
+        &CameraSettings,
+        &mut Transform,
+        &GlobalTransform,
+        &mut CameraState,
+        &Camera,
+      ),
       With<EditorCamera2d>,
     >,
     mut mouse_motion: EventReader<MouseMotion>,
-    time: Res<Time>,
   ) {
     let should_pan = q_action_states
       .iter()
@@ -200,22 +195,32 @@ impl EditorCamera2d {
       return;
     }
 
-    let (cam_settings, mut cam_transform, projection) = q_cam.single_mut();
+    let (ref cam_settings, ref mut cam_transform, ref cam_g_transform, ref mut cam_state, ref cam) =
+      &mut *q_cam;
 
-    let pan = mouse_motion
+    let pan_motion = mouse_motion
       .read()
       .map(|motion| motion.delta)
       .reduce(|c, n| c + n)
-      .unwrap_or_default();
+      .unwrap_or_default()
+      * cam_settings.pan_sensitivity;
 
-    let sensitivity = cam_settings.pan_sensitivity;
-    let modifier = projection.scale * sensitivity * time.delta_secs();
+    if let Some((pan_vp_new_pos, pan_world_old_pos, pan_world_new_pos)) = cam_state
+      .pan_viewport_start
+      .map(|p| (p, p + pan_motion))
+      .and_then(|(op, np)| {
+        cam
+          .viewport_to_world_2d(&cam_g_transform, op)
+          .ok()
+          .zip(cam.viewport_to_world_2d(&cam_g_transform, np).ok())
+          .map(|(ow, nw)| (np, ow, nw))
+      })
+    {
+      let delta = pan_world_new_pos - pan_world_old_pos;
 
-    let horizontal = cam_transform.right() * pan.x * modifier;
-    let vertical = cam_transform.up() * pan.y * modifier;
-
-    cam_transform.translation -= horizontal;
-    cam_transform.translation += vertical;
+      cam_state.pan_viewport_start = Some(pan_vp_new_pos);
+      cam_transform.translation -= delta.extend(0.0);
+    }
   }
 
   pub fn on_app_exit(
@@ -230,4 +235,40 @@ impl EditorCamera2d {
       });
     }
   }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct CameraSaveData {
+  settings: CameraSettings,
+  transform: Transform,
+  orthographic_scale: Option<f32>,
+}
+
+impl Saveable for CameraSaveData {
+  const KEY: &str = "camera2d";
+}
+
+#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
+pub struct CameraSettings {
+  move_speed: f32,
+  zoom_sensitivity: f32,
+  pan_sensitivity: f32,
+}
+
+impl Default for CameraSettings {
+  fn default() -> Self {
+    CameraSettings {
+      move_speed: 128.0,
+      zoom_sensitivity: 10.0,
+      pan_sensitivity: 10.0,
+    }
+  }
+}
+
+#[derive(Default, Component, Reflect, Serialize, Deserialize, Clone)]
+pub struct CameraState {
+  pan_viewport_start: Option<Vec2>,
+  pan_world_pos: Vec2,
+  pan_world_new_pos: Vec2,
+  pan_value: Vec2,
 }

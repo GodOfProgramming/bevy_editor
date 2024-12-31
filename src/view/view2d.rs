@@ -268,7 +268,4 @@ impl Default for CameraSettings {
 #[derive(Default, Component, Reflect, Serialize, Deserialize, Clone)]
 pub struct CameraState {
   pan_viewport_start: Option<Vec2>,
-  pan_world_pos: Vec2,
-  pan_world_new_pos: Vec2,
-  pan_value: Vec2,
 }

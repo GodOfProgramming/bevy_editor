@@ -7,12 +7,12 @@ rust-version = "1.83.0"
 [dependencies]
 
 # exports
-bevy = { version = "0.15", features = ["default", "serialize"] }
 uuid = { version = "1.11", features = ["serde"] }
 bevy_egui = { version = "0.31", features = ["immutable_ctx"] }
 serde = { version = "1.0", features = ["derive"] }
 
 # internal
+bevy = { version = "0.15", features = ["default", "serialize"] }
 async-std = "1.13"
 bevy-inspector-egui = "0.28"
 derive-new = "0.7"
@@ -28,63 +28,3 @@ serde_json = "1"
 thiserror = "2.0"
 
 [features]
-accesskit_unix = ["bevy/accesskit_unix"]
-android-native-activity = ["bevy/android-native-activity"]
-asset_processor = ["bevy/asset_processor"]
-async-io = ["bevy/async-io"]
-basis-universal = ["bevy/basis-universal"]
-bevy_animation = ["bevy/bevy_animation"]
-bevy_ci_testing = ["bevy/bevy_ci_testing"]
-bevy_debug_stepping = ["bevy/bevy_debug_stepping"]
-bevy_dev_tools = ["bevy/bevy_dev_tools"]
-bevy_remote = ["bevy/bevy_remote"]
-bmp = ["bevy/bmp"]
-dds = ["bevy/dds"]
-debug_glam_assert = ["bevy/debug_glam_assert"]
-detailed_trace = ["bevy/detailed_trace"]
-dynamic_linking = ["bevy/dynamic_linking"]
-embedded_watcher = ["bevy/embedded_watcher"]
-experimental_pbr_pcss = ["bevy/experimental_pbr_pcss"]
-exr = ["bevy/exr"]
-ff = ["bevy/ff"]
-file_watcher = ["bevy/file_watcher"]
-flac = ["bevy/flac"]
-ghost_nodes = ["bevy/ghost_nodes"]
-gif = ["bevy/gif"]
-glam_assert = ["bevy/glam_assert"]
-ico = ["bevy/ico"]
-ios_simulator = ["bevy/ios_simulator"]
-jpeg = ["bevy/jpeg"]
-ktx2 = ["bevy/ktx2"]
-meshlet = ["bevy/meshlet"]
-meshlet_processor = ["bevy/meshlet_processor"]
-minimp3 = ["bevy/minimp3"]
-mp3 = ["bevy/mp3"]
-pbr_anisotropy_texture = ["bevy/pbr_anisotropy_texture"]
-pbr_multi_layer_material_textures = ["bevy/pbr_multi_layer_material_textures"]
-pbr_transmission_textures = ["bevy/pbr_transmission_textures"]
-pnm = ["bevy/pnm"]
-qoi = ["bevy/qoi"]
-reflect_functions = ["bevy/reflect_functions"]
-shader_format_glsl = ["bevy/shader_format_glsl"]
-shader_format_spirv = ["bevy/shader_format_spirv"]
-spirv_shader_passthrough = ["bevy/spirv_shader_passthrough"]
-symphonia-aac = ["bevy/symphonia-aac"]
-symphonia-all = ["bevy/symphonia-all"]
-symphonia-flac = ["bevy/symphonia-flac"]
-symphonia-isomp4 = ["bevy/symphonia-isomp4"]
-symphonia-vorbis = ["bevy/symphonia-vorbis"]
-symphonia-wav = ["bevy/symphonia-wav"]
-tga = ["bevy/tga"]
-tiff = ["bevy/tiff"]
-trace = ["bevy/trace"]
-trace_chrome = ["bevy/trace_chrome"]
-trace_tracy = ["bevy/trace_tracy"]
-trace_tracy_memory = ["bevy/trace_tracy_memory"]
-track_change_detection = ["bevy/track_change_detection"]
-wav = ["bevy/wav"]
-wayland = ["bevy/wayland"]
-webgpu = ["bevy/webgpu"]
-webp = ["bevy/webp"]
-zlib = ["bevy/zlib"]
-zstd = ["bevy/zstd"]

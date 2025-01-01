@@ -6,7 +6,6 @@ mod ui;
 mod util;
 mod view;
 
-pub use bevy;
 pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;

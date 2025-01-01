@@ -6,10 +6,13 @@ mod ui;
 mod util;
 mod view;
 
-use std::cell::RefCell;
+pub use bevy;
+pub use bevy_egui;
+pub use bevy_egui::egui;
+pub use serde;
+pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
-pub use bevy;
 use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
 use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
 use bevy::picking::pointer::PointerInteraction;
@@ -17,20 +20,17 @@ use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::utils::tracing::level_filters::LevelFilter;
 use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
-pub use bevy_egui;
-pub use bevy_egui::egui;
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::{Cache, Saveable};
 use input::InputPlugin;
 use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
-pub use serde;
 use serde::{Deserialize, Serialize};
+use std::cell::RefCell;
 use ui::{Layout, UiPlugin};
 pub use ui::{PersistentId, Ui, UiComponent};
 pub use util::*;
-pub use uuid;
 use view::{
   ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
 };
@@ -70,21 +70,22 @@ impl Editor {
 
     let cache = Cache::load_or_default();
     let log_info = cache.get::<LogInfo>().unwrap_or_default();
-    let mut window = Window::default();
-    window.title = String::from("Bevy Editor");
-    window.mode = WindowMode::Windowed;
-    window.visible = false;
-    window.enabled_buttons = EnabledButtons {
-      close: true,
-      maximize: true,
-      minimize: false, // minimize causes a crash
-    };
 
     app
       .add_plugins(
         defaults
           .set(WindowPlugin {
-            primary_window: Some(window),
+            primary_window: Some(Window {
+              title: String::from("Bevy Editor"),
+              mode: WindowMode::Windowed,
+              visible: false,
+              enabled_buttons: EnabledButtons {
+                close: true,
+                maximize: true,
+                minimize: false, // minimize causes a crash
+              },
+              ..default()
+            }),
             close_when_requested: false,
             ..default()
           })

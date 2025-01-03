@@ -260,7 +260,7 @@ impl Default for CameraSettings {
     CameraSettings {
       move_speed: 128.0,
       zoom_sensitivity: 10.0,
-      pan_sensitivity: 10.0,
+      pan_sensitivity: 1.0,
     }
   }
 }

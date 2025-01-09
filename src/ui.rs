@@ -8,7 +8,6 @@ pub mod prefabs;
 pub mod resources;
 
 use crate::cache::{Cache, Saveable};
-use crate::view::EditorCamera;
 use assets::Assets;
 use bevy::asset::UntypedAssetId;
 use bevy::ecs::system::{SystemParam, SystemState};
@@ -101,6 +100,13 @@ pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
   const ID: PersistentId;
 
   fn spawn(world: &mut World) -> Self;
+
+  /// Used to prevent this Ui from appearing in the view menu
+  ///
+  /// Typically for Ui's that are programmatically created
+  fn hidden() -> bool {
+    false
+  }
 
   #[allow(unused_variables)]
   fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
@@ -200,6 +206,13 @@ pub trait Ui: UiComponent {
 
   fn spawn(params: Self::Params<'_, '_>) -> Self;
 
+  /// Used to prevent this Ui from appearing in the view menu
+  ///
+  /// Typically for Ui's that are programmatically created
+  fn hidden() -> bool {
+    false
+  }
+
   #[allow(unused_variables)]
   fn title(&mut self, params: Self::Params<'_, '_>) -> egui::WidgetText {
     Self::NAME.into()
@@ -241,6 +254,10 @@ where
     let entity = world.spawn_empty().id();
     Self::register_params(entity, world);
     Self::with_params(entity, world, Ui::spawn)
+  }
+
+  fn hidden() -> bool {
+    <Self as Ui>::hidden()
   }
 
   fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
@@ -339,6 +356,7 @@ struct VTable {
   render: fn(Entity, &mut egui::Ui, &mut World),
   context_menu: fn(Entity, &mut egui::Ui, &mut World),
   unique: fn() -> bool,
+  hidden: fn() -> bool,
   count: fn(&mut World) -> usize,
 }
 
@@ -364,6 +382,7 @@ impl VTable {
       render: T::render,
       context_menu: T::context_menu,
       unique: T::unique,
+      hidden: T::hidden,
       count: |world| {
         let mut q_uis = world.query::<&T>();
         q_uis.iter(world).len()
@@ -562,7 +581,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       let unique_tabs = self
         .vtables
         .iter()
-        .filter(|(_, vtable)| (vtable.unique)())
+        .filter(|(_, vtable)| (vtable.unique)() && !(vtable.hidden)())
         .map(|(id, vtable)| (id, (vtable.name)()))
         .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
@@ -664,6 +683,10 @@ impl Ui for MissingUi {
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     Self(default(), default())
+  }
+
+  fn hidden() -> bool {
+    true
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {

@@ -20,7 +20,6 @@ pub struct Params<'w, 's> {
   view_state: Res<'w, State<ViewState>>,
   next_view_state: ResMut<'w, NextState<ViewState>>,
   log_info: ResMut<'w, LogInfo>,
-  q_panels: Query<'w, 's, &'static ControlPanel>,
   q_transforms: ParamSet<
     'w,
     's,

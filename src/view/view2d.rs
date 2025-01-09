@@ -125,11 +125,11 @@ impl EditorCamera2d {
 
   fn movement_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera2d>>,
+    mut q_cam: Single<(&CameraSettings, &mut Transform), With<EditorCamera2d>>,
     time: Res<Time>,
   ) {
     for action_state in &q_action_states {
-      let (cam_settings, mut cam_transform) = q_cam.single_mut();
+      let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
 
       let mut movement = Vec3::ZERO;
 

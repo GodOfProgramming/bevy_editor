@@ -56,11 +56,29 @@ impl Ui for ControlPanel {
 
         let mut view = params.view_state.get().clone();
         let prev_view = view;
+
         ui.push_id("view-selector", |ui| {
           ui_for_value(&mut view, ui, &type_registry);
         });
+
         if prev_view != view {
           params.next_view_state.set(view);
+        }
+
+        if ui.button("Look At Origin").clicked() {
+          match view {
+            ViewState::Camera2D => {
+              for mut cam_transform in &mut params.q_transforms.p1() {
+                cam_transform.look_at(Vec3::ZERO, view2d::UP);
+              }
+            }
+            ViewState::Camera3D => {
+              for mut cam_transform in &mut params.q_transforms.p2() {
+                cam_transform.look_at(Vec3::ZERO, view3d::UP);
+              }
+            }
+            _ => (),
+          }
         }
 
         let InspectorSelection::Entities(selected_entities) = params.selection.as_ref() else {
@@ -96,6 +114,7 @@ impl Ui for ControlPanel {
           }
 
           if ui.button("Look At Selected").clicked() {
+            // TODO does not work, will only work when orbit() no longer relies on face and uses the transform directly
             'look_block: {
               let entity = selected_entities.iter().next().unwrap();
               let all_transforms = params.q_transforms.p0();

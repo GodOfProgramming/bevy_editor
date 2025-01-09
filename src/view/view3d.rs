@@ -29,7 +29,7 @@ impl Plugin for View3dPlugin {
             EditorCamera3d::movement_system,
             (
               EditorCamera3d::handle_input,
-              EditorCamera3d::orbit_self_system,
+              EditorCamera3d::orbit_system,
               EditorCamera3d::zoom_system,
               EditorCamera3d::pan_system,
             )
@@ -122,11 +122,11 @@ impl EditorCamera3d {
 
   fn movement_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraState, &CameraSettings, &mut Transform), With<EditorCamera3d>>,
+    mut q_cam: Single<(&CameraState, &CameraSettings, &mut Transform), With<EditorCamera3d>>,
     time: Res<Time>,
   ) {
     for action_state in &q_action_states {
-      let (cam_state, cam_settings, mut cam_transform) = q_cam.single_mut();
+      let (ref cam_state, ref cam_settings, ref mut cam_transform) = &mut *q_cam;
 
       let mut movement = Vec3::ZERO;
 
@@ -155,9 +155,9 @@ impl EditorCamera3d {
     }
   }
 
-  fn orbit_self_system(
+  fn orbit_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut CameraState), With<EditorCamera3d>>,
+    mut q_cam: Single<(&CameraSettings, &mut CameraState), With<EditorCamera3d>>,
     mut mouse_motion: EventReader<MouseMotion>,
     time: Res<Time>,
   ) {
@@ -169,7 +169,7 @@ impl EditorCamera3d {
       return;
     }
 
-    let (settings, mut state) = q_cam.single_mut();
+    let (ref settings, ref mut state) = &mut *q_cam;
 
     let orbit = mouse_motion
       .read()
@@ -203,7 +203,7 @@ impl EditorCamera3d {
 
   fn pan_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera3d>>,
+    mut q_cam: Single<(&CameraSettings, &mut Transform), With<EditorCamera3d>>,
     mut mouse_motion: EventReader<MouseMotion>,
     time: Res<Time>,
   ) {
@@ -215,7 +215,7 @@ impl EditorCamera3d {
       return;
     }
 
-    let (cam_settings, mut cam_transform) = q_cam.single_mut();
+    let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
 
     let pan = mouse_motion
       .read()
@@ -257,8 +257,8 @@ impl EditorCamera3d {
     }
   }
 
-  fn look(mut q_cam: Query<(&mut Transform, &CameraState), With<EditorCamera3d>>) {
-    let (mut cam_transform, cam_state) = q_cam.single_mut();
+  fn look(mut q_cam: Single<(&mut Transform, &CameraState), With<EditorCamera3d>>) {
+    let (ref mut cam_transform, ref cam_state) = &mut *q_cam;
     let cam_target = cam_transform.translation + cam_state.face;
     cam_transform.look_at(cam_target, UP);
   }

@@ -376,11 +376,10 @@ impl EditorPlugin {
   fn handle_pick_events(
     mut selection: ResMut<ui::InspectorSelection>,
     mut click_events: EventReader<Pointer<Click>>,
-    mut q_egui: Query<&mut EguiContext>,
+    mut q_egui: Single<&mut EguiContext>,
     q_raycast_pickables: Query<&RayCastPickable>,
   ) {
-    let mut egui = q_egui.single_mut();
-    let egui_context = egui.get_mut();
+    let egui_context = q_egui.get_mut();
     let modifiers = egui_context.input(|i| i.modifiers);
 
     for click in click_events

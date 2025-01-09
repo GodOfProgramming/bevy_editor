@@ -114,7 +114,6 @@ impl Ui for ControlPanel {
           }
 
           if ui.button("Look At Selected").clicked() {
-            // TODO does not work, will only work when orbit() no longer relies on face and uses the transform directly
             'look_block: {
               let entity = selected_entities.iter().next().unwrap();
               let all_transforms = params.q_transforms.p0();

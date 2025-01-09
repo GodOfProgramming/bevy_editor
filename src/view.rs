@@ -3,7 +3,7 @@ pub mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},
-  ui::game_view::GameView,
+  ui::editor_view::EditorView,
   EditorState,
 };
 use bevy::{prelude::*, render::camera::Viewport, window::PrimaryWindow};
@@ -40,7 +40,7 @@ impl Plugin for ViewPlugin {
 #[derive(Component)]
 pub struct ActiveEditorCamera;
 
-#[derive(Component, Default)]
+#[derive(Default, Component, Reflect)]
 #[require(RayCastPickable)]
 pub struct EditorCamera;
 
@@ -59,13 +59,13 @@ impl EditorCamera {
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
     egui_settings: Single<&bevy_egui::EguiSettings>,
-    game_view: Single<&GameView>,
-    mut cameras: Query<&mut Camera>,
+    editor_view: Single<&EditorView>,
+    mut cameras: Query<&mut Camera, With<EditorCamera>>,
   ) {
     for mut cam in &mut cameras {
       let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
-      let viewport = game_view.viewport();
+      let viewport = editor_view.viewport();
       let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
       let viewport_size = viewport.size() * scale_factor;
 
@@ -125,6 +125,6 @@ fn can_run(
   }
 }
 
-fn mouse_actions_enabled(q_game_views: Query<&GameView>) -> bool {
+fn mouse_actions_enabled(q_game_views: Query<&EditorView>) -> bool {
   q_game_views.iter().any(|gv| gv.hovered())
 }

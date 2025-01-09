@@ -1,38 +1,15 @@
-use std::marker::PhantomData;
-
 use super::{NoParams, Ui};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use uuid::uuid;
 
-#[derive(Component, Reflect)]
-pub struct GameView<C>
-where
-  C: Component + Reflect,
-{
+#[derive(Default, Component, Reflect)]
+pub struct EditorView {
   viewport_rect: Rect,
   mouse_hovered: bool,
-  #[reflect(ignore)]
-  _pd: PhantomData<C>,
 }
 
-impl<C> Default for GameView<C>
-where
-  C: Component + Reflect,
-{
-  fn default() -> Self {
-    Self {
-      viewport_rect: default(),
-      mouse_hovered: default(),
-      _pd: PhantomData,
-    }
-  }
-}
-
-impl<C> GameView<C>
-where
-  C: Component + Reflect,
-{
+impl EditorView {
   pub fn viewport(&self) -> egui::Rect {
     egui::Rect {
       max: egui::Pos2::new(self.viewport_rect.max.x, self.viewport_rect.max.y),
@@ -45,10 +22,7 @@ where
   }
 }
 
-impl<C> Ui for GameView<C>
-where
-  C: Component + Reflect + TypePath,
-{
+impl Ui for EditorView {
   const NAME: &str = "Game View";
   const UUID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
 
@@ -56,6 +30,10 @@ where
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
+  }
+
+  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
+    false
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {

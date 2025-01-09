@@ -1,5 +1,6 @@
 pub mod assets;
 pub mod control_panel;
+pub mod editor_view;
 pub mod game_view;
 pub mod hierarchy;
 pub mod inspector;
@@ -7,6 +8,7 @@ pub mod prefabs;
 pub mod resources;
 
 use crate::cache::{Cache, Saveable};
+use crate::view::EditorCamera;
 use assets::Assets;
 use bevy::asset::UntypedAssetId;
 use bevy::ecs::system::{SystemParam, SystemState};
@@ -18,8 +20,8 @@ use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector;
 use control_panel::ControlPanel;
 use derive_more::derive::From;
+use editor_view::EditorView;
 use egui_dock::{DockArea, DockState, NodeIndex, SurfaceIndex};
-use game_view::GameView;
 use hierarchy::Hierarchy;
 use inspector::Inspector;
 use itertools::Itertools;
@@ -394,7 +396,7 @@ impl Default for Layout {
     };
 
     this.register::<MissingUi>();
-    this.register::<GameView>();
+    this.register::<EditorView>();
     this.register::<Hierarchy>();
     this.register::<ControlPanel>();
     this.register::<Inspector>();
@@ -426,7 +428,7 @@ impl Layout {
         })
       })
       .unwrap_or_else(|| {
-        let mut state = DockState::new(vec![self.spawn_type::<GameView>(world)]);
+        let mut state = DockState::new(vec![self.spawn_type::<EditorView>(world)]);
 
         let tree = state.main_surface_mut();
 

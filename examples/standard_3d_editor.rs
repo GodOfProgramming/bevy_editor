@@ -12,7 +12,7 @@ fn main() {
   editor.launch();
 }
 
-#[derive(Component)]
+#[derive(Component, Reflect)]
 struct GameCamera;
 
 fn startup(

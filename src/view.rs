@@ -125,6 +125,6 @@ fn can_run(
   }
 }
 
-fn mouse_actions_enabled(q_game_views: Query<&EditorView>) -> bool {
-  q_game_views.iter().any(|gv| gv.hovered())
+fn mouse_actions_enabled(q_editor_views: Query<&EditorView>) -> bool {
+  q_editor_views.iter().any(|gv| gv.hovered())
 }

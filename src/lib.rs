@@ -9,6 +9,7 @@ mod view;
 pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;
+use ui::game_view::GameView;
 pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
@@ -133,7 +134,7 @@ impl Editor {
 
   pub fn add_game_camera<C>(&mut self) -> &mut Self
   where
-    C: Component,
+    C: Component + Reflect + TypePath,
   {
     self
       .app
@@ -155,7 +156,7 @@ impl Editor {
           .run_if(in_state(EditorState::Editing)),
       );
 
-    self
+    self.register_ui::<GameView<C>>()
   }
 
   pub fn launch(self) -> AppExit {

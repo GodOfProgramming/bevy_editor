@@ -42,8 +42,8 @@ impl Ui for ControlPanel {
     default()
   }
 
-  fn closeable(&mut self, params: Self::Params<'_, '_>) -> bool {
-    params.q_panels.iter().len() > 1
+  fn unique() -> bool {
+    true
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {

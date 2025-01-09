@@ -113,7 +113,7 @@ pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
   }
 
   #[allow(unused_variables)]
-  fn closeable(entity: Entity, world: &mut World) -> bool {
+  fn closeable(world: &mut World) -> bool {
     true
   }
 
@@ -211,7 +211,7 @@ pub trait Ui: UiComponent {
   }
 
   #[allow(unused_variables)]
-  fn closeable(&mut self, params: Self::Params<'_, '_>) -> bool {
+  fn closeable() -> bool {
     true
   }
 
@@ -249,10 +249,6 @@ where
 
   fn can_clear(entity: Entity, world: &mut World) -> bool {
     Self::get_entity(entity, world, Ui::can_clear)
-  }
-
-  fn closeable(entity: Entity, world: &mut World) -> bool {
-    Self::get_entity_mut(entity, world, Ui::closeable)
   }
 
   fn on_close(entity: Entity, world: &mut World) {
@@ -339,11 +335,11 @@ struct VTable {
   spawn: fn(&mut World) -> Entity,
   title: fn(Entity, &mut World) -> egui::WidgetText,
   can_clear: fn(Entity, &mut World) -> bool,
-  closable: fn(Entity, &mut World) -> bool,
   on_close: fn(Entity, &mut World),
   render: fn(Entity, &mut egui::Ui, &mut World),
   context_menu: fn(Entity, &mut egui::Ui, &mut World),
   unique: fn() -> bool,
+  count: fn(&mut World) -> usize,
 }
 
 impl VTable {
@@ -364,11 +360,14 @@ impl VTable {
       },
       title: T::title,
       can_clear: T::can_clear,
-      closable: T::closeable,
       on_close: T::on_close,
       render: T::render,
       context_menu: T::context_menu,
       unique: T::unique,
+      count: |world| {
+        let mut q_uis = world.query::<&T>();
+        q_uis.iter(world).len()
+      },
     }
   }
 }
@@ -537,11 +536,6 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     (vtable.can_clear)(*tab, &mut self.world.borrow_mut())
   }
 
-  fn closeable(&mut self, tab: &mut Self::Tab) -> bool {
-    let vtable = self.vtable_of(*tab);
-    (vtable.closable)(*tab, &mut self.world.borrow_mut())
-  }
-
   fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
     let vtable = self.vtable_of(*tab);
     (vtable.on_close)(*tab, &mut self.world.borrow_mut());
@@ -564,22 +558,47 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     surface: SurfaceIndex,
     node: NodeIndex,
   ) {
-    ui.menu_button("Insert", |ui| {
-      let unique_tables = self
+    ui.menu_button("View", |ui| {
+      let unique_tabs = self
         .vtables
         .iter()
-        .filter(|(_, vtable)| !(vtable.unique)())
+        .filter(|(_, vtable)| (vtable.unique)())
         .map(|(id, vtable)| (id, (vtable.name)()))
         .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
-      for (id, name) in unique_tables {
+      for (id, name) in unique_tabs {
         let vtable = &self.vtables[id];
-        if ui.button(name).clicked() {
-          let mut world = self.world.borrow_mut();
-          let entity = (vtable.spawn)(&mut world);
-          world.send_event(AddUiEvent(surface, node, entity));
-        }
+        let mut world = self.world.borrow_mut();
+        let count = (vtable.count)(&mut world);
+
+        let mut exists = count > 0;
+        let enabled = !exists;
+
+        ui.add_enabled_ui(enabled, |ui| {
+          if ui.checkbox(&mut exists, name).clicked() {
+            let entity = (vtable.spawn)(&mut world);
+            world.send_event(AddUiEvent(surface, node, entity));
+          }
+        });
       }
+
+      ui.menu_button("Insert", |ui| {
+        let spawnable_tables = self
+          .vtables
+          .iter()
+          .filter(|(_, vtable)| !(vtable.unique)())
+          .map(|(id, vtable)| (id, (vtable.name)()))
+          .sorted_by(|(_, a), (_, b)| a.cmp(b));
+
+        for (id, name) in spawnable_tables {
+          let vtable = &self.vtables[id];
+          if ui.button(name).clicked() {
+            let mut world = self.world.borrow_mut();
+            let entity = (vtable.spawn)(&mut world);
+            world.send_event(AddUiEvent(surface, node, entity));
+          }
+        }
+      });
     });
 
     let vtable = self.vtable_of(*tab);

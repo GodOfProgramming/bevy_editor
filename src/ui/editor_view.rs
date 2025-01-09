@@ -23,7 +23,7 @@ impl EditorView {
 }
 
 impl Ui for EditorView {
-  const NAME: &str = "Game View";
+  const NAME: &str = "Editor View";
   const UUID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
 
   type Params<'w, 's> = NoParams;
@@ -32,8 +32,12 @@ impl Ui for EditorView {
     default()
   }
 
-  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
+  fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {
     false
+  }
+
+  fn unique() -> bool {
+    true
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {
@@ -43,13 +47,5 @@ impl Ui for EditorView {
       min: Vec2::new(egui_rect.min.x, egui_rect.min.y),
     };
     self.mouse_hovered = ui.ui_contains_pointer();
-  }
-
-  fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {
-    false
-  }
-
-  fn unique() -> bool {
-    true
   }
 }

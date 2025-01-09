@@ -21,8 +21,8 @@ impl Ui for Assets {
     default()
   }
 
-  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
-    false
+  fn unique() -> bool {
+    true
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {

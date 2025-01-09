@@ -31,9 +31,7 @@ use std::cell::RefCell;
 use ui::{Layout, UiPlugin};
 pub use ui::{PersistentId, Ui, UiComponent};
 pub use util::*;
-use view::{
-  ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
-};
+use view::{EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -136,25 +134,14 @@ impl Editor {
   where
     C: Component + Reflect + TypePath,
   {
-    self
-      .app
-      .add_systems(PostStartup, Self::swap_cameras::<ActiveEditorCamera, C>)
-      .add_systems(
-        OnEnter(EditorState::Testing),
-        Self::swap_cameras::<C, ActiveEditorCamera>,
+    self.app.register_type::<GameView<C>>().add_systems(
+      Update,
+      (
+        Self::render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
+        Self::render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
       )
-      .add_systems(
-        OnEnter(EditorState::Editing),
-        Self::swap_cameras::<ActiveEditorCamera, C>,
-      )
-      .add_systems(
-        Update,
-        (
-          Self::render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
-          Self::render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
-        )
-          .run_if(in_state(EditorState::Editing)),
-      );
+        .run_if(in_state(EditorState::Editing)),
+    );
 
     self.register_ui::<GameView<C>>()
   }
@@ -185,22 +172,6 @@ impl Editor {
   {
     self.scene_type_registry.write().register::<T>();
     self.app.register_type::<T>();
-  }
-
-  fn swap_cameras<Enabled, Disabled>(
-    mut q_enabled_cameras: Query<&mut Camera, (With<Enabled>, Without<Disabled>)>,
-    mut q_disabled_cameras: Query<&mut Camera, (With<Disabled>, Without<Enabled>)>,
-  ) where
-    Enabled: Component,
-    Disabled: Component,
-  {
-    for mut cam in &mut q_enabled_cameras {
-      cam.is_active = true;
-    }
-
-    for mut cam in &mut q_disabled_cameras {
-      cam.is_active = false;
-    }
   }
 
   fn render_2d_cameras<C: Component>(
@@ -240,7 +211,7 @@ impl Editor {
 
     let rect_pos = transform.translation + forward;
     let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
-    let rect_dim = Vec2::new(1.0 * scaler, 1.0);
+    let rect_dim = Vec2::new(scaler, 1.0);
 
     gizmos.rect(rect_iso, rect_dim, Self::COLOR);
 
@@ -293,7 +264,7 @@ impl Plugin for EditorPlugin {
           .chain(),
       )
       .add_systems(
-        Update,
+        FixedUpdate,
         (
           Self::on_close_requested,
           (
@@ -303,12 +274,15 @@ impl Plugin for EditorPlugin {
               scenes::check_for_loads,
               Self::auto_register_targets,
               Self::handle_pick_events,
-              Self::draw_mesh_intersections,
             )
               .run_if(in_state(EditorState::Editing)),
           )
             .chain(),
         ),
+      )
+      .add_systems(
+        Update,
+        Self::draw_mesh_intersections.run_if(in_state(EditorState::Editing)),
       );
   }
 }

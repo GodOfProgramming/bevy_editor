@@ -45,13 +45,26 @@ impl Plugin for UiPlugin {
     let layout = layout.take().unwrap();
 
     app
+      .register_type::<MissingUi>()
+      .register_type::<EditorView>()
+      .register_type::<Hierarchy>()
+      .register_type::<ControlPanel>()
+      .register_type::<Inspector>()
+      .register_type::<Prefabs>()
+      .register_type::<Resources>()
+      .register_type::<Assets>()
       .add_event::<AddUiEvent>()
       .add_event::<RemoveUiEvent>()
-      .insert_resource(layout)
       .init_resource::<InspectorSelection>()
       .add_plugins(EguiPlugin)
       .add_systems(Startup, init_resources)
       .add_systems(Update, (on_remove_ui, (render, on_add_ui)).chain());
+
+    for vtable in layout.vtables.values() {
+      (vtable.init)(app);
+    }
+
+    app.insert_resource(layout);
   }
 }
 
@@ -98,6 +111,10 @@ where
 pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
   const COMPONENT_NAME: &str;
   const ID: PersistentId;
+
+  /// Add systems or resources that this UI needs in order to function
+  #[allow(unused_variables)]
+  fn init(app: &mut App) {}
 
   fn spawn(world: &mut World) -> Self;
 
@@ -204,6 +221,10 @@ pub trait Ui: UiComponent {
     Item<'world, 'system> = Self::Params<'world, 'system>,
   >;
 
+  /// Add systems or resources that this UI needs in order to function
+  #[allow(unused_variables)]
+  fn init(app: &mut App) {}
+
   fn spawn(params: Self::Params<'_, '_>) -> Self;
 
   /// Used to prevent this Ui from appearing in the view menu
@@ -249,6 +270,10 @@ where
 {
   const COMPONENT_NAME: &str = Self::NAME;
   const ID: PersistentId = PersistentId(<T as Ui>::UUID);
+
+  fn init(app: &mut App) {
+    <Self as Ui>::init(app)
+  }
 
   fn spawn(world: &mut World) -> Self {
     let entity = world.spawn_empty().id();
@@ -349,6 +374,7 @@ pub struct PersistentId(#[reflect(ignore)] pub Uuid);
 #[derive(Clone)]
 struct VTable {
   name: fn() -> &'static str,
+  init: fn(&mut App),
   spawn: fn(&mut World) -> Entity,
   title: fn(Entity, &mut World) -> egui::WidgetText,
   can_clear: fn(Entity, &mut World) -> bool,
@@ -367,6 +393,7 @@ impl VTable {
   {
     Self {
       name: || T::COMPONENT_NAME,
+      init: T::init,
       spawn: |world| {
         let instance = T::spawn(world);
         let entity_id = world.spawn((instance, T::ID)).id();

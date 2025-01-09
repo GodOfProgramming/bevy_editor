@@ -1,4 +1,4 @@
-use super::{EditorCamera, ViewState};
+use super::{EditorCamera, EditorCamera3d, ViewState};
 use crate::{
   cache::{Cache, Saveable},
   input::EditorActions,
@@ -79,8 +79,8 @@ pub struct EditorCamera2d;
 impl EditorCamera2d {
   fn on_enter(
     mut commands: Commands,
-    mut q_2d_cams: Query<(Entity, &mut Camera), With<EditorCamera2d>>,
-    mut q_other_cams: Query<(Entity, &mut Camera), Without<EditorCamera2d>>,
+    mut q_2d_cams: Query<(Entity, &mut Camera), (With<EditorCamera2d>, Without<EditorCamera3d>)>,
+    mut q_3d_cams: Query<(Entity, &mut Camera), (With<EditorCamera3d>, Without<EditorCamera2d>)>,
   ) {
     info!("Switched to 2d camera");
 
@@ -89,7 +89,7 @@ impl EditorCamera2d {
       cam.is_active = true;
     }
 
-    for (entity, mut cam) in &mut q_other_cams {
+    for (entity, mut cam) in &mut q_3d_cams {
       commands.entity(entity).remove::<ActiveEditorCamera>();
       cam.is_active = false;
     }

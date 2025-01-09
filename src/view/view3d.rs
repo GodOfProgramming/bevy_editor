@@ -8,7 +8,7 @@ use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::ActionState;
 use serde::{Deserialize, Serialize};
 
-use super::{ActiveEditorCamera, EditorCamera, ViewState};
+use super::{ActiveEditorCamera, EditorCamera, EditorCamera2d, ViewState};
 
 pub const UP: Vec3 = Vec3::Y;
 
@@ -67,8 +67,8 @@ pub struct EditorCamera3d;
 impl EditorCamera3d {
   fn on_enter(
     mut commands: Commands,
-    mut q_3d_cams: Query<(Entity, &mut Camera), With<EditorCamera3d>>,
-    mut q_other_cams: Query<(Entity, &mut Camera), Without<EditorCamera3d>>,
+    mut q_3d_cams: Query<(Entity, &mut Camera), (With<EditorCamera3d>, Without<EditorCamera2d>)>,
+    mut q_2d_cams: Query<(Entity, &mut Camera), (With<EditorCamera2d>, Without<EditorCamera3d>)>,
   ) {
     info!("Switched to 3d camera");
 
@@ -77,7 +77,7 @@ impl EditorCamera3d {
       cam.is_active = true;
     }
 
-    for (entity, mut cam) in &mut q_other_cams {
+    for (entity, mut cam) in &mut q_2d_cams {
       commands.entity(entity).remove::<ActiveEditorCamera>();
       cam.is_active = false;
     }

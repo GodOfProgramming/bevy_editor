@@ -64,6 +64,10 @@ impl View2dPlugin {
       settings,
       transform,
       projection,
+      Camera {
+        order: isize::MIN,
+        ..default()
+      },
     ));
   }
 }

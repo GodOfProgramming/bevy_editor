@@ -59,6 +59,10 @@ impl View3dPlugin {
       state,
       settings,
       transform,
+      Camera {
+        order: isize::MIN,
+        ..default()
+      },
     ));
   }
 }

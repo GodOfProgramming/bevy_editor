@@ -601,23 +601,25 @@ impl egui_dock::TabViewer for TabViewer<'_> {
         });
       }
 
-      ui.menu_button("Insert", |ui| {
-        let spawnable_tables = self
-          .vtables
-          .iter()
-          .filter(|(_, vtable)| !(vtable.unique)())
-          .map(|(id, vtable)| (id, (vtable.name)()))
-          .sorted_by(|(_, a), (_, b)| a.cmp(b));
+      let spawnable_tables = self
+        .vtables
+        .iter()
+        .filter(|(_, vtable)| !(vtable.unique)())
+        .map(|(id, vtable)| (id, (vtable.name)()))
+        .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
-        for (id, name) in spawnable_tables {
-          let vtable = &self.vtables[id];
-          if ui.button(name).clicked() {
-            let mut world = self.world.borrow_mut();
-            let entity = (vtable.spawn)(&mut world);
-            world.send_event(AddUiEvent(surface, node, entity));
+      if spawnable_tables.len() > 0 {
+        ui.menu_button("Insert", |ui| {
+          for (id, name) in spawnable_tables {
+            let vtable = &self.vtables[id];
+            if ui.button(name).clicked() {
+              let mut world = self.world.borrow_mut();
+              let entity = (vtable.spawn)(&mut world);
+              world.send_event(AddUiEvent(surface, node, entity));
+            }
           }
-        }
-      });
+        });
+      }
     });
 
     let vtable = self.vtable_of(*tab);

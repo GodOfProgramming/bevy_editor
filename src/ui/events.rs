@@ -1,12 +1,11 @@
-use bevy::prelude::*;
-use derive_new::new;
-use egui_dock::{DockState, NodeIndex, SurfaceIndex};
-
 use super::{
   managers::UiManager,
   misc::{DockExtensions, MissingUi},
   PersistentId,
 };
+use bevy::prelude::*;
+use derive_new::new;
+use egui_dock::{DockState, NodeIndex, SurfaceIndex};
 
 #[derive(Event, new)]
 pub struct SaveLayoutEvent {
@@ -16,7 +15,7 @@ pub struct SaveLayoutEvent {
 
 impl SaveLayoutEvent {
   pub fn on_event(
-    mut events: EventReader<SaveLayoutEvent>,
+    mut events: EventReader<Self>,
     mut ui_manager: ResMut<UiManager>,
     q_uuids: Query<&PersistentId, Without<MissingUi>>,
     q_missing: Query<&MissingUi>,
@@ -32,7 +31,7 @@ impl SaveLayoutEvent {
 pub struct AddUiEvent(SurfaceIndex, NodeIndex, Entity);
 
 impl AddUiEvent {
-  pub fn on_event(mut events: EventReader<AddUiEvent>, mut ui_manager: ResMut<UiManager>) {
+  pub fn on_event(mut events: EventReader<Self>, mut ui_manager: ResMut<UiManager>) {
     for event in events.read() {
       let AddUiEvent(surface, node, tab) = *event;
 
@@ -54,7 +53,7 @@ impl AddUiEvent {
 pub struct RemoveUiEvent(Entity);
 
 impl RemoveUiEvent {
-  pub fn on_event(mut events: EventReader<RemoveUiEvent>, mut commands: Commands) {
+  pub fn on_event(mut events: EventReader<Self>, mut commands: Commands) {
     for event in events.read() {
       let RemoveUiEvent(tab) = *event;
       commands.entity(tab).despawn();

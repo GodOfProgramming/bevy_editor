@@ -177,6 +177,12 @@ impl UiManager {
     self.state.get_surface_mut(index)
   }
 
+  pub(super) fn vtable_of(&self, entity: Entity, world: &mut World) -> &VTable {
+    let mut q_ids = world.query::<&PersistentId>();
+    let id = q_ids.get(&world, entity).unwrap();
+    &self.vtables[id]
+  }
+
   fn spawn_type<T: RawUi>(&self, world: &mut World) -> Entity {
     self.spawn(PersistentId(T::ID), world)
   }

@@ -11,10 +11,15 @@ use uuid::{uuid, Uuid};
 
 #[derive(Component, Default)]
 pub struct UiInfo {
+  pub(super) rendered: bool,
   pub(super) hovered: bool,
 }
 
 impl UiInfo {
+  pub fn rendered(&self) -> bool {
+    self.rendered
+  }
+
   pub fn hovered(&self) -> bool {
     self.hovered
   }

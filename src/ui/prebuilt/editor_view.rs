@@ -1,15 +1,14 @@
 use crate::{
-  ui::{NoParams, Ui},
+  ui::{misc::UiInfo, Ui},
   view::ActiveEditorCamera,
 };
-use bevy::{prelude::*, render::camera::Viewport, window::PrimaryWindow};
+use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::egui;
 use uuid::uuid;
 
 #[derive(Default, Component, Reflect)]
 pub struct EditorView {
   viewport_rect: Rect,
-  was_rendered: bool,
 }
 
 impl EditorView {
@@ -20,19 +19,16 @@ impl EditorView {
     }
   }
 
-  fn on_preupdate(mut editor_view: Single<&mut Self>) {
-    editor_view.was_rendered = false;
-  }
-
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
     egui_settings: Single<&bevy_egui::EguiSettings>,
-    editor_view: Single<&Self>,
+    editor_view: Single<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<ActiveEditorCamera>>,
   ) {
-    if editor_view.was_rendered {
+    let (ref editor_view, ref ui_info) = &*editor_view;
+
+    if ui_info.rendered() {
       for mut camera in &mut q_cameras {
-        camera.is_active = true;
         let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
         let viewport = editor_view.viewport();
@@ -60,24 +56,23 @@ impl EditorView {
           });
         }
       }
-    } else {
-      for mut camera in &mut q_cameras {
-        camera.is_active = false;
-      }
     }
   }
+}
+
+#[derive(SystemParam)]
+pub struct Params<'w, 's> {
+  q_cameras: Query<'w, 's, &'static mut Camera, With<ActiveEditorCamera>>,
 }
 
 impl Ui for EditorView {
   const NAME: &str = "Editor View";
   const ID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
 
-  type Params<'w, 's> = NoParams;
+  type Params<'w, 's> = Params<'w, 's>;
 
   fn init(app: &mut App) {
-    app
-      .add_systems(PreUpdate, Self::on_preupdate)
-      .add_systems(PostUpdate, Self::set_viewport);
+    app.add_systems(PostUpdate, Self::set_viewport);
   }
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
@@ -85,13 +80,27 @@ impl Ui for EditorView {
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {
-    self.was_rendered = true;
-
     let egui_rect = ui.clip_rect();
     self.viewport_rect = Rect {
       max: Vec2::new(egui_rect.max.x, egui_rect.max.y),
       min: Vec2::new(egui_rect.min.x, egui_rect.min.y),
     };
+  }
+
+  fn when_rendered(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = true;
+    }
+  }
+
+  fn when_not_rendered(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = false;
+    }
+  }
+
+  fn handle_tab_response(&mut self, _params: Self::Params<'_, '_>, response: &egui::Response) {
+    if response.is_pointer_button_down_on() {}
   }
 
   fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {

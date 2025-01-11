@@ -1,5 +1,5 @@
-use crate::ui::{NoParams, Ui};
-use bevy::{prelude::*, render::camera::Viewport, window::PrimaryWindow};
+use crate::ui::{misc::UiInfo, Ui};
+use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::egui;
 use std::marker::PhantomData;
 use uuid::uuid;
@@ -46,12 +46,13 @@ where
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
     egui_settings: Single<&bevy_egui::EguiSettings>,
-    game_view: Single<&Self>,
+    game_view: Single<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<C>>,
   ) {
-    if game_view.was_rendered {
+    let (ref game_view, ref ui_info) = &*game_view;
+
+    if ui_info.rendered() {
       for mut camera in &mut q_cameras {
-        camera.is_active = true;
         let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
         let viewport = game_view.viewport();
@@ -79,12 +80,13 @@ where
           });
         }
       }
-    } else {
-      for mut camera in &mut q_cameras {
-        camera.is_active = false;
-      }
     }
   }
+}
+
+#[derive(SystemParam)]
+pub struct Params<'w, 's, C: Component> {
+  q_cameras: Query<'w, 's, &'static mut Camera, With<C>>,
 }
 
 impl<C> Ui for GameView<C>
@@ -94,7 +96,7 @@ where
   const NAME: &str = "Game View";
   const ID: uuid::Uuid = uuid!("f26513f6-86fa-48e2-9f6f-e094ad9dcbfb");
 
-  type Params<'w, 's> = NoParams;
+  type Params<'w, 's> = Params<'w, 's, C>;
 
   fn init(app: &mut App) {
     app
@@ -116,9 +118,15 @@ where
     };
   }
 
-  fn handle_tab_response(&mut self, params: Self::Params<'_, '_>, response: &egui::Response) {
-    if response.is_pointer_button_down_on() {
-      info!("POINTER DOWN");
+  fn when_rendered(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = true;
+    }
+  }
+
+  fn when_not_rendered(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = false;
     }
   }
 

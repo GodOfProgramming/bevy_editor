@@ -16,7 +16,7 @@ use bevy_inspector_egui::bevy_inspector;
 use derive_more::derive::From;
 use egui_dock::{DockState, NodeIndex, SurfaceIndex};
 use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use managers::UiManager;
 use misc::{MissingUi, UiExtensions, UiInfo};
 use parking_lot::Mutex;
@@ -57,7 +57,15 @@ impl Plugin for UiPlugin {
         Update,
         (
           RemoveUiEvent::on_event,
-          (Self::render, AddUiEvent::on_event),
+          (
+            (
+              Self::dispatch_render_events,
+              Self::reset_ui_info,
+              Self::render,
+            )
+              .chain(),
+            AddUiEvent::on_event,
+          ),
         )
           .chain(),
       )
@@ -78,9 +86,38 @@ impl UiPlugin {
     });
   }
 
+  pub fn reset_ui_info(mut q_ui_infos: Query<&mut UiInfo>) {
+    q_ui_infos.par_iter_mut().for_each(|mut ui_info| {
+      ui_info.rendered = false;
+    });
+  }
+
   pub fn render(world: &mut World) {
     world.resource_scope(|world, mut ui_manager: Mut<UiManager>| {
       ui_manager.render(world);
+    });
+  }
+
+  pub fn dispatch_render_events(world: &mut World) {
+    let mut q_entities = world.query::<(Entity, &UiInfo)>();
+    let (rendered, unrendered): (Vec<Entity>, Vec<Entity>) =
+      q_entities.iter(world).partition_map(|(entity, ui_info)| {
+        ui_info
+          .rendered
+          .then_some(Either::Left(entity))
+          .unwrap_or(Either::Right(entity))
+      });
+
+    world.resource_scope(|world, ui_manager: Mut<UiManager>| {
+      for entity in rendered {
+        let vtable = ui_manager.vtable_of(entity, world);
+        (vtable.when_rendered)(entity, world);
+      }
+
+      for entity in unrendered {
+        let vtable = ui_manager.vtable_of(entity, world);
+        (vtable.when_not_rendered)(entity, world);
+      }
     });
   }
 
@@ -114,6 +151,12 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
   }
 
   fn render(entity: Entity, ui: &mut egui::Ui, world: &mut World);
+
+  #[allow(unused_variables)]
+  fn when_rendered(entity: Entity, world: &mut World) {}
+
+  #[allow(unused_variables)]
+  fn when_not_rendered(entity: Entity, world: &mut World) {}
 
   #[allow(unused_variables)]
   fn context_menu(
@@ -180,6 +223,12 @@ pub trait Ui: RawUi {
   }
 
   fn render(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>);
+
+  #[allow(unused_variables)]
+  fn when_rendered(&mut self, params: Self::Params<'_, '_>) {}
+
+  #[allow(unused_variables)]
+  fn when_not_rendered(&mut self, params: Self::Params<'_, '_>) {}
 
   #[allow(unused_variables)]
   fn context_menu(
@@ -250,6 +299,14 @@ where
     })
   }
 
+  fn when_rendered(entity: Entity, world: &mut World) {
+    Self::get_entity_mut(entity, world, <Self as Ui>::when_rendered)
+  }
+
+  fn when_not_rendered(entity: Entity, world: &mut World) {
+    Self::get_entity_mut(entity, world, <Self as Ui>::when_not_rendered)
+  }
+
   fn context_menu(
     entity: Entity,
     ui: &mut egui::Ui,
@@ -267,9 +324,7 @@ where
   }
 
   fn on_close(entity: Entity, world: &mut World) {
-    Self::get_entity_mut(entity, world, |this, params| {
-      this.on_close(params);
-    })
+    Self::get_entity_mut(entity, world, <Self as Ui>::on_close)
   }
 
   fn handle_tab_response(entity: Entity, world: &mut World, response: &egui::Response) {
@@ -343,6 +398,8 @@ struct VTable {
   spawn: fn(&mut World) -> Entity,
   title: fn(Entity, &mut World) -> egui::WidgetText,
   render: fn(Entity, &mut egui::Ui, &mut World),
+  when_rendered: fn(Entity, &mut World),
+  when_not_rendered: fn(Entity, &mut World),
   context_menu: fn(Entity, &mut egui::Ui, &mut World, SurfaceIndex, NodeIndex),
   handle_tab_response: fn(Entity, &mut World, &egui::Response),
   closeable: fn(Entity, &mut World) -> bool,
@@ -365,6 +422,8 @@ impl VTable {
       spawn: Self::spawn::<T>,
       title: T::title,
       render: T::render,
+      when_rendered: T::when_rendered,
+      when_not_rendered: T::when_not_rendered,
       context_menu: T::context_menu,
       handle_tab_response: T::handle_tab_response,
       closeable: T::closeable,
@@ -434,6 +493,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
     self.ui_info(*tab, |ui_info| {
       ui_info.hovered = ui.ui_contains_pointer();
+      ui_info.rendered = true;
     });
   }
 

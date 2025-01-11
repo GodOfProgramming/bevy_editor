@@ -494,6 +494,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     (vtable.title)(*tab, &mut self.world.borrow_mut())
   }
 
+  #[profiling::function]
   fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
     let vtable = self.vtable_of(*tab);
     (vtable.render)(*tab, ui, &mut self.world.borrow_mut());

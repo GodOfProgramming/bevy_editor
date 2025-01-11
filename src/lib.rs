@@ -20,7 +20,7 @@ use bevy::{
   picking::pointer::PointerInteraction,
   prelude::*,
   reflect::GetTypeRegistration,
-  window::{WindowCloseRequested, WindowMode, WindowResized},
+  window::{WindowCloseRequested, WindowMode},
 };
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
@@ -268,34 +268,6 @@ impl Editor {
     }
   }
 
-  fn resize_handler(
-    mut events: EventReader<WindowResized>,
-    mut q_cams: Query<(Entity, &mut Camera)>,
-    mut disabled_cameras: Local<Vec<Entity>>,
-  ) {
-    for event in events.read() {
-      if event.height <= 0.0 || event.width <= 0.0 {
-        info!("Resized window with 0 hight or width");
-        for (entity, mut cam) in &mut q_cams {
-          if cam.is_active {
-            info!("Disabling camera {entity:?}");
-            disabled_cameras.push(entity);
-            cam.is_active = false;
-          }
-        }
-      } else if event.height > 0.0 && event.width > 0.0 {
-        info!("Restored window size hight and width");
-        for entity in disabled_cameras.drain(..) {
-          let Ok((_, mut cam)) = q_cams.get_mut(entity) else {
-            continue;
-          };
-          info!("Enabled camera {entity:?}");
-          cam.is_active = true;
-        }
-      }
-    }
-  }
-
   fn on_app_exit(cache: ResMut<Cache>, mut app_exit: EventWriter<AppExit>) {
     cache.save();
     app_exit.send(AppExit::Success);
@@ -331,7 +303,6 @@ impl Editor {
         OnExit(EditorState::Editing),
         Self::remove_picking_from_targets,
       )
-      .add_systems(First, Self::resize_handler)
       .add_systems(
         Update,
         (

@@ -1,15 +1,15 @@
-use crate::ui::{InspectorSelection, PersistentId, SelectedEntities, UiComponent};
+use crate::ui::{InspectorSelection, RawUi, SelectedEntities};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::hierarchy::hierarchy_ui;
-use uuid::uuid;
+use uuid::{uuid, Uuid};
 
 #[derive(Default, Component, Reflect)]
 pub struct Hierarchy;
 
-impl UiComponent for Hierarchy {
-  const COMPONENT_NAME: &str = stringify!(Hierarchy);
-  const ID: PersistentId = PersistentId(uuid!("860ac319-5c6e-4a2e-83ae-8bb0000d5cb4"));
+impl RawUi for Hierarchy {
+  const NAME: &str = stringify!(Hierarchy);
+  const ID: Uuid = uuid!("860ac319-5c6e-4a2e-83ae-8bb0000d5cb4");
 
   fn spawn(_world: &mut World) -> Self {
     default()

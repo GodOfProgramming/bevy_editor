@@ -1,17 +1,14 @@
-use crate::{
-  assets,
-  ui::{PersistentId, UiComponent},
-};
+use crate::{assets, ui::RawUi};
 use bevy::prelude::*;
 use bevy_egui::egui;
-use uuid::uuid;
+use uuid::{uuid, Uuid};
 
 #[derive(Default, Component, Reflect)]
 pub struct Prefabs;
 
-impl UiComponent for Prefabs {
-  const COMPONENT_NAME: &str = stringify!(Prefabs);
-  const ID: PersistentId = PersistentId(uuid!("fa977fad-ed99-4842-bab4-7c00641b39b0"));
+impl RawUi for Prefabs {
+  const NAME: &str = stringify!(Prefabs);
+  const ID: Uuid = uuid!("fa977fad-ed99-4842-bab4-7c00641b39b0");
 
   fn spawn(_world: &mut World) -> Self {
     default()

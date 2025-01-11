@@ -33,7 +33,7 @@ pub struct Params<'w, 's> {
 
 impl Ui for ControlPanel {
   const NAME: &str = "Control Panel";
-  const UUID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
+  const ID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
 
   type Params<'w, 's> = Params<'w, 's>;
 

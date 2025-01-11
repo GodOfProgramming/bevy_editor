@@ -5,7 +5,7 @@ use super::{
     assets::Assets, control_panel::ControlPanel, editor_view::EditorView, hierarchy::Hierarchy,
     inspector::Inspector, prefabs::Prefabs, resources::Resources,
   },
-  LayoutState, PersistentId, TabViewer, UiComponent, VTable,
+  LayoutState, PersistentId, RawUi, TabViewer, VTable,
 };
 use crate::cache::Cache;
 use bevy::{
@@ -91,8 +91,8 @@ impl UiManager {
     self.layout_manager.layouts = layouts;
   }
 
-  pub fn register<T: UiComponent>(&mut self) {
-    self.vtables.insert(T::ID, T::VTABLE);
+  pub fn register<T: RawUi>(&mut self) {
+    self.vtables.insert(PersistentId(T::ID), T::VTABLE);
   }
 
   pub fn render(&mut self, world: &mut World) {
@@ -175,8 +175,8 @@ impl UiManager {
     self.state.get_surface_mut(index)
   }
 
-  fn spawn_type<T: UiComponent>(&self, world: &mut World) -> Entity {
-    self.spawn(T::ID, world)
+  fn spawn_type<T: RawUi>(&self, world: &mut World) -> Entity {
+    self.spawn(PersistentId(T::ID), world)
   }
 
   fn spawn(&self, id: PersistentId, world: &mut World) -> Entity {

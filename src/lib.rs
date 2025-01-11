@@ -29,7 +29,7 @@ use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use ui::{managers::UiManager, UiPlugin};
-pub use ui::{PersistentId, Ui, UiComponent};
+pub use ui::{RawUi, Ui};
 pub use util::*;
 use view::{EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState};
 
@@ -105,7 +105,7 @@ impl Editor {
     }
   }
 
-  pub fn register_ui<U: UiComponent>(&mut self) -> &mut Self {
+  pub fn register_ui<U: RawUi>(&mut self) -> &mut Self {
     self.layout.register::<U>();
     self
   }

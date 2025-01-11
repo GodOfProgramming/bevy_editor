@@ -1,10 +1,11 @@
-use super::{PersistentId, Ui, UiComponent, UiComponentState, VTable};
+use super::{PersistentId, RawUi, Ui, VTable};
 use bevy::{
   ecs::system::{SystemParam, SystemState},
   prelude::*,
   utils::HashMap,
 };
 use bevy_egui::egui::{self, text::LayoutJob};
+use derive_more::derive::Deref;
 use egui_dock::DockState;
 use uuid::{uuid, Uuid};
 
@@ -14,7 +15,7 @@ pub(super) trait UiComponentExtensions {
 
 impl<T> UiComponentExtensions for T
 where
-  T: UiComponent,
+  T: RawUi,
 {
   const VTABLE: VTable = VTable::new::<Self>();
 }
@@ -74,6 +75,11 @@ pub trait UiExtensions: Ui {
 
 impl<T> UiExtensions for T where T: Ui {}
 
+#[derive(Component, Deref, DerefMut)]
+struct UiComponentState<P>(SystemState<P>)
+where
+  P: SystemParam + 'static;
+
 #[derive(Component, Reflect)]
 pub struct MissingUi {
   message: String,
@@ -98,7 +104,7 @@ pub struct NoUiParams;
 
 impl Ui for MissingUi {
   const NAME: &str = "No Ui";
-  const UUID: Uuid = uuid!("d0f32ae1-2851-4bcd-a0c9-f83ae030d85f");
+  const ID: Uuid = uuid!("d0f32ae1-2851-4bcd-a0c9-f83ae030d85f");
 
   type Params<'w, 's> = NoUiParams;
 
@@ -163,7 +169,9 @@ impl DockExtensions for DockState<Entity> {
         .get(&PersistentId(*tab))
         .map(|vtable| (vtable.spawn)(world))
         .unwrap_or_else(|| {
-          let entity_id = world.spawn((MissingUi::new(*tab), MissingUi::ID)).id();
+          let entity_id = world
+            .spawn((MissingUi::new(*tab), PersistentId(<MissingUi as RawUi>::ID)))
+            .id();
           world.entity_mut(entity_id).insert(Name::new("Missing Ui"));
           info!("Failed to find ui with uuid: {tab}");
           entity_id

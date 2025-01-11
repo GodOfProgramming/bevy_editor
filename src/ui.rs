@@ -6,10 +6,7 @@ pub mod prebuilt;
 
 use crate::cache::{Cache, Saveable};
 use bevy::{
-  asset::UntypedAssetId,
-  ecs::system::{SystemParam, SystemState},
-  prelude::*,
-  reflect::GetTypeRegistration,
+  asset::UntypedAssetId, ecs::system::SystemParam, prelude::*, reflect::GetTypeRegistration,
   utils::HashMap,
 };
 use bevy_egui::{
@@ -29,13 +26,7 @@ use prebuilt::{
   inspector::Inspector, prefabs::Prefabs, resources::Resources,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-  any::TypeId,
-  borrow::BorrowMut,
-  cell::RefCell,
-  collections::BTreeMap,
-  ops::{Deref, DerefMut},
-};
+use std::{any::TypeId, borrow::BorrowMut, cell::RefCell, collections::BTreeMap};
 use uuid::Uuid;
 
 pub(crate) struct UiPlugin(pub Mutex<RefCell<Option<UiManager>>>);
@@ -108,9 +99,9 @@ impl UiPlugin {
   }
 }
 
-pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
-  const COMPONENT_NAME: &str;
-  const ID: PersistentId;
+pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
+  const NAME: &str;
+  const ID: Uuid;
 
   /// Add systems or resources that this UI needs in order to function
   #[allow(unused_variables)]
@@ -127,7 +118,7 @@ pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
 
   #[allow(unused_variables)]
   fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
-    Self::COMPONENT_NAME.into()
+    Self::NAME.into()
   }
 
   #[allow(unused_variables)]
@@ -156,9 +147,9 @@ pub trait UiComponent: Component + GetTypeRegistration + Send + Sync + Sized {
 #[derive(SystemParam)]
 pub struct NoParams;
 
-pub trait Ui: UiComponent {
+pub trait Ui: RawUi {
   const NAME: &str;
-  const UUID: Uuid;
+  const ID: Uuid;
 
   type Params<'w, 's>: for<'world, 'system> SystemParam<
     Item<'world, 'system> = Self::Params<'world, 'system>,
@@ -179,7 +170,7 @@ pub trait Ui: UiComponent {
 
   #[allow(unused_variables)]
   fn title(&mut self, params: Self::Params<'_, '_>) -> egui::WidgetText {
-    Self::NAME.into()
+    <Self as Ui>::NAME.into()
   }
 
   #[allow(unused_variables)]
@@ -205,12 +196,12 @@ pub trait Ui: UiComponent {
   }
 }
 
-impl<T> UiComponent for T
+impl<T> RawUi for T
 where
   T: Ui + 'static,
 {
-  const COMPONENT_NAME: &str = Self::NAME;
-  const ID: PersistentId = PersistentId(<T as Ui>::UUID);
+  const NAME: &str = <Self as Ui>::NAME;
+  const ID: Uuid = <T as Ui>::ID;
 
   fn init(app: &mut App) {
     <Self as Ui>::init(app)
@@ -254,30 +245,6 @@ where
 
   fn unique() -> bool {
     <Self as Ui>::unique()
-  }
-}
-
-#[derive(Component)]
-struct UiComponentState<P>(SystemState<P>)
-where
-  P: SystemParam + 'static;
-
-impl<P> Deref for UiComponentState<P>
-where
-  P: SystemParam + 'static,
-{
-  type Target = SystemState<P>;
-  fn deref(&self) -> &Self::Target {
-    &self.0
-  }
-}
-
-impl<P> DerefMut for UiComponentState<P>
-where
-  P: SystemParam + 'static,
-{
-  fn deref_mut(&mut self) -> &mut Self::Target {
-    &mut self.0
   }
 }
 
@@ -330,18 +297,16 @@ struct VTable {
 impl VTable {
   const fn new<T>() -> Self
   where
-    T: UiComponent,
+    T: RawUi,
   {
     Self {
-      name: || T::COMPONENT_NAME,
+      name: || T::NAME,
       init: T::init,
       spawn: |world| {
         let instance = T::spawn(world);
-        let entity_id = world.spawn((instance, T::ID)).id();
-        world
-          .entity_mut(entity_id)
-          .insert(Name::new(T::COMPONENT_NAME));
-        info!("Spawned UI component {}", T::COMPONENT_NAME);
+        let entity_id = world.spawn((instance, PersistentId(T::ID))).id();
+        world.entity_mut(entity_id).insert(Name::new(T::NAME));
+        info!("Spawned UI component {}", T::NAME);
         entity_id
       },
       title: T::title,

@@ -92,7 +92,7 @@ where
   C: Component + Reflect + TypePath,
 {
   const NAME: &str = "Game View";
-  const UUID: uuid::Uuid = uuid!("f26513f6-86fa-48e2-9f6f-e094ad9dcbfb");
+  const ID: uuid::Uuid = uuid!("f26513f6-86fa-48e2-9f6f-e094ad9dcbfb");
 
   type Params<'w, 's> = NoParams;
 

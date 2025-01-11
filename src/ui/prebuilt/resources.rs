@@ -18,7 +18,7 @@ pub struct Params<'w, 's> {
 
 impl Ui for Resources {
   const NAME: &str = stringify!(Resources);
-  const UUID: uuid::Uuid = uuid!("54248a54-9544-4e93-9382-3677b8722952");
+  const ID: uuid::Uuid = uuid!("54248a54-9544-4e93-9382-3677b8722952");
 
   type Params<'w, 's> = Params<'w, 's>;
 

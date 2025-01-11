@@ -69,7 +69,7 @@ impl EditorView {
 
 impl Ui for EditorView {
   const NAME: &str = "Editor View";
-  const UUID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
+  const ID: uuid::Uuid = uuid!("c910a397-a017-4a29-99bc-6282b4b1a214");
 
   type Params<'w, 's> = NoParams;
 

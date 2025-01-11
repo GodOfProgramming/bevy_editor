@@ -1,18 +1,18 @@
-use crate::ui::{InspectorSelection, PersistentId, UiComponent};
+use crate::ui::{InspectorSelection, RawUi};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::{
   by_type_id::{ui_for_asset, ui_for_resource},
   ui_for_entities_shared_components, ui_for_entity_with_children,
 };
-use uuid::uuid;
+use uuid::{uuid, Uuid};
 
 #[derive(Default, Component, Reflect)]
 pub struct Inspector;
 
-impl UiComponent for Inspector {
-  const COMPONENT_NAME: &str = stringify!(Inspector);
-  const ID: PersistentId = PersistentId(uuid!("10bb68b8-c247-4792-89e9-61d1b9682a72"));
+impl RawUi for Inspector {
+  const NAME: &str = stringify!(Inspector);
+  const ID: Uuid = uuid!("10bb68b8-c247-4792-89e9-61d1b9682a72");
 
   fn spawn(_world: &mut World) -> Self {
     default()

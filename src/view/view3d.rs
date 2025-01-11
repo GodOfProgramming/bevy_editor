@@ -51,7 +51,7 @@ pub fn save_settings(
   for (cam_transform, cam_settings) in &q_cam {
     cache.store(&CameraSaveData {
       settings: cam_settings.clone(),
-      transform: cam_transform.clone(),
+      transform: *cam_transform,
     });
   }
 }
@@ -92,7 +92,7 @@ pub fn movement_system(
   time: Res<Time>,
 ) {
   for action_state in &q_action_states {
-    let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
+    let (cam_settings, ref mut cam_transform) = &mut *q_cam;
 
     let forward = cam_transform.forward().as_vec3();
     let mut movement = Vec3::ZERO;
@@ -136,7 +136,7 @@ pub fn orbit_system(
     return;
   }
 
-  let (ref settings, ref mut transform) = &mut *q_cam;
+  let (settings, ref mut transform) = &mut *q_cam;
 
   let orbit = mouse_motion
     .read()
@@ -164,7 +164,7 @@ pub fn pan_system(
     return;
   }
 
-  let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
+  let (cam_settings, ref mut cam_transform) = &mut *q_cam;
 
   let pan = mouse_motion
     .read()

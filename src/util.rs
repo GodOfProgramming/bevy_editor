@@ -177,9 +177,9 @@ pub enum LogLevel {
   Error,
 }
 
-impl Into<Level> for LogLevel {
-  fn into(self) -> Level {
-    match self {
+impl From<LogLevel> for Level {
+  fn from(value: LogLevel) -> Self {
+    match value {
       LogLevel::Trace => Level::TRACE,
       LogLevel::Debug => Level::DEBUG,
       LogLevel::Info => Level::INFO,
@@ -189,9 +189,9 @@ impl Into<Level> for LogLevel {
   }
 }
 
-impl Into<LevelFilter> for LogLevel {
-  fn into(self) -> LevelFilter {
-    match self {
+impl From<LogLevel> for LevelFilter {
+  fn from(value: LogLevel) -> Self {
+    match value {
       LogLevel::Trace => LevelFilter::TRACE,
       LogLevel::Debug => LevelFilter::DEBUG,
       LogLevel::Info => LevelFilter::INFO,

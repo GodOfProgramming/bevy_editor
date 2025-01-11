@@ -64,7 +64,7 @@ pub fn save_settings(
   for (cam_transform, cam_settings, cam_ortho) in &q_cam {
     cache.store(&CameraSaveData {
       settings: cam_settings.clone(),
-      transform: cam_transform.clone(),
+      transform: *cam_transform,
       orthographic_scale: Some(cam_ortho.scale),
     });
   }
@@ -104,7 +104,7 @@ pub fn movement_system(
   time: Res<Time>,
 ) {
   for action_state in &q_action_states {
-    let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
+    let (cam_settings, ref mut cam_transform) = &mut *q_cam;
 
     let mut movement = Vec3::ZERO;
 
@@ -174,8 +174,7 @@ pub fn pan_system(
     return;
   }
 
-  let (ref cam_settings, ref mut cam_transform, ref cam_g_transform, ref mut cam_state, ref cam) =
-    &mut *q_cam;
+  let (cam_settings, ref mut cam_transform, cam_g_transform, ref mut cam_state, cam) = &mut *q_cam;
 
   let pan_motion = mouse_motion
     .read()
@@ -189,9 +188,9 @@ pub fn pan_system(
     .map(|p| (p, p + pan_motion))
     .and_then(|(op, np)| {
       cam
-        .viewport_to_world_2d(&cam_g_transform, op)
+        .viewport_to_world_2d(cam_g_transform, op)
         .ok()
-        .zip(cam.viewport_to_world_2d(&cam_g_transform, np).ok())
+        .zip(cam.viewport_to_world_2d(cam_g_transform, np).ok())
         .map(|(ow, nw)| (np, ow, nw))
     })
   {

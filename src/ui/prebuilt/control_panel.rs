@@ -24,7 +24,7 @@ impl ControlPanel {
 
   fn camera_selector(&self, ui: &mut egui::Ui, params: &mut Params) -> ActiveEditorCamera {
     let type_registry = params.type_registry.as_ref().read();
-    let mut editor_camera = params.editor_camera.get().clone();
+    let mut editor_camera = *params.editor_camera.get();
     let prev_view = editor_camera;
 
     ui.push_id("camera-selector", |ui| {

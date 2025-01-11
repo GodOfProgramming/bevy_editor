@@ -25,7 +25,7 @@ impl EditorView {
     editor_view: Single<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<EditorCamera>>,
   ) {
-    let (ref editor_view, ref ui_info) = &*editor_view;
+    let (editor_view, ui_info) = &*editor_view;
 
     if ui_info.rendered() {
       for mut camera in &mut q_cameras {

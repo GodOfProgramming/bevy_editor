@@ -49,6 +49,12 @@ pub struct Editor {
   layout: UiManager,
 }
 
+impl Default for Editor {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl Editor {
   const COLOR: Srgba = tailwind::GREEN_700;
 

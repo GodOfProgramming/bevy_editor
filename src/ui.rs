@@ -102,10 +102,11 @@ impl UiPlugin {
     let mut q_entities = world.query::<(Entity, &UiInfo)>();
     let (rendered, unrendered): (Vec<Entity>, Vec<Entity>) =
       q_entities.iter(world).partition_map(|(entity, ui_info)| {
-        ui_info
-          .rendered
-          .then_some(Either::Left(entity))
-          .unwrap_or(Either::Right(entity))
+        if ui_info.rendered {
+          Either::Left(entity)
+        } else {
+          Either::Right(entity)
+        }
       });
 
     world.resource_scope(|world, ui_manager: Mut<UiManager>| {

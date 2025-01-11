@@ -49,7 +49,7 @@ where
     game_view: Single<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<C>>,
   ) {
-    let (ref game_view, ref ui_info) = &*game_view;
+    let (game_view, ui_info) = &*game_view;
 
     if ui_info.rendered() {
       for mut camera in &mut q_cameras {

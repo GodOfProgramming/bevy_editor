@@ -223,7 +223,7 @@ impl UiManager {
     let mut save_clicked = false;
 
     let open = components::Dialog::new("Save Layout").open(
-      &ctx,
+      ctx,
       self.layout_manager.show_save_layout_modal,
       |ui| {
         ui.horizontal(|ui| {
@@ -252,7 +252,7 @@ impl UiManager {
     let mut ok_clicked = false;
 
     let open = components::Dialog::new("Confirm Layout Reset?").open(
-      &ctx,
+      ctx,
       self.layout_manager.show_confirm_reset_modal,
       |ui| {
         ui.label("This will reset your layout to the default configuration. Continue?");

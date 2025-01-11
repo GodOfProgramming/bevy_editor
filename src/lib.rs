@@ -18,7 +18,7 @@ use bevy::log::{LogPlugin, DEFAULT_FILTER};
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
-use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
+use bevy::window::{WindowCloseRequested, WindowMode, WindowResized};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::Cache;
@@ -29,7 +29,7 @@ use std::cell::RefCell;
 use ui::{managers::UiManager, UiPlugin};
 pub use ui::{RawUi, Ui};
 pub use util::*;
-use view::{EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState};
+use view::{ActiveEditorCamera, EditorViewPlugin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -75,11 +75,6 @@ impl Editor {
               title: String::from("Bevy Editor"),
               mode: WindowMode::Windowed,
               visible: false,
-              enabled_buttons: EnabledButtons {
-                close: true,
-                maximize: true,
-                minimize: false, // minimize causes a crash
-              },
               ..default()
             }),
             close_when_requested: false,
@@ -91,8 +86,9 @@ impl Editor {
             ..default()
           }),
       )
-      .insert_resource(log_info)
-      .add_plugins(EditorPlugin);
+      .insert_resource(log_info);
+
+    Self::inject_editor_systems(&mut app);
 
     Self {
       app,
@@ -139,8 +135,8 @@ impl Editor {
       .add_systems(
         Update,
         (
-          Self::render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
-          Self::render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
+          Self::render_2d_cameras::<C>.run_if(in_state(ActiveEditorCamera::Cam2D)),
+          Self::render_3d_cameras::<C>.run_if(in_state(ActiveEditorCamera::Cam3D)),
         )
           .run_if(in_state(EditorState::Editing)),
       );
@@ -232,75 +228,26 @@ impl Editor {
       gizmos.line(start, corner, Self::COLOR);
     }
   }
-}
 
-struct EditorPlugin;
+  // systems
 
-impl Plugin for EditorPlugin {
-  fn build(&self, app: &mut App) {
-    app
-      .add_plugins((
-        ViewPlugin,
-        MeshPickingPlugin,
-        DefaultInspectorConfigPlugin,
-        InputPlugin,
-      ))
-      .add_event::<SaveEvent>()
-      .add_event::<LoadEvent>()
-      .insert_state(EditorState::Editing)
-      .add_systems(Startup, (Self::startup, Self::initialize_types))
-      .add_systems(PostStartup, Self::post_startup)
-      .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
-      .add_systems(OnExit(EditorState::Editing), Self::on_exit)
-      .add_systems(
-        OnEnter(EditorState::Exiting),
-        (
-          (
-            EditorCamera::on_app_exit,
-            EditorCamera2d::on_app_exit,
-            EditorCamera3d::on_app_exit,
-            UiPlugin::on_app_exit,
-          ),
-          Self::on_app_exit,
-        )
-          .chain(),
-      )
-      .add_systems(
-        FixedUpdate,
-        (
-          Self::on_close_requested,
-          (
-            input::global_input_actions,
-            (
-              scenes::check_for_saves,
-              scenes::check_for_loads,
-              Self::auto_register_targets,
-              Self::handle_pick_events,
-            )
-              .run_if(in_state(EditorState::Editing)),
-          )
-            .chain(),
-        ),
-      )
-      .add_systems(
-        Update,
-        Self::draw_mesh_intersections.run_if(in_state(EditorState::Editing)),
-      );
-  }
-}
-
-impl EditorPlugin {
-  fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
+  fn set_picking_settings(mut picking_settings: ResMut<MeshPickingSettings>) {
     picking_settings.require_markers = true;
   }
 
-  fn post_startup(mut q_windows: Query<&mut Window>) {
+  fn show_window(mut q_windows: Query<&mut Window>) {
     for mut window in &mut q_windows {
       window.visible = true;
     }
   }
 
-  fn on_exit(
+  fn show_window_cursor(mut q_windows: Query<&mut Window>) {
+    for mut window in q_windows.iter_mut() {
+      show_cursor(&mut window);
+    }
+  }
+
+  fn remove_picking_from_targets(
     mut commands: Commands,
     q_targets: Query<Entity, (With<RayCastPickable>, Without<Camera>)>,
   ) {
@@ -311,7 +258,7 @@ impl EditorPlugin {
     }
   }
 
-  fn initialize_types(world: &mut World) {
+  fn initialize_prefabs(world: &mut World) {
     let Some(registrar) = world.remove_resource::<PrefabRegistrar>() else {
       return;
     };
@@ -321,13 +268,7 @@ impl EditorPlugin {
     world.insert_resource(prefabs);
   }
 
-  fn on_enter(mut q_windows: Query<&mut Window>) {
-    for mut window in q_windows.iter_mut() {
-      show_cursor(&mut window);
-    }
-  }
-
-  fn auto_register_targets(
+  fn auto_register_picking_targets(
     mut commands: Commands,
     q_entities: Query<
       Entity,
@@ -390,8 +331,103 @@ impl EditorPlugin {
     }
   }
 
+  fn resize_handler(
+    mut events: EventReader<WindowResized>,
+    mut q_cams: Query<(Entity, &mut Camera)>,
+    mut disabled_cameras: Local<Vec<Entity>>,
+  ) {
+    for event in events.read() {
+      if event.height <= 0.0 || event.width <= 0.0 {
+        info!("Resized window with 0 hight or width");
+        for (entity, mut cam) in &mut q_cams {
+          if cam.is_active {
+            info!("Disabling camera {entity:?}");
+            disabled_cameras.push(entity);
+            cam.is_active = false;
+          }
+        }
+      } else if event.height > 0.0 && event.width > 0.0 {
+        info!("Restored window size hight and width");
+        for entity in disabled_cameras.drain(..) {
+          let Ok((_, mut cam)) = q_cams.get_mut(entity) else {
+            continue;
+          };
+          info!("Enabled camera {entity:?}");
+          cam.is_active = true;
+        }
+      }
+    }
+  }
+
   fn on_app_exit(cache: ResMut<Cache>, mut app_exit: EventWriter<AppExit>) {
     cache.save();
     app_exit.send(AppExit::Success);
   }
+
+  fn inject_editor_systems(app: &mut App) {
+    app
+      .add_plugins((
+        EditorViewPlugin,
+        MeshPickingPlugin,
+        DefaultInspectorConfigPlugin,
+        InputPlugin,
+      ))
+      .configure_sets(
+        Update,
+        (
+          EditorGlobal,
+          Editing
+            .in_set(EditorGlobal)
+            .run_if(in_state(EditorState::Editing)),
+        ),
+      )
+      .add_event::<SaveEvent>()
+      .add_event::<LoadEvent>()
+      .insert_state(EditorState::Editing)
+      .add_systems(
+        Startup,
+        (Self::set_picking_settings, Self::initialize_prefabs),
+      )
+      .add_systems(PostStartup, Self::show_window)
+      .add_systems(OnEnter(EditorState::Editing), Self::show_window_cursor)
+      .add_systems(
+        OnExit(EditorState::Editing),
+        Self::remove_picking_from_targets,
+      )
+      .add_systems(First, Self::resize_handler)
+      .add_systems(
+        Update,
+        (
+          scenes::check_for_saves,
+          scenes::check_for_loads,
+          Self::on_close_requested,
+          Self::draw_mesh_intersections,
+          Self::auto_register_picking_targets,
+          Self::handle_pick_events,
+        )
+          .in_set(Editing),
+      )
+      .add_systems(Update, input::global_input_actions.in_set(EditorGlobal))
+      .add_systems(
+        OnEnter(EditorState::Exiting),
+        (
+          (
+            view::save_view_state,
+            view::view2d::save_settings,
+            view::view3d::save_settings,
+            UiPlugin::on_app_exit,
+            LogInfo::on_app_exit,
+          ),
+          Self::on_app_exit,
+        )
+          .chain()
+          .in_set(EditorGlobal),
+      );
+  }
 }
+
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct EditorGlobal;
+
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct Editing;

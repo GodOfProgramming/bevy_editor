@@ -4,117 +4,132 @@ pub mod view3d;
 use crate::{
   cache::{Cache, Saveable},
   ui::{misc::UiInfo, prebuilt::editor_view::EditorView},
-  EditorState,
+  Editing,
 };
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-pub use view2d::EditorCamera2d;
-use view2d::View2dPlugin;
-pub use view3d::EditorCamera3d;
-use view3d::View3dPlugin;
+use view2d::View2d;
+use view3d::View3d;
 
-pub struct ViewPlugin;
+pub const UP: Vec3 = Vec3::Y;
 
-impl ViewPlugin {
-  fn startup(cache: Res<Cache>, mut next_state: ResMut<NextState<ViewState>>) {
-    let state = cache.get::<ViewState>().unwrap_or_default();
+pub struct EditorViewPlugin;
+
+impl EditorViewPlugin {
+  fn set_initial_state(cache: Res<Cache>, mut next_state: ResMut<NextState<ActiveEditorCamera>>) {
+    let state = cache.get::<ActiveEditorCamera>().unwrap_or_default();
     next_state.set(state);
   }
 }
 
-impl Plugin for ViewPlugin {
+impl Plugin for EditorViewPlugin {
   fn build(&self, app: &mut bevy::prelude::App) {
     app
-      .register_type::<ViewState>()
-      .add_plugins((View2dPlugin, View3dPlugin))
-      .insert_state(ViewState::None)
-      .add_systems(PostStartup, Self::startup)
+      .configure_sets(
+        Update,
+        (
+          CameraInput::Keyboard
+            .run_if(CameraInput::ui_not_focused)
+            .in_set(Editing),
+          CameraInput::Mouse
+            .run_if(CameraInput::mouse_hovered)
+            .in_set(Editing),
+          View2d.run_if(in_state(ActiveEditorCamera::Cam2D)),
+          View3d.run_if(in_state(ActiveEditorCamera::Cam3D)),
+        ),
+      )
+      .register_type::<ActiveEditorCamera>()
+      .register_type::<view2d::CameraSettings>()
+      .register_type::<view2d::CameraState>()
+      .insert_state(ActiveEditorCamera::None)
+      .add_systems(PostStartup, Self::set_initial_state)
+      .add_systems(OnEnter(ActiveEditorCamera::None), despawn_editor_cameras)
+      .add_systems(OnEnter(ActiveEditorCamera::Cam2D), view2d::enable)
+      .add_systems(OnExit(ActiveEditorCamera::Cam2D), view2d::save_settings)
+      .add_systems(OnEnter(ActiveEditorCamera::Cam3D), view3d::enable)
+      .add_systems(OnExit(ActiveEditorCamera::Cam3D), view3d::save_settings)
       .add_systems(
         Update,
-        EditorCamera::disable_cameras.run_if(in_state(ViewState::None)),
+        (
+          view2d::movement_system.in_set(CameraInput::Keyboard),
+          (
+            view2d::mouse_input_actions,
+            (view2d::zoom_system, view2d::pan_system),
+          )
+            .chain()
+            .in_set(CameraInput::Mouse),
+        )
+          .chain()
+          .in_set(View2d),
+      )
+      .add_systems(
+        Update,
+        (
+          (
+            view3d::mouse_input_actions,
+            (
+              view3d::orbit_system,
+              view3d::zoom_system,
+              view3d::pan_system,
+            ),
+          )
+            .chain()
+            .in_set(CameraInput::Mouse),
+          view3d::movement_system.in_set(CameraInput::Keyboard),
+        )
+          .chain()
+          .in_set(View3d),
       );
   }
 }
-
-#[derive(Component)]
-#[require(EditorCamera)]
-pub struct ActiveEditorCamera;
 
 #[derive(Default, Component, Reflect)]
 #[require(RayCastPickable)]
 pub struct EditorCamera;
 
-impl EditorCamera {
-  fn disable_cameras(mut q_cams: Query<&mut Camera>) {
-    for mut cam in &mut q_cams {
-      cam.is_active = false;
-    }
-  }
-
-  pub fn on_app_exit(mut cache: ResMut<Cache>, view_state: Res<State<ViewState>>) {
-    cache.store(view_state.get());
-  }
-
-  // make camera only render to view not obstructed by UI
-}
+impl EditorCamera {}
 
 #[derive(
   Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default, Serialize, Deserialize, Reflect,
 )]
-pub enum ViewState {
+pub enum ActiveEditorCamera {
   #[default]
   None,
-  Camera2D,
-  Camera3D,
+  Cam2D,
+  Cam3D,
 }
 
-impl Saveable for ViewState {
+impl Saveable for ActiveEditorCamera {
   const KEY: &str = "view_state";
 }
 
 #[derive(SystemSet, PartialEq, Eq, Hash, Clone, Debug)]
-struct ViewSystems;
+enum CameraInput {
+  Keyboard,
+  Mouse,
+}
 
-impl ViewSystems {
-  fn run_condition(
-    editor_state: Option<Res<State<EditorState>>>,
-    q_egui: Query<&bevy_egui::EguiContext>,
-  ) -> bool {
-    editor_state
-      .map(|state| *state == EditorState::Editing)
-      .unwrap_or_default()
-      && q_egui
-        .iter()
-        .any(|ctx| ctx.get().memory(|mem| mem.focused().is_none()))
+impl CameraInput {
+  fn ui_not_focused(q_egui: Query<&bevy_egui::EguiContext>) -> bool {
+    !q_egui
+      .iter()
+      .any(|ctx| ctx.get().memory(|mem| mem.focused().is_some()))
+  }
+
+  fn mouse_hovered(editor_view_ui_info: Single<&UiInfo, With<EditorView>>) -> bool {
+    editor_view_ui_info.hovered()
   }
 }
 
-fn can_run(
-  view_state_condition: ViewState,
-) -> impl FnMut(
-  Option<Res<State<EditorState>>>,
-  Option<Res<State<ViewState>>>,
-  Query<&bevy_egui::EguiContext>,
-) -> bool
-     + Clone {
-  move |editor_state: Option<Res<State<EditorState>>>,
-        view_state: Option<Res<State<ViewState>>>,
-        q_egui: Query<&bevy_egui::EguiContext>|
-        -> bool {
-    editor_state
-      .map(|state| *state == EditorState::Editing)
-      .unwrap_or_default()
-      && view_state
-        .map(|state| *state == view_state_condition)
-        .unwrap_or_default()
-      && q_egui
-        .iter()
-        .any(|ctx| ctx.get().memory(|mem| mem.focused().is_none()))
+fn despawn_editor_cameras(mut commands: Commands, q_cams: Query<Entity, With<EditorCamera>>) {
+  info!("Despawning all editor cameras");
+  for entity in &q_cams {
+    commands.entity(entity).despawn();
   }
 }
 
-fn mouse_actions_enabled(q_ui_info: Query<&UiInfo, With<EditorView>>) -> bool {
-  q_ui_info.iter().any(|info| info.hovered())
+pub fn save_view_state(mut cache: ResMut<Cache>, view_state: Res<State<ActiveEditorCamera>>) {
+  cache.store(view_state.get());
 }
 
 pub fn disable_camera<C: Component>(mut q_camera: Query<&mut Camera, With<C>>) {

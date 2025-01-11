@@ -7,9 +7,8 @@ use crate::{
 use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::ActionState;
 use serde::{Deserialize, Serialize};
-use std::f32::consts::{FRAC_PI_2, TAU};
 
-use super::{ActiveEditorCamera, EditorCamera, ViewState};
+use super::{ActiveEditorCamera, EditorCamera, EditorCamera2d, ViewState};
 
 pub const UP: Vec3 = Vec3::Y;
 
@@ -18,24 +17,20 @@ pub struct View3dPlugin;
 impl Plugin for View3dPlugin {
   fn build(&self, app: &mut App) {
     app
-      .register_type::<CameraState>()
       .register_type::<CameraSettings>()
       .add_systems(Startup, Self::spawn_camera)
       .add_systems(OnEnter(ViewState::Camera3D), EditorCamera3d::on_enter)
       .add_systems(
         Update,
         (
+          EditorCamera3d::movement_system,
           (
-            EditorCamera3d::movement_system,
-            (
-              EditorCamera3d::handle_input,
-              EditorCamera3d::orbit_self_system,
-              EditorCamera3d::zoom_system,
-              EditorCamera3d::pan_system,
-            )
-              .run_if(super::mouse_actions_enabled),
-          ),
-          EditorCamera3d::look,
+            EditorCamera3d::handle_input,
+            EditorCamera3d::orbit_system,
+            EditorCamera3d::zoom_system,
+            EditorCamera3d::pan_system,
+          )
+            .run_if(super::mouse_actions_enabled),
         )
           .chain()
           .run_if(super::can_run(ViewState::Camera3D)),
@@ -48,7 +43,6 @@ impl View3dPlugin {
     info!("Spawning 3d camera");
 
     let CameraSaveData {
-      state,
       settings,
       transform,
     } = cache.get().unwrap_or_default();
@@ -56,22 +50,25 @@ impl View3dPlugin {
     commands.spawn((
       Name::new("Editor Camera 3D"),
       EditorCamera3d,
-      state,
       settings,
       transform,
+      Camera {
+        order: isize::MIN,
+        ..default()
+      },
     ));
   }
 }
 
 #[derive(Component, Default)]
-#[require(EditorCamera, Camera3d, CameraState, CameraSettings)]
+#[require(EditorCamera, Camera3d, CameraSettings)]
 pub struct EditorCamera3d;
 
 impl EditorCamera3d {
   fn on_enter(
     mut commands: Commands,
-    mut q_3d_cams: Query<(Entity, &mut Camera), With<EditorCamera3d>>,
-    mut q_other_cams: Query<(Entity, &mut Camera), Without<EditorCamera3d>>,
+    mut q_3d_cams: Query<(Entity, &mut Camera), (With<EditorCamera3d>, Without<EditorCamera2d>)>,
+    mut q_2d_cams: Query<(Entity, &mut Camera), (With<EditorCamera2d>, Without<EditorCamera3d>)>,
   ) {
     info!("Switched to 3d camera");
 
@@ -80,7 +77,7 @@ impl EditorCamera3d {
       cam.is_active = true;
     }
 
-    for (entity, mut cam) in &mut q_other_cams {
+    for (entity, mut cam) in &mut q_2d_cams {
       commands.entity(entity).remove::<ActiveEditorCamera>();
       cam.is_active = false;
     }
@@ -118,28 +115,29 @@ impl EditorCamera3d {
 
   fn movement_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraState, &CameraSettings, &mut Transform), With<EditorCamera3d>>,
+    mut q_cam: Single<(&CameraSettings, &mut Transform), With<EditorCamera3d>>,
     time: Res<Time>,
   ) {
     for action_state in &q_action_states {
-      let (cam_state, cam_settings, mut cam_transform) = q_cam.single_mut();
+      let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
 
+      let forward = cam_transform.forward().as_vec3();
       let mut movement = Vec3::ZERO;
 
       if action_state.pressed(&EditorActions::MoveNorth) {
-        movement += cam_state.face;
+        movement += forward;
       }
 
       if action_state.pressed(&EditorActions::MoveSouth) {
-        movement -= cam_state.face;
+        movement -= forward;
       }
 
       if action_state.pressed(&EditorActions::MoveWest) {
-        movement -= cam_state.face.cross(UP);
+        movement -= forward.cross(UP);
       }
 
       if action_state.pressed(&EditorActions::MoveEast) {
-        movement += cam_state.face.cross(UP);
+        movement += forward.cross(UP);
       }
 
       let moved = movement != Vec3::ZERO;
@@ -151,9 +149,9 @@ impl EditorCamera3d {
     }
   }
 
-  fn orbit_self_system(
+  fn orbit_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut CameraState), With<EditorCamera3d>>,
+    mut q_cam: Single<(&CameraSettings, &mut Transform), With<EditorCamera3d>>,
     mut mouse_motion: EventReader<MouseMotion>,
     time: Res<Time>,
   ) {
@@ -165,7 +163,7 @@ impl EditorCamera3d {
       return;
     }
 
-    let (settings, mut state) = q_cam.single_mut();
+    let (ref settings, ref mut transform) = &mut *q_cam;
 
     let orbit = mouse_motion
       .read()
@@ -174,32 +172,14 @@ impl EditorCamera3d {
       .map(|mouse| mouse * settings.orbit_sensitivity * time.delta_secs())
       .unwrap_or_default();
 
-    let (yaw_rad, pitch_rad) = {
-      state.yaw -= orbit.x;
-      state.pitch -= orbit.y;
-
-      state.yaw %= TAU;
-
-      state.pitch = state.pitch.clamp(
-        -FRAC_PI_2 + 1.0f32.to_radians(),
-        FRAC_PI_2 - 1.0f32.to_radians(),
-      );
-      (state.yaw, state.pitch)
-    };
-
-    let yaw_sin = yaw_rad.sin();
-    let pitch_sin = pitch_rad.sin();
-
-    let yaw_cos = yaw_rad.cos();
-    let pitch_cos = pitch_rad.cos();
-
-    // set cam face
-    state.face = Vec3::new(pitch_cos * yaw_cos, pitch_sin, -pitch_cos * yaw_sin).normalize();
+    let right = transform.right();
+    transform.rotate_axis(right, -orbit.y);
+    transform.rotate_axis(Dir3::new(UP).unwrap(), -orbit.x);
   }
 
   fn pan_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera3d>>,
+    mut q_cam: Single<(&CameraSettings, &mut Transform), With<EditorCamera3d>>,
     mut mouse_motion: EventReader<MouseMotion>,
     time: Res<Time>,
   ) {
@@ -211,7 +191,7 @@ impl EditorCamera3d {
       return;
     }
 
-    let (cam_settings, mut cam_transform) = q_cam.single_mut();
+    let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
 
     let pan = mouse_motion
       .read()
@@ -253,19 +233,12 @@ impl EditorCamera3d {
     }
   }
 
-  fn look(mut q_cam: Query<(&mut Transform, &CameraState), With<EditorCamera3d>>) {
-    let (mut cam_transform, cam_state) = q_cam.single_mut();
-    let cam_target = cam_transform.translation + cam_state.face;
-    cam_transform.look_at(cam_target, UP);
-  }
-
   pub fn on_app_exit(
     mut cache: ResMut<Cache>,
-    q_cam: Query<(&Transform, &CameraState, &CameraSettings), With<EditorCamera3d>>,
+    q_cam: Query<(&Transform, &CameraSettings), With<EditorCamera3d>>,
   ) {
-    for (cam_transform, cam_state, cam_settings) in &q_cam {
+    for (cam_transform, cam_settings) in &q_cam {
       cache.store(&CameraSaveData {
-        state: cam_state.clone(),
         settings: cam_settings.clone(),
         transform: cam_transform.clone(),
       });
@@ -275,30 +248,12 @@ impl EditorCamera3d {
 
 #[derive(Default, Serialize, Deserialize)]
 struct CameraSaveData {
-  state: CameraState,
   settings: CameraSettings,
   transform: Transform,
 }
 
 impl Saveable for CameraSaveData {
   const KEY: &str = "camera3d";
-}
-
-#[derive(Component, Reflect, Serialize, Deserialize, Clone)]
-pub struct CameraState {
-  face: Vec3,
-  pitch: f32,
-  yaw: f32,
-}
-
-impl Default for CameraState {
-  fn default() -> Self {
-    Self {
-      face: Vec3::X * 10.0,
-      pitch: default(),
-      yaw: default(),
-    }
-  }
 }
 
 #[derive(Component, Reflect, Serialize, Deserialize, Clone)]

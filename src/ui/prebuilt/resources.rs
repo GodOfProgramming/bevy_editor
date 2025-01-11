@@ -1,8 +1,7 @@
-use std::marker::PhantomData;
-
-use super::{InspectorSelection, Ui};
+use crate::ui::{InspectorSelection, Ui};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
+use std::marker::PhantomData;
 use uuid::uuid;
 
 #[derive(Default, Component, Reflect)]
@@ -19,7 +18,7 @@ pub struct Params<'w, 's> {
 
 impl Ui for Resources {
   const NAME: &str = stringify!(Resources);
-  const UUID: uuid::Uuid = uuid!("54248a54-9544-4e93-9382-3677b8722952");
+  const ID: uuid::Uuid = uuid!("54248a54-9544-4e93-9382-3677b8722952");
 
   type Params<'w, 's> = Params<'w, 's>;
 
@@ -27,8 +26,8 @@ impl Ui for Resources {
     default()
   }
 
-  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
-    false
+  fn unique() -> bool {
+    true
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {

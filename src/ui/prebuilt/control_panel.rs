@@ -1,4 +1,4 @@
-use super::{InspectorSelection, Ui};
+use crate::ui::{InspectorSelection, Ui};
 use crate::{
   view::{view2d, view3d, EditorCamera2d, EditorCamera3d, ViewState},
   EditorState, LogInfo,
@@ -20,7 +20,6 @@ pub struct Params<'w, 's> {
   view_state: Res<'w, State<ViewState>>,
   next_view_state: ResMut<'w, NextState<ViewState>>,
   log_info: ResMut<'w, LogInfo>,
-  q_panels: Query<'w, 's, &'static ControlPanel>,
   q_transforms: ParamSet<
     'w,
     's,
@@ -34,7 +33,7 @@ pub struct Params<'w, 's> {
 
 impl Ui for ControlPanel {
   const NAME: &str = "Control Panel";
-  const UUID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
+  const ID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
 
   type Params<'w, 's> = Params<'w, 's>;
 
@@ -42,8 +41,8 @@ impl Ui for ControlPanel {
     default()
   }
 
-  fn closeable(&mut self, params: Self::Params<'_, '_>) -> bool {
-    params.q_panels.iter().len() > 1
+  fn unique() -> bool {
+    true
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
@@ -57,11 +56,29 @@ impl Ui for ControlPanel {
 
         let mut view = params.view_state.get().clone();
         let prev_view = view;
+
         ui.push_id("view-selector", |ui| {
           ui_for_value(&mut view, ui, &type_registry);
         });
+
         if prev_view != view {
           params.next_view_state.set(view);
+        }
+
+        if ui.button("Look At Origin").clicked() {
+          match view {
+            ViewState::Camera2D => {
+              for mut cam_transform in &mut params.q_transforms.p1() {
+                cam_transform.look_at(Vec3::ZERO, view2d::UP);
+              }
+            }
+            ViewState::Camera3D => {
+              for mut cam_transform in &mut params.q_transforms.p2() {
+                cam_transform.look_at(Vec3::ZERO, view3d::UP);
+              }
+            }
+            _ => (),
+          }
         }
 
         let InspectorSelection::Entities(selected_entities) = params.selection.as_ref() else {

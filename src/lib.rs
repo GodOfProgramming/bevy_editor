@@ -9,6 +9,7 @@ mod view;
 pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;
+use ui::prebuilt::game_view::GameView;
 pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
@@ -27,12 +28,10 @@ use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use ui::{Layout, UiPlugin};
-pub use ui::{PersistentId, Ui, UiComponent};
+use ui::{managers::UiManager, UiPlugin};
+pub use ui::{RawUi, Ui};
 pub use util::*;
-use view::{
-  ActiveEditorCamera, EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState,
-};
+use view::{EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -48,7 +47,7 @@ pub struct Editor {
   cache: Cache,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
-  layout: Layout,
+  layout: UiManager,
 }
 
 impl Editor {
@@ -106,7 +105,7 @@ impl Editor {
     }
   }
 
-  pub fn register_ui<U: UiComponent>(&mut self) -> &mut Self {
+  pub fn register_ui<U: RawUi>(&mut self) -> &mut Self {
     self.layout.register::<U>();
     self
   }
@@ -133,19 +132,12 @@ impl Editor {
 
   pub fn add_game_camera<C>(&mut self) -> &mut Self
   where
-    C: Component,
+    C: Component + Reflect + TypePath,
   {
     self
       .app
-      .add_systems(PostStartup, Self::swap_cameras::<ActiveEditorCamera, C>)
-      .add_systems(
-        OnEnter(EditorState::Testing),
-        Self::swap_cameras::<C, ActiveEditorCamera>,
-      )
-      .add_systems(
-        OnEnter(EditorState::Editing),
-        Self::swap_cameras::<ActiveEditorCamera, C>,
-      )
+      .register_type::<GameView<C>>()
+      .add_systems(PostStartup, view::disable_camera::<C>)
       .add_systems(
         Update,
         (
@@ -155,7 +147,7 @@ impl Editor {
           .run_if(in_state(EditorState::Editing)),
       );
 
-    self
+    self.register_ui::<GameView<C>>()
   }
 
   pub fn launch(self) -> AppExit {
@@ -184,22 +176,6 @@ impl Editor {
   {
     self.scene_type_registry.write().register::<T>();
     self.app.register_type::<T>();
-  }
-
-  fn swap_cameras<Enabled, Disabled>(
-    mut q_enabled_cameras: Query<&mut Camera, (With<Enabled>, Without<Disabled>)>,
-    mut q_disabled_cameras: Query<&mut Camera, (With<Disabled>, Without<Enabled>)>,
-  ) where
-    Enabled: Component,
-    Disabled: Component,
-  {
-    for mut cam in &mut q_enabled_cameras {
-      cam.is_active = true;
-    }
-
-    for mut cam in &mut q_disabled_cameras {
-      cam.is_active = false;
-    }
   }
 
   fn render_2d_cameras<C: Component>(
@@ -239,7 +215,7 @@ impl Editor {
 
     let rect_pos = transform.translation + forward;
     let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
-    let rect_dim = Vec2::new(1.0 * scaler, 1.0);
+    let rect_dim = Vec2::new(scaler, 1.0);
 
     gizmos.rect(rect_iso, rect_dim, Self::COLOR);
 
@@ -285,14 +261,14 @@ impl Plugin for EditorPlugin {
             EditorCamera::on_app_exit,
             EditorCamera2d::on_app_exit,
             EditorCamera3d::on_app_exit,
-            ui::on_app_exit,
+            UiPlugin::on_app_exit,
           ),
           Self::on_app_exit,
         )
           .chain(),
       )
       .add_systems(
-        Update,
+        FixedUpdate,
         (
           Self::on_close_requested,
           (
@@ -302,12 +278,15 @@ impl Plugin for EditorPlugin {
               scenes::check_for_loads,
               Self::auto_register_targets,
               Self::handle_pick_events,
-              Self::draw_mesh_intersections,
             )
               .run_if(in_state(EditorState::Editing)),
           )
             .chain(),
         ),
+      )
+      .add_systems(
+        Update,
+        Self::draw_mesh_intersections.run_if(in_state(EditorState::Editing)),
       );
   }
 }
@@ -375,11 +354,10 @@ impl EditorPlugin {
   fn handle_pick_events(
     mut selection: ResMut<ui::InspectorSelection>,
     mut click_events: EventReader<Pointer<Click>>,
-    mut q_egui: Query<&mut EguiContext>,
+    mut q_egui: Single<&mut EguiContext>,
     q_raycast_pickables: Query<&RayCastPickable>,
   ) {
-    let mut egui = q_egui.single_mut();
-    let egui_context = egui.get_mut();
+    let egui_context = q_egui.get_mut();
     let modifiers = egui_context.input(|i| i.modifiers);
 
     for click in click_events

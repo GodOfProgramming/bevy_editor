@@ -1,4 +1,4 @@
-use super::{EditorCamera, ViewState};
+use super::{EditorCamera, EditorCamera3d, ViewState};
 use crate::{
   cache::{Cache, Saveable},
   input::EditorActions,
@@ -64,6 +64,10 @@ impl View2dPlugin {
       settings,
       transform,
       projection,
+      Camera {
+        order: isize::MIN,
+        ..default()
+      },
     ));
   }
 }
@@ -75,8 +79,8 @@ pub struct EditorCamera2d;
 impl EditorCamera2d {
   fn on_enter(
     mut commands: Commands,
-    mut q_2d_cams: Query<(Entity, &mut Camera), With<EditorCamera2d>>,
-    mut q_other_cams: Query<(Entity, &mut Camera), Without<EditorCamera2d>>,
+    mut q_2d_cams: Query<(Entity, &mut Camera), (With<EditorCamera2d>, Without<EditorCamera3d>)>,
+    mut q_3d_cams: Query<(Entity, &mut Camera), (With<EditorCamera3d>, Without<EditorCamera2d>)>,
   ) {
     info!("Switched to 2d camera");
 
@@ -85,7 +89,7 @@ impl EditorCamera2d {
       cam.is_active = true;
     }
 
-    for (entity, mut cam) in &mut q_other_cams {
+    for (entity, mut cam) in &mut q_3d_cams {
       commands.entity(entity).remove::<ActiveEditorCamera>();
       cam.is_active = false;
     }
@@ -121,11 +125,11 @@ impl EditorCamera2d {
 
   fn movement_system(
     q_action_states: Query<&ActionState<EditorActions>>,
-    mut q_cam: Query<(&CameraSettings, &mut Transform), With<EditorCamera2d>>,
+    mut q_cam: Single<(&CameraSettings, &mut Transform), With<EditorCamera2d>>,
     time: Res<Time>,
   ) {
     for action_state in &q_action_states {
-      let (cam_settings, mut cam_transform) = q_cam.single_mut();
+      let (ref cam_settings, ref mut cam_transform) = &mut *q_cam;
 
       let mut movement = Vec3::ZERO;
 

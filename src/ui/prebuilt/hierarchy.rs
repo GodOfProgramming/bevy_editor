@@ -1,23 +1,22 @@
-use super::{InspectorSelection, PersistentId, SelectedEntities, UiComponent};
+use crate::ui::{InspectorSelection, RawUi, SelectedEntities};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::hierarchy::hierarchy_ui;
-use uuid::uuid;
+use uuid::{uuid, Uuid};
 
 #[derive(Default, Component, Reflect)]
 pub struct Hierarchy;
 
-impl UiComponent for Hierarchy {
-  const COMPONENT_NAME: &str = stringify!(Hierarchy);
-  const ID: PersistentId = PersistentId(uuid!("860ac319-5c6e-4a2e-83ae-8bb0000d5cb4"));
+impl RawUi for Hierarchy {
+  const NAME: &str = stringify!(Hierarchy);
+  const ID: Uuid = uuid!("860ac319-5c6e-4a2e-83ae-8bb0000d5cb4");
 
   fn spawn(_world: &mut World) -> Self {
     default()
   }
 
-  fn closeable(_entity: Entity, world: &mut World) -> bool {
-    let mut q = world.query::<&Self>();
-    q.iter(world).len() > 1
+  fn unique() -> bool {
+    true
   }
 
   fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {

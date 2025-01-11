@@ -3,10 +3,10 @@ pub mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},
-  ui::game_view::GameView,
+  ui::{misc::UiInfo, prebuilt::editor_view::EditorView},
   EditorState,
 };
-use bevy::{prelude::*, render::camera::Viewport, window::PrimaryWindow};
+use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 pub use view2d::EditorCamera2d;
 use view2d::View2dPlugin;
@@ -32,15 +32,14 @@ impl Plugin for ViewPlugin {
       .add_systems(
         Update,
         EditorCamera::disable_cameras.run_if(in_state(ViewState::None)),
-      )
-      .add_systems(PostUpdate, EditorCamera::set_viewport);
+      );
   }
 }
 
 #[derive(Component)]
 pub struct ActiveEditorCamera;
 
-#[derive(Component, Default)]
+#[derive(Default, Component, Reflect)]
 #[require(RayCastPickable)]
 pub struct EditorCamera;
 
@@ -56,35 +55,6 @@ impl EditorCamera {
   }
 
   // make camera only render to view not obstructed by UI
-  fn set_viewport(
-    window: Single<&Window, With<PrimaryWindow>>,
-    egui_settings: Single<&bevy_egui::EguiSettings>,
-    game_view: Single<&GameView>,
-    mut cameras: Query<&mut Camera>,
-  ) {
-    for mut cam in &mut cameras {
-      let scale_factor = window.scale_factor() * egui_settings.scale_factor;
-
-      let viewport = game_view.viewport();
-      let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
-      let viewport_size = viewport.size() * scale_factor;
-
-      let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
-      let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
-
-      // The desired viewport rectangle at its offset in "physical pixel space"
-      let rect = physical_position + physical_size;
-
-      let window_size = window.physical_size();
-      if rect.x <= window_size.x && rect.y <= window_size.y {
-        cam.viewport = Some(Viewport {
-          physical_position,
-          physical_size,
-          depth: 0.0..1.0,
-        });
-      }
-    }
-  }
 }
 
 #[derive(
@@ -125,6 +95,12 @@ fn can_run(
   }
 }
 
-fn mouse_actions_enabled(q_game_views: Query<&GameView>) -> bool {
-  q_game_views.iter().any(|gv| gv.hovered())
+fn mouse_actions_enabled(q_ui_info: Query<&UiInfo, With<EditorView>>) -> bool {
+  q_ui_info.iter().any(|info| info.hovered())
+}
+
+pub fn disable_camera<C: Component>(mut q_camera: Query<&mut Camera, With<C>>) {
+  for mut camera in &mut q_camera {
+    camera.is_active = false;
+  }
 }

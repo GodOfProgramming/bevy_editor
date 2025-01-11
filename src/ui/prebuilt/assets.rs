@@ -1,4 +1,4 @@
-use super::{InspectorSelection, Ui};
+use crate::ui::{InspectorSelection, Ui};
 use bevy::{asset::ReflectAsset, ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use uuid::uuid;
@@ -13,7 +13,7 @@ pub struct Params<'w, 's> {
 
 impl Ui for Assets {
   const NAME: &str = stringify!(Assets);
-  const UUID: uuid::Uuid = uuid!("4bfee754-f9bc-4695-b215-2a88d9377dfb");
+  const ID: uuid::Uuid = uuid!("4bfee754-f9bc-4695-b215-2a88d9377dfb");
 
   type Params<'w, 's> = Params<'w, 's>;
 
@@ -21,8 +21,8 @@ impl Ui for Assets {
     default()
   }
 
-  fn closeable(&mut self, _params: Self::Params<'_, '_>) -> bool {
-    false
+  fn unique() -> bool {
+    true
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {

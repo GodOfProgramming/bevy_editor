@@ -12,13 +12,13 @@ bevy_egui = { version = "0.31", features = ["immutable_ctx"] }
 serde = { version = "1.0", features = ["derive"] }
 
 # internal
-async-std = "1.13"
-bevy = { version = "0.15", features = ["default", "serialize"] }
+async-std = "1.13.0"
+bevy = { version = "0.15.1", features = ["default", "serialize"] }
 bevy-inspector-egui = "0.28.1"
 derive-new = "0.7.0"
 derive_more = { version = "1.0.0", features = ["full"] }
 egui-file-dialog = "0.7"
-egui_dock = { version = "0.14", features = ["serde"] }
+egui_dock = { version = "0.14.0", features = ["serde"] }
 itertools = "0.14.0"
 leafwing-input-manager = "0.16.0"
 parking_lot = "0.12.3"

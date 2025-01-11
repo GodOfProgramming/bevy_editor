@@ -57,26 +57,19 @@ impl Default for Editor {
 
 impl Editor {
   pub fn new(app: App) -> Self {
-    Self::new_with_default_modifications(app, |p| p)
+    Self::new_with_defaults(app, DefaultPlugins)
   }
 
-  pub fn new_with_default_modifications<P>(
-    mut app: App,
-    f: impl FnOnce(DefaultPlugins) -> P,
-  ) -> Self
-  where
-    P: PluginGroup,
-  {
-    let defaults = DefaultPlugins;
-    let defaults = f(defaults);
-
+  pub fn new_with_defaults(mut app: App, plugins: impl PluginGroup) -> Self {
     let cache = Cache::load_or_default();
     let log_info = cache.get::<LogInfo>().unwrap_or_default();
+
+    let defaults = plugins.build();
 
     app
       .add_plugins(
         defaults
-          .set(WindowPlugin {
+          .add(WindowPlugin {
             primary_window: Some(Window {
               title: String::from("Bevy Editor"),
               mode: WindowMode::Windowed,
@@ -86,7 +79,7 @@ impl Editor {
             close_when_requested: false,
             ..default()
           })
-          .set(LogPlugin {
+          .add(LogPlugin {
             level: log_info.level.into(),
             filter: DEFAULT_FILTER.to_string(),
             ..default()

@@ -1,4 +1,4 @@
-use super::{InspectorSelection, PersistentId, SelectedEntities, UiComponent};
+use crate::ui::{InspectorSelection, PersistentId, SelectedEntities, UiComponent};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::hierarchy::hierarchy_ui;

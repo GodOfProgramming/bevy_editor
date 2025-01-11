@@ -1,5 +1,7 @@
-use super::{PersistentId, UiComponent};
-use crate::assets;
+use crate::{
+  assets,
+  ui::{PersistentId, UiComponent},
+};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use uuid::uuid;

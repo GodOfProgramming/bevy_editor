@@ -1,4 +1,4 @@
-use super::{InspectorSelection, Ui};
+use crate::ui::{InspectorSelection, Ui};
 use bevy::{asset::ReflectAsset, ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use uuid::uuid;

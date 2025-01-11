@@ -3,7 +3,7 @@ pub mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},
-  ui::editor_view::EditorView,
+  ui::prebuilt::editor_view::EditorView,
   EditorState,
 };
 use bevy::prelude::*;

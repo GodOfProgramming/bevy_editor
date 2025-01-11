@@ -1,23 +1,8 @@
-pub mod assets;
-pub mod control_panel;
-pub mod editor_view;
 pub mod events;
-pub mod game_view;
-pub mod hierarchy;
-pub mod inspector;
 pub mod managers;
 pub mod misc;
-pub mod prefabs;
-pub mod resources;
 
-use assets::Assets;
-use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
-use hierarchy::Hierarchy;
-use inspector::Inspector;
-use managers::UiManager;
-use misc::{MissingUi, UiExtensions};
-use prefabs::Prefabs;
-use resources::Resources;
+pub mod prebuilt;
 
 use crate::cache::{Cache, Saveable};
 use bevy::{
@@ -32,12 +17,17 @@ use bevy_egui::{
   EguiPlugin,
 };
 use bevy_inspector_egui::bevy_inspector;
-use control_panel::ControlPanel;
 use derive_more::derive::From;
-use editor_view::EditorView;
 use egui_dock::{DockState, NodeIndex, SurfaceIndex};
+use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
 use itertools::Itertools;
+use managers::UiManager;
+use misc::{MissingUi, UiExtensions};
 use parking_lot::Mutex;
+use prebuilt::{
+  assets::Assets, control_panel::ControlPanel, editor_view::EditorView, hierarchy::Hierarchy,
+  inspector::Inspector, prefabs::Prefabs, resources::Resources,
+};
 use serde::{Deserialize, Serialize};
 use std::{
   any::TypeId,

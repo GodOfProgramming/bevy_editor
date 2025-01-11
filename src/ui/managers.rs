@@ -1,13 +1,10 @@
 use super::{
-  assets::Assets,
-  control_panel::ControlPanel,
-  editor_view::EditorView,
   events::SaveLayoutEvent,
-  hierarchy::Hierarchy,
-  inspector::Inspector,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
-  prefabs::Prefabs,
-  resources::Resources,
+  prebuilt::{
+    assets::Assets, control_panel::ControlPanel, editor_view::EditorView, hierarchy::Hierarchy,
+    inspector::Inspector, prefabs::Prefabs, resources::Resources,
+  },
   LayoutState, PersistentId, TabViewer, UiComponent, VTable,
 };
 use crate::cache::Cache;

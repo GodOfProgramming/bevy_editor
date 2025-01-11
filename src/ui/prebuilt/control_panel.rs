@@ -1,4 +1,4 @@
-use super::{InspectorSelection, Ui};
+use crate::ui::{InspectorSelection, Ui};
 use crate::{
   view::{view2d, view3d, EditorCamera2d, EditorCamera3d, ViewState},
   EditorState, LogInfo,

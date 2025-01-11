@@ -9,7 +9,7 @@ mod view;
 pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;
-use ui::game_view::GameView;
+use ui::prebuilt::game_view::GameView;
 pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};

@@ -15,7 +15,7 @@ pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 use bevy::{
-  color::palettes::tailwind::{self, PINK_100, RED_500},
+  color::palettes::tailwind::{PINK_100, RED_500},
   log::{LogPlugin, DEFAULT_FILTER},
   picking::pointer::PointerInteraction,
   prelude::*,
@@ -30,7 +30,7 @@ use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use std::cell::RefCell;
 use ui::{managers::UiManager, prebuilt::game_view::GameView, UiPlugin};
-use view::{ActiveEditorCamera, EditorViewPlugin};
+use view::EditorViewPlugin;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -56,8 +56,6 @@ impl Default for Editor {
 }
 
 impl Editor {
-  const COLOR: Srgba = tailwind::GREEN_700;
-
   pub fn new() -> Self {
     Self::new_with_default_modifications(|p| p)
   }
@@ -135,19 +133,7 @@ impl Editor {
   where
     C: Component + Reflect + TypePath,
   {
-    self
-      .app
-      .register_type::<GameView<C>>()
-      .add_systems(PostStartup, view::disable_camera::<C>)
-      .add_systems(
-        Update,
-        (
-          Self::render_2d_cameras::<C>.run_if(in_state(ActiveEditorCamera::Cam2D)),
-          Self::render_3d_cameras::<C>.run_if(in_state(ActiveEditorCamera::Cam3D)),
-        )
-          .run_if(in_state(EditorState::Editing)),
-      );
-
+    view::add_game_camera::<C>(&mut self.app);
     self.register_ui::<GameView<C>>()
   }
 
@@ -177,63 +163,6 @@ impl Editor {
   {
     self.scene_type_registry.write().register::<T>();
     self.app.register_type::<T>();
-  }
-
-  fn render_2d_cameras<C: Component>(
-    mut gizmos: Gizmos,
-    q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
-  ) {
-    for (transform, projection) in &q_cam {
-      let rect_pos = transform.translation;
-      gizmos.rect(
-        rect_pos,
-        projection.area.max - projection.area.min,
-        Self::COLOR,
-      );
-    }
-  }
-
-  fn render_3d_cameras<C: Component>(
-    mut gizmos: Gizmos,
-    q_cam: Query<(&Transform, &Projection), (With<Camera3d>, With<C>)>,
-  ) {
-    for (transform, projection) in &q_cam {
-      match projection {
-        Projection::Perspective(perspective) => {
-          Self::show_camera(transform, perspective.aspect_ratio, &mut gizmos);
-        }
-        Projection::Orthographic(orthographic) => {
-          Self::show_camera(transform, orthographic.scale, &mut gizmos);
-        }
-      }
-    }
-  }
-
-  fn show_camera(transform: &Transform, scaler: f32, gizmos: &mut Gizmos) {
-    gizmos.cuboid(transform.clone(), Self::COLOR);
-
-    let forward = transform.forward().as_vec3();
-
-    let rect_pos = transform.translation + forward;
-    let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
-    let rect_dim = Vec2::new(scaler, 1.0);
-
-    gizmos.rect(rect_iso, rect_dim, Self::COLOR);
-
-    let start = transform.translation + forward * transform.scale / 2.0;
-
-    let rect_corners = [
-      rect_dim,
-      -rect_dim,
-      rect_dim.with_x(-rect_dim.x),
-      rect_dim.with_y(-rect_dim.y),
-    ]
-    .map(|corner| Vec3::from((corner / 2.0, 0.0)))
-    .map(|corner| rect_iso * corner);
-
-    for corner in rect_corners {
-      gizmos.line(start, corner, Self::COLOR);
-    }
   }
 
   // systems
@@ -275,6 +204,7 @@ impl Editor {
     world.insert_resource(prefabs);
   }
 
+  #[allow(clippy::type_complexity)]
   fn auto_register_picking_targets(
     mut commands: Commands,
     q_entities: Query<

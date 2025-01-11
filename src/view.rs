@@ -3,15 +3,20 @@ pub mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},
-  ui::{misc::UiInfo, prebuilt::editor_view::EditorView},
+  ui::{
+    misc::UiInfo,
+    prebuilt::{editor_view::EditorView, game_view::GameView},
+  },
   Editing,
 };
-use bevy::prelude::*;
+use bevy::{color::palettes::tailwind, prelude::*};
 use serde::{Deserialize, Serialize};
 use view2d::View2d;
 use view3d::View3d;
 
 pub const UP: Vec3 = Vec3::Y;
+
+const GAME_CAMERA_COLOR: Srgba = tailwind::GREEN_700;
 
 pub struct EditorViewPlugin;
 
@@ -135,5 +140,80 @@ pub fn save_view_state(mut cache: ResMut<Cache>, view_state: Res<State<ActiveEdi
 pub fn disable_camera<C: Component>(mut q_camera: Query<&mut Camera, With<C>>) {
   for mut camera in &mut q_camera {
     camera.is_active = false;
+  }
+}
+
+pub fn add_game_camera<C>(app: &mut App)
+where
+  C: Component + Reflect + TypePath,
+{
+  app
+    .register_type::<GameView<C>>()
+    .add_systems(PostStartup, disable_camera::<C>)
+    .add_systems(
+      Update,
+      (
+        render_2d_cameras::<C>.in_set(View2d),
+        render_3d_cameras::<C>.in_set(View3d),
+      ),
+    );
+}
+
+#[allow(clippy::type_complexity)]
+fn render_2d_cameras<C: Component>(
+  mut gizmos: Gizmos,
+  q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
+) {
+  for (transform, projection) in &q_cam {
+    let rect_pos = transform.translation;
+    gizmos.rect(
+      rect_pos,
+      projection.area.max - projection.area.min,
+      GAME_CAMERA_COLOR,
+    );
+  }
+}
+
+#[allow(clippy::type_complexity)]
+fn render_3d_cameras<C: Component>(
+  mut gizmos: Gizmos,
+  q_cam: Query<(&Transform, &Projection), (With<Camera3d>, With<C>)>,
+) {
+  for (transform, projection) in &q_cam {
+    match projection {
+      Projection::Perspective(perspective) => {
+        show_camera(*transform, perspective.aspect_ratio, &mut gizmos);
+      }
+      Projection::Orthographic(orthographic) => {
+        show_camera(*transform, orthographic.scale, &mut gizmos);
+      }
+    }
+  }
+}
+
+fn show_camera(transform: Transform, scaler: f32, gizmos: &mut Gizmos) {
+  gizmos.cuboid(transform, GAME_CAMERA_COLOR);
+
+  let forward = transform.forward().as_vec3();
+
+  let rect_pos = transform.translation + forward;
+  let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
+  let rect_dim = Vec2::new(scaler, 1.0);
+
+  gizmos.rect(rect_iso, rect_dim, GAME_CAMERA_COLOR);
+
+  let start = transform.translation + forward * transform.scale / 2.0;
+
+  let rect_corners = [
+    rect_dim,
+    -rect_dim,
+    rect_dim.with_x(-rect_dim.x),
+    rect_dim.with_y(-rect_dim.y),
+  ]
+  .map(|corner| Vec3::from((corner / 2.0, 0.0)))
+  .map(|corner| rect_iso * corner);
+
+  for corner in rect_corners {
+    gizmos.line(start, corner, GAME_CAMERA_COLOR);
   }
 }

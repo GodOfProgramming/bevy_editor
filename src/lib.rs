@@ -9,29 +9,28 @@ mod view;
 pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;
-use ui::prebuilt::game_view::GameView;
+pub use ui::{RawUi, Ui};
+pub use util::*;
 pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
-use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
-use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
-use bevy::picking::pointer::PointerInteraction;
-use bevy::prelude::*;
-use bevy::reflect::GetTypeRegistration;
-use bevy::utils::tracing::level_filters::LevelFilter;
-use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
+use bevy::{
+  color::palettes::tailwind::{PINK_100, RED_500},
+  log::{LogPlugin, DEFAULT_FILTER},
+  picking::pointer::PointerInteraction,
+  prelude::*,
+  reflect::GetTypeRegistration,
+  window::{WindowCloseRequested, WindowMode},
+};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use cache::{Cache, Saveable};
+use cache::Cache;
 use input::InputPlugin;
 use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use ui::{managers::UiManager, UiPlugin};
-pub use ui::{RawUi, Ui};
-pub use util::*;
-use view::{EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState};
+use ui::{managers::UiManager, prebuilt::game_view::GameView, UiPlugin};
+use view::EditorViewPlugin;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
 pub enum EditorState {
@@ -50,9 +49,13 @@ pub struct Editor {
   layout: UiManager,
 }
 
-impl Editor {
-  const COLOR: Srgba = tailwind::GREEN_700;
+impl Default for Editor {
+  fn default() -> Self {
+    Self::new()
+  }
+}
 
+impl Editor {
   pub fn new() -> Self {
     Self::new_with_default_modifications(|p| p)
   }
@@ -77,11 +80,6 @@ impl Editor {
               title: String::from("Bevy Editor"),
               mode: WindowMode::Windowed,
               visible: false,
-              enabled_buttons: EnabledButtons {
-                close: true,
-                maximize: true,
-                minimize: false, // minimize causes a crash
-              },
               ..default()
             }),
             close_when_requested: false,
@@ -93,8 +91,9 @@ impl Editor {
             ..default()
           }),
       )
-      .insert_resource(log_info)
-      .add_plugins(EditorPlugin);
+      .insert_resource(log_info);
+
+    Self::inject_editor_systems(&mut app);
 
     Self {
       app,
@@ -134,19 +133,7 @@ impl Editor {
   where
     C: Component + Reflect + TypePath,
   {
-    self
-      .app
-      .register_type::<GameView<C>>()
-      .add_systems(PostStartup, view::disable_camera::<C>)
-      .add_systems(
-        Update,
-        (
-          Self::render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
-          Self::render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
-        )
-          .run_if(in_state(EditorState::Editing)),
-      );
-
+    view::add_game_camera::<C>(&mut self.app);
     self.register_ui::<GameView<C>>()
   }
 
@@ -178,131 +165,25 @@ impl Editor {
     self.app.register_type::<T>();
   }
 
-  fn render_2d_cameras<C: Component>(
-    mut gizmos: Gizmos,
-    q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
-  ) {
-    for (transform, projection) in &q_cam {
-      let rect_pos = transform.translation;
-      gizmos.rect(
-        rect_pos,
-        projection.area.max - projection.area.min,
-        Self::COLOR,
-      );
-    }
-  }
+  // systems
 
-  fn render_3d_cameras<C: Component>(
-    mut gizmos: Gizmos,
-    q_cam: Query<(&Transform, &Projection), (With<Camera3d>, With<C>)>,
-  ) {
-    for (transform, projection) in &q_cam {
-      match projection {
-        Projection::Perspective(perspective) => {
-          Self::show_camera(transform, perspective.aspect_ratio, &mut gizmos);
-        }
-        Projection::Orthographic(orthographic) => {
-          Self::show_camera(transform, orthographic.scale, &mut gizmos);
-        }
-      }
-    }
-  }
-
-  fn show_camera(transform: &Transform, scaler: f32, gizmos: &mut Gizmos) {
-    gizmos.cuboid(transform.clone(), Self::COLOR);
-
-    let forward = transform.forward().as_vec3();
-
-    let rect_pos = transform.translation + forward;
-    let rect_iso = Isometry3d::new(rect_pos, transform.rotation);
-    let rect_dim = Vec2::new(scaler, 1.0);
-
-    gizmos.rect(rect_iso, rect_dim, Self::COLOR);
-
-    let start = transform.translation + forward * transform.scale / 2.0;
-
-    let rect_corners = [
-      rect_dim,
-      -rect_dim,
-      rect_dim.with_x(-rect_dim.x),
-      rect_dim.with_y(-rect_dim.y),
-    ]
-    .map(|corner| Vec3::from((corner / 2.0, 0.0)))
-    .map(|corner| rect_iso * corner);
-
-    for corner in rect_corners {
-      gizmos.line(start, corner, Self::COLOR);
-    }
-  }
-}
-
-struct EditorPlugin;
-
-impl Plugin for EditorPlugin {
-  fn build(&self, app: &mut App) {
-    app
-      .add_plugins((
-        ViewPlugin,
-        MeshPickingPlugin,
-        DefaultInspectorConfigPlugin,
-        InputPlugin,
-      ))
-      .add_event::<SaveEvent>()
-      .add_event::<LoadEvent>()
-      .insert_state(EditorState::Editing)
-      .add_systems(Startup, (Self::startup, Self::initialize_types))
-      .add_systems(PostStartup, Self::post_startup)
-      .add_systems(OnEnter(EditorState::Editing), Self::on_enter)
-      .add_systems(OnExit(EditorState::Editing), Self::on_exit)
-      .add_systems(
-        OnEnter(EditorState::Exiting),
-        (
-          (
-            EditorCamera::on_app_exit,
-            EditorCamera2d::on_app_exit,
-            EditorCamera3d::on_app_exit,
-            UiPlugin::on_app_exit,
-          ),
-          Self::on_app_exit,
-        )
-          .chain(),
-      )
-      .add_systems(
-        FixedUpdate,
-        (
-          Self::on_close_requested,
-          (
-            input::global_input_actions,
-            (
-              scenes::check_for_saves,
-              scenes::check_for_loads,
-              Self::auto_register_targets,
-              Self::handle_pick_events,
-            )
-              .run_if(in_state(EditorState::Editing)),
-          )
-            .chain(),
-        ),
-      )
-      .add_systems(
-        Update,
-        Self::draw_mesh_intersections.run_if(in_state(EditorState::Editing)),
-      );
-  }
-}
-
-impl EditorPlugin {
-  fn startup(mut picking_settings: ResMut<MeshPickingSettings>) {
+  fn set_picking_settings(mut picking_settings: ResMut<MeshPickingSettings>) {
     picking_settings.require_markers = true;
   }
 
-  fn post_startup(mut q_windows: Query<&mut Window>) {
+  fn show_window(mut q_windows: Query<&mut Window>) {
     for mut window in &mut q_windows {
       window.visible = true;
     }
   }
 
-  fn on_exit(
+  fn show_window_cursor(mut q_windows: Query<&mut Window>) {
+    for mut window in q_windows.iter_mut() {
+      show_cursor(&mut window);
+    }
+  }
+
+  fn remove_picking_from_targets(
     mut commands: Commands,
     q_targets: Query<Entity, (With<RayCastPickable>, Without<Camera>)>,
   ) {
@@ -313,7 +194,7 @@ impl EditorPlugin {
     }
   }
 
-  fn initialize_types(world: &mut World) {
+  fn initialize_prefabs(world: &mut World) {
     let Some(registrar) = world.remove_resource::<PrefabRegistrar>() else {
       return;
     };
@@ -323,13 +204,8 @@ impl EditorPlugin {
     world.insert_resource(prefabs);
   }
 
-  fn on_enter(mut q_windows: Query<&mut Window>) {
-    for mut window in q_windows.iter_mut() {
-      show_cursor(&mut window);
-    }
-  }
-
-  fn auto_register_targets(
+  #[allow(clippy::type_complexity)]
+  fn auto_register_picking_targets(
     mut commands: Commands,
     q_entities: Query<
       Entity,
@@ -392,57 +268,74 @@ impl EditorPlugin {
     }
   }
 
-  fn on_app_exit(
-    log_info: Res<LogInfo>,
-    mut cache: ResMut<Cache>,
-    mut app_exit: EventWriter<AppExit>,
-  ) {
-    cache.store(log_info.into_inner());
+  fn on_app_exit(cache: ResMut<Cache>, mut app_exit: EventWriter<AppExit>) {
     cache.save();
-
     app_exit.send(AppExit::Success);
   }
-}
 
-#[derive(Default, Clone, Resource, Serialize, Deserialize)]
-struct LogInfo {
-  level: LogLevel,
-}
-
-impl Saveable for LogInfo {
-  const KEY: &str = "logging";
-}
-
-#[derive(Reflect, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-enum LogLevel {
-  Trace,
-  Debug,
-  #[default]
-  Info,
-  Warn,
-  Error,
-}
-
-impl Into<Level> for LogLevel {
-  fn into(self) -> Level {
-    match self {
-      LogLevel::Trace => Level::TRACE,
-      LogLevel::Debug => Level::DEBUG,
-      LogLevel::Info => Level::INFO,
-      LogLevel::Warn => Level::WARN,
-      LogLevel::Error => Level::ERROR,
-    }
+  fn inject_editor_systems(app: &mut App) {
+    app
+      .add_plugins((
+        EditorViewPlugin,
+        MeshPickingPlugin,
+        DefaultInspectorConfigPlugin,
+        InputPlugin,
+      ))
+      .configure_sets(
+        Update,
+        (
+          EditorGlobal,
+          Editing
+            .in_set(EditorGlobal)
+            .run_if(in_state(EditorState::Editing)),
+        ),
+      )
+      .add_event::<SaveEvent>()
+      .add_event::<LoadEvent>()
+      .insert_state(EditorState::Editing)
+      .add_systems(
+        Startup,
+        (Self::set_picking_settings, Self::initialize_prefabs),
+      )
+      .add_systems(PostStartup, Self::show_window)
+      .add_systems(OnEnter(EditorState::Editing), Self::show_window_cursor)
+      .add_systems(
+        OnExit(EditorState::Editing),
+        Self::remove_picking_from_targets,
+      )
+      .add_systems(
+        Update,
+        (
+          scenes::check_for_saves,
+          scenes::check_for_loads,
+          Self::on_close_requested,
+          Self::draw_mesh_intersections,
+          Self::auto_register_picking_targets,
+          Self::handle_pick_events,
+        )
+          .in_set(Editing),
+      )
+      .add_systems(Update, input::global_input_actions.in_set(EditorGlobal))
+      .add_systems(
+        OnEnter(EditorState::Exiting),
+        (
+          (
+            view::save_view_state,
+            view::view2d::save_settings,
+            view::view3d::save_settings,
+            UiPlugin::on_app_exit,
+            LogInfo::on_app_exit,
+          ),
+          Self::on_app_exit,
+        )
+          .chain()
+          .in_set(EditorGlobal),
+      );
   }
 }
 
-impl Into<LevelFilter> for LogLevel {
-  fn into(self) -> LevelFilter {
-    match self {
-      LogLevel::Trace => LevelFilter::TRACE,
-      LogLevel::Debug => LevelFilter::DEBUG,
-      LogLevel::Info => LevelFilter::INFO,
-      LogLevel::Warn => LevelFilter::WARN,
-      LogLevel::Error => LevelFilter::ERROR,
-    }
-  }
-}
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct EditorGlobal;
+
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct Editing;

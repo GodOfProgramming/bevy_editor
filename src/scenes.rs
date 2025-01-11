@@ -62,7 +62,7 @@ impl SaveEvent {
 
           if let Some(ref_handle) = comp_type_reg.data::<ReflectHandle>() {
             let entity_ref = world.get_entity(entity.id()).unwrap();
-            let dyn_ref = ref_comp.reflect(&entity_ref).unwrap();
+            let dyn_ref = ref_comp.reflect(entity_ref).unwrap();
             let asset_handle = ref_handle
               .downcast_handle_untyped(dyn_ref.as_any())
               .unwrap();

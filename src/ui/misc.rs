@@ -106,7 +106,7 @@ impl MissingUi {
   pub fn new(id: impl Into<PersistentId>) -> Self {
     let id = id.into();
     Self {
-      message: format!("Failed to find ui component with uuid: {}", id.to_string()),
+      message: format!("Failed to find ui component with uuid: {}", *id),
       uuid: *id,
     }
   }
@@ -168,7 +168,7 @@ impl DockExtensions for DockState<Entity> {
   ) -> DockState<Uuid> {
     self.map_tabs(|tab| {
       if let Ok(missing_uuid) = q_missing.get(*tab) {
-        missing_uuid.id().clone()
+        *missing_uuid.id()
       } else {
         **q_uuids.get(*tab).unwrap()
       }

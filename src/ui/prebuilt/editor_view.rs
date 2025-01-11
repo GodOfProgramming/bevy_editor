@@ -1,6 +1,6 @@
 use crate::{
   ui::{misc::UiInfo, Ui},
-  view::ActiveEditorCamera,
+  view::EditorCamera,
 };
 use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::egui;
@@ -23,9 +23,9 @@ impl EditorView {
     window: Single<&Window, With<PrimaryWindow>>,
     egui_settings: Single<&bevy_egui::EguiSettings>,
     editor_view: Single<(&Self, &UiInfo)>,
-    mut q_cameras: Query<&mut Camera, With<ActiveEditorCamera>>,
+    mut q_cameras: Query<&mut Camera, With<EditorCamera>>,
   ) {
-    let (ref editor_view, ref ui_info) = &*editor_view;
+    let (editor_view, ui_info) = &*editor_view;
 
     if ui_info.rendered() {
       for mut camera in &mut q_cameras {
@@ -62,7 +62,7 @@ impl EditorView {
 
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
-  q_cameras: Query<'w, 's, &'static mut Camera, With<ActiveEditorCamera>>,
+  q_cameras: Query<'w, 's, &'static mut Camera, With<EditorCamera>>,
 }
 
 impl Ui for EditorView {
@@ -77,6 +77,12 @@ impl Ui for EditorView {
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
+  }
+
+  fn on_despawn(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = false;
+    }
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {

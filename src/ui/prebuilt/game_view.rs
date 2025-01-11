@@ -49,7 +49,7 @@ where
     game_view: Single<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<C>>,
   ) {
-    let (ref game_view, ref ui_info) = &*game_view;
+    let (game_view, ui_info) = &*game_view;
 
     if ui_info.rendered() {
       for mut camera in &mut q_cameras {
@@ -106,6 +106,12 @@ where
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
+  }
+
+  fn on_despawn(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = false;
+    }
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {

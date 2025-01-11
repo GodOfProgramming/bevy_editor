@@ -109,7 +109,7 @@ impl PrefabRegistrar {
   }
 
   /// Calls R which produces a closure S that is later invoked to return the spawn function
-  fn register_internal<'w, 's, R, S>(&mut self, name: impl Into<String>, f: R)
+  fn register_internal<R, S>(&mut self, name: impl Into<String>, f: R)
   where
     S: FnMut(&mut World) + Send + Sync + 'static,
     R: Fn(&mut World) -> S + Send + Sync + 'static,

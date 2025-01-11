@@ -1,8 +1,6 @@
 use crate::ui::{InspectorSelection, Ui};
-use crate::{
-  view::{view2d, view3d, EditorCamera2d, EditorCamera3d, ViewState},
-  EditorState, LogInfo,
-};
+use crate::view::{self, EditorCamera};
+use crate::{view::ActiveEditorCamera, EditorState, LogInfo};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use bevy_inspector_egui::reflect_inspector::ui_for_value;
@@ -11,24 +9,126 @@ use uuid::uuid;
 #[derive(Default, Component, Reflect)]
 pub struct ControlPanel;
 
+impl ControlPanel {
+  fn play_button(&self, ui: &mut egui::Ui, params: &mut Params) {
+    if ui.button("▶").clicked() {
+      params.next_editor_state.set(EditorState::Testing);
+    }
+  }
+
+  fn pause_button(&self, ui: &mut egui::Ui, params: &mut Params) {
+    if ui.button("⏸").clicked() {
+      params.next_editor_state.set(EditorState::Editing);
+    }
+  }
+
+  fn camera_selector(&self, ui: &mut egui::Ui, params: &mut Params) -> ActiveEditorCamera {
+    let type_registry = params.type_registry.as_ref().read();
+    let mut editor_camera = *params.editor_camera.get();
+    let prev_view = editor_camera;
+
+    ui.push_id("camera-selector", |ui| {
+      ui.horizontal(|ui| {
+        ui.label("Active Camera");
+        ui_for_value(&mut editor_camera, ui, &type_registry);
+      });
+    });
+
+    if prev_view != editor_camera {
+      params.next_view_state.set(editor_camera);
+    }
+
+    editor_camera
+  }
+
+  fn look_at_origin_button(&self, ui: &mut egui::Ui, params: &mut Params) {
+    if ui.button("Look At Origin").clicked() {
+      for mut cam in &mut params.q_editor_camera_transforms {
+        cam.look_at(Vec3::ZERO, view::UP);
+      }
+    }
+  }
+
+  fn entity_commands(
+    &self,
+    ui: &mut egui::Ui,
+    params: &mut Params,
+    editor_camera_type: ActiveEditorCamera,
+  ) {
+    let InspectorSelection::Entities(selected_entities) = params.selection.as_ref() else {
+      return;
+    };
+
+    if selected_entities.len() == 1 {
+      let entity = selected_entities.iter().next().unwrap();
+
+      if editor_camera_type == ActiveEditorCamera::Cam2D
+        || editor_camera_type == ActiveEditorCamera::Cam3D
+      {
+        self.move_to_target_button(ui, params, entity);
+
+        if editor_camera_type == ActiveEditorCamera::Cam3D {
+          self.look_at_target_button(ui, params, entity);
+        }
+      }
+    }
+  }
+
+  fn move_to_target_button(&self, ui: &mut egui::Ui, params: &mut Params, entity: Entity) {
+    if ui.button("Move To Selected").clicked() {
+      'move_block: {
+        let Ok(transform) = params.q_transforms.get(entity) else {
+          break 'move_block;
+        };
+
+        let entity_pos = transform.translation;
+
+        for mut cam in &mut params.q_editor_camera_transforms {
+          cam.translation = entity_pos;
+        }
+      }
+    }
+  }
+
+  fn look_at_target_button(&self, ui: &mut egui::Ui, params: &mut Params, entity: Entity) {
+    if ui.button("Look At Selected").clicked() {
+      'look_block: {
+        let Ok(transform) = params.q_transforms.get(entity) else {
+          break 'look_block;
+        };
+
+        let entity_pos = transform.translation;
+
+        for mut cam_transform in &mut params.q_editor_camera_transforms {
+          cam_transform.look_at(entity_pos, view::UP);
+        }
+      }
+    }
+  }
+
+  fn log_level_selector(&self, ui: &mut egui::Ui, params: &mut Params) {
+    ui.push_id("log-level-selector", |ui| {
+      ui.horizontal(|ui| {
+        let type_registry = params.type_registry.as_ref().read();
+
+        ui.label("Log Level");
+        ui_for_value(&mut params.log_info.level, ui, &type_registry);
+      });
+    });
+  }
+}
+
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
   type_registry: Res<'w, AppTypeRegistry>,
   selection: Res<'w, InspectorSelection>,
   editor_state: Res<'w, State<EditorState>>,
   next_editor_state: ResMut<'w, NextState<EditorState>>,
-  view_state: Res<'w, State<ViewState>>,
-  next_view_state: ResMut<'w, NextState<ViewState>>,
+  editor_camera: Res<'w, State<ActiveEditorCamera>>,
+  next_view_state: ResMut<'w, NextState<ActiveEditorCamera>>,
   log_info: ResMut<'w, LogInfo>,
-  q_transforms: ParamSet<
-    'w,
-    's,
-    (
-      Query<'w, 's, &'static Transform>,
-      Query<'w, 's, &'static mut Transform, With<EditorCamera2d>>,
-      Query<'w, 's, &'static mut Transform, With<EditorCamera3d>>,
-    ),
-  >,
+  q_transforms: Query<'w, 's, &'static Transform, Without<EditorCamera>>,
+  q_editor_camera_transforms: Query<'w, 's, &'static mut Transform, With<EditorCamera>>,
 }
 
 impl Ui for ControlPanel {
@@ -46,110 +146,23 @@ impl Ui for ControlPanel {
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
-    let type_registry = params.type_registry.as_ref().read();
-
     match params.editor_state.as_ref().get() {
       EditorState::Editing => {
-        if ui.button("▶").clicked() {
-          params.next_editor_state.set(EditorState::Testing);
+        self.play_button(ui, &mut params);
+        let editor_camera_type = self.camera_selector(ui, &mut params);
+
+        if editor_camera_type == ActiveEditorCamera::Cam3D {
+          self.look_at_origin_button(ui, &mut params);
         }
 
-        let mut view = params.view_state.get().clone();
-        let prev_view = view;
-
-        ui.push_id("view-selector", |ui| {
-          ui_for_value(&mut view, ui, &type_registry);
-        });
-
-        if prev_view != view {
-          params.next_view_state.set(view);
-        }
-
-        if ui.button("Look At Origin").clicked() {
-          match view {
-            ViewState::Camera2D => {
-              for mut cam_transform in &mut params.q_transforms.p1() {
-                cam_transform.look_at(Vec3::ZERO, view2d::UP);
-              }
-            }
-            ViewState::Camera3D => {
-              for mut cam_transform in &mut params.q_transforms.p2() {
-                cam_transform.look_at(Vec3::ZERO, view3d::UP);
-              }
-            }
-            _ => (),
-          }
-        }
-
-        let InspectorSelection::Entities(selected_entities) = params.selection.as_ref() else {
-          return;
-        };
-
-        if selected_entities.len() == 1 {
-          if ui.button("Move To Selected").clicked() {
-            'move_block: {
-              let entity = selected_entities.iter().next().unwrap();
-
-              let all_transforms = params.q_transforms.p0();
-              let Ok(transform) = all_transforms.get(entity) else {
-                break 'move_block;
-              };
-
-              let entity_pos = transform.translation;
-
-              match view {
-                ViewState::Camera2D => {
-                  for mut cam_transform in &mut params.q_transforms.p1() {
-                    cam_transform.translation = entity_pos;
-                  }
-                }
-                ViewState::Camera3D => {
-                  for mut cam_transform in &mut params.q_transforms.p2() {
-                    cam_transform.translation = entity_pos;
-                  }
-                }
-                _ => (),
-              }
-            }
-          }
-
-          if ui.button("Look At Selected").clicked() {
-            'look_block: {
-              let entity = selected_entities.iter().next().unwrap();
-              let all_transforms = params.q_transforms.p0();
-              let Ok(transform) = all_transforms.get(entity) else {
-                break 'look_block;
-              };
-
-              let entity_pos = transform.translation;
-
-              match view {
-                ViewState::Camera2D => {
-                  for mut cam_transform in &mut params.q_transforms.p1() {
-                    cam_transform.look_at(entity_pos, view2d::UP);
-                  }
-                }
-                ViewState::Camera3D => {
-                  for mut cam_transform in &mut params.q_transforms.p2() {
-                    cam_transform.look_at(entity_pos, view3d::UP);
-                  }
-                }
-                _ => (),
-              }
-            }
-          }
-        }
+        self.entity_commands(ui, &mut params, editor_camera_type);
       }
       EditorState::Testing => {
-        if ui.button("⏸").clicked() {
-          params.next_editor_state.set(EditorState::Editing);
-        }
+        self.pause_button(ui, &mut params);
       }
       _ => (),
-    };
+    }
 
-    ui.push_id("log-level-selector", |ui| {
-      ui_for_value(&mut params.log_info.level, ui, &type_registry);
-    });
+    self.log_level_selector(ui, &mut params);
   }
 }

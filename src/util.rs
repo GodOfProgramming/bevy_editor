@@ -4,14 +4,17 @@ use std::{
 };
 
 use bevy::{
+  log::Level,
   prelude::*,
   reflect::GetTypeRegistration,
   state::state::FreelyMutableState,
-  utils::HashMap,
+  utils::{tracing::level_filters::LevelFilter, HashMap},
   window::{CursorGrabMode, PrimaryWindow},
   winit::cursor::CursorIcon,
 };
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
+
+use crate::cache::{Cache, Saveable};
 
 #[macro_export]
 macro_rules! here {
@@ -147,4 +150,53 @@ where
 {
   let ordered: BTreeMap<_, _> = value.iter().collect();
   ordered.serialize(serializer)
+}
+
+#[derive(Default, Clone, Resource, Serialize, Deserialize)]
+pub struct LogInfo {
+  pub level: LogLevel,
+}
+
+impl Saveable for LogInfo {
+  const KEY: &str = "logging";
+}
+
+impl LogInfo {
+  pub fn on_app_exit(log_info: Res<Self>, mut cache: ResMut<Cache>) {
+    cache.store(log_info.into_inner());
+  }
+}
+
+#[derive(Reflect, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum LogLevel {
+  Trace,
+  Debug,
+  #[default]
+  Info,
+  Warn,
+  Error,
+}
+
+impl From<LogLevel> for Level {
+  fn from(value: LogLevel) -> Self {
+    match value {
+      LogLevel::Trace => Level::TRACE,
+      LogLevel::Debug => Level::DEBUG,
+      LogLevel::Info => Level::INFO,
+      LogLevel::Warn => Level::WARN,
+      LogLevel::Error => Level::ERROR,
+    }
+  }
+}
+
+impl From<LogLevel> for LevelFilter {
+  fn from(value: LogLevel) -> Self {
+    match value {
+      LogLevel::Trace => LevelFilter::TRACE,
+      LogLevel::Debug => LevelFilter::DEBUG,
+      LogLevel::Info => LevelFilter::INFO,
+      LogLevel::Warn => LevelFilter::WARN,
+      LogLevel::Error => LevelFilter::ERROR,
+    }
+  }
 }

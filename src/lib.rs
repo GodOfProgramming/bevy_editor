@@ -9,16 +9,19 @@ mod view;
 pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;
-use ui::prebuilt::game_view::GameView;
+pub use ui::{RawUi, Ui};
+pub use util::*;
 pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
-use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
-use bevy::log::{LogPlugin, DEFAULT_FILTER};
-use bevy::picking::pointer::PointerInteraction;
-use bevy::prelude::*;
-use bevy::reflect::GetTypeRegistration;
-use bevy::window::{WindowCloseRequested, WindowMode, WindowResized};
+use bevy::{
+  color::palettes::tailwind::{self, PINK_100, RED_500},
+  log::{LogPlugin, DEFAULT_FILTER},
+  picking::pointer::PointerInteraction,
+  prelude::*,
+  reflect::GetTypeRegistration,
+  window::{WindowCloseRequested, WindowMode, WindowResized},
+};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::Cache;
@@ -26,9 +29,7 @@ use input::InputPlugin;
 use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use std::cell::RefCell;
-use ui::{managers::UiManager, UiPlugin};
-pub use ui::{RawUi, Ui};
-pub use util::*;
+use ui::{managers::UiManager, prebuilt::game_view::GameView, UiPlugin};
 use view::{ActiveEditorCamera, EditorViewPlugin};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]

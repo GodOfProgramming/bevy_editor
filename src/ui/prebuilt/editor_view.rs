@@ -52,10 +52,16 @@ impl EditorView {
 
         let window_size = window.physical_size();
         if rect.x <= window_size.x && rect.y <= window_size.y {
+          let depth = camera
+            .viewport
+            .as_ref()
+            .map(|vp| vp.depth.clone())
+            .unwrap_or(0.0..1.0);
+
           camera.viewport = Some(Viewport {
             physical_position,
             physical_size,
-            depth: 0.0..1.0,
+            depth,
           });
         }
       }
@@ -77,6 +83,17 @@ impl Ui for EditorView {
     default()
   }
 
+  fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {
+    self.was_rendered = true;
+
+    let egui_rect = ui.clip_rect();
+    self.viewport_rect = Rect {
+      max: Vec2::new(egui_rect.max.x, egui_rect.max.y),
+      min: Vec2::new(egui_rect.min.x, egui_rect.min.y),
+    };
+    self.mouse_hovered = ui.ui_contains_pointer();
+  }
+
   fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {
     false
   }
@@ -85,22 +102,13 @@ impl Ui for EditorView {
     true
   }
 
-  fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {
-    self.was_rendered = true;
-
-    let egui_rect = ui.clip_rect();
-
-    self.viewport_rect = Rect {
-      max: Vec2::new(egui_rect.max.x, egui_rect.max.y),
-      min: Vec2::new(egui_rect.min.x, egui_rect.min.y),
-    };
-
-    self.mouse_hovered = ui.ui_contains_pointer();
-  }
-
   fn init(app: &mut App) {
     app
       .add_systems(PreUpdate, Self::on_preupdate)
       .add_systems(PostUpdate, Self::set_viewport);
+  }
+
+  fn popout() -> bool {
+    false
   }
 }

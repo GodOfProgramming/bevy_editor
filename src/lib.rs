@@ -134,14 +134,18 @@ impl Editor {
   where
     C: Component + Reflect + TypePath,
   {
-    self.app.register_type::<GameView<C>>().add_systems(
-      Update,
-      (
-        Self::render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
-        Self::render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
-      )
-        .run_if(in_state(EditorState::Editing)),
-    );
+    self
+      .app
+      .register_type::<GameView<C>>()
+      .add_systems(PostStartup, view::disable_camera::<C>)
+      .add_systems(
+        Update,
+        (
+          Self::render_2d_cameras::<C>.run_if(in_state(ViewState::Camera2D)),
+          Self::render_3d_cameras::<C>.run_if(in_state(ViewState::Camera3D)),
+        )
+          .run_if(in_state(EditorState::Editing)),
+      );
 
     self.register_ui::<GameView<C>>()
   }

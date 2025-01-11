@@ -1,7 +1,6 @@
 pub mod events;
 pub mod managers;
 pub mod misc;
-
 pub mod prebuilt;
 
 use crate::cache::{Cache, Saveable};
@@ -137,10 +136,21 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
   fn render(entity: Entity, ui: &mut egui::Ui, world: &mut World);
 
   #[allow(unused_variables)]
-  fn context_menu(entity: Entity, ui: &mut egui::Ui, world: &mut World) {}
+  fn context_menu(
+    entity: Entity,
+    ui: &mut egui::Ui,
+    world: &mut World,
+    surface: SurfaceIndex,
+    node: NodeIndex,
+  ) {
+  }
 
   fn unique() -> bool {
     false
+  }
+
+  fn popout() -> bool {
+    true
   }
 }
 
@@ -189,10 +199,21 @@ pub trait Ui: RawUi {
   fn render(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>);
 
   #[allow(unused_variables)]
-  fn context_menu(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>) {}
+  fn context_menu(
+    &mut self,
+    ui: &mut egui::Ui,
+    params: Self::Params<'_, '_>,
+    surface: SurfaceIndex,
+    node: NodeIndex,
+  ) {
+  }
 
   fn unique() -> bool {
     false
+  }
+
+  fn popout() -> bool {
+    true
   }
 }
 
@@ -237,15 +258,35 @@ where
     })
   }
 
-  fn context_menu(entity: Entity, ui: &mut egui::Ui, world: &mut World) {
+  fn context_menu(
+    entity: Entity,
+    ui: &mut egui::Ui,
+    world: &mut World,
+    surface: SurfaceIndex,
+    node: NodeIndex,
+  ) {
     Self::get_entity_mut(entity, world, |this, params| {
-      this.context_menu(ui, params);
+      this.context_menu(ui, params, surface, node);
     })
   }
 
   fn unique() -> bool {
     <Self as Ui>::unique()
   }
+
+  fn popout() -> bool {
+    <Self as Ui>::popout()
+  }
+}
+
+#[derive(Serialize, Deserialize)]
+struct LayoutState {
+  dock: DockState<Uuid>,
+  layouts: BTreeMap<String, DockState<Uuid>>,
+}
+
+impl Saveable for LayoutState {
+  const KEY: &str = "Layout";
 }
 
 #[derive(Resource)]
@@ -288,8 +329,9 @@ struct VTable {
   can_clear: fn(Entity, &mut World) -> bool,
   on_close: fn(Entity, &mut World),
   render: fn(Entity, &mut egui::Ui, &mut World),
-  context_menu: fn(Entity, &mut egui::Ui, &mut World),
+  context_menu: fn(Entity, &mut egui::Ui, &mut World, SurfaceIndex, NodeIndex),
   unique: fn() -> bool,
+  popout: fn() -> bool,
   hidden: fn() -> bool,
   count: fn(&mut World) -> usize,
 }
@@ -315,6 +357,7 @@ impl VTable {
       render: T::render,
       context_menu: T::context_menu,
       unique: T::unique,
+      popout: T::popout,
       hidden: T::hidden,
       count: |world| {
         let mut q_uis = world.query::<&T>();
@@ -322,16 +365,6 @@ impl VTable {
       },
     }
   }
-}
-
-#[derive(Serialize, Deserialize)]
-struct LayoutState {
-  dock: DockState<Uuid>,
-  layouts: BTreeMap<String, DockState<Uuid>>,
-}
-
-impl Saveable for LayoutState {
-  const KEY: &str = "Layout";
 }
 
 struct TabViewer<'a> {
@@ -376,6 +409,52 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     (vtable.render)(*tab, ui, &mut self.world.borrow_mut());
   }
 
+  fn add_popup(&mut self, ui: &mut egui::Ui, surface: SurfaceIndex, node: NodeIndex) {
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+    let unique_tabs = self
+      .vtables
+      .iter()
+      .filter(|(_, vtable)| (vtable.unique)() && !(vtable.hidden)())
+      .map(|(id, vtable)| (id, (vtable.name)()))
+      .sorted_by(|(_, a), (_, b)| a.cmp(b));
+
+    for (id, name) in unique_tabs {
+      let vtable = &self.vtables[id];
+      let mut world = self.world.borrow_mut();
+      let count = (vtable.count)(&mut world);
+
+      let mut exists = count > 0;
+      let enabled = !exists;
+
+      ui.add_enabled_ui(enabled, |ui| {
+        if ui.checkbox(&mut exists, name).clicked() {
+          let entity = (vtable.spawn)(&mut world);
+          world.send_event(AddUiEvent::new(surface, node, entity));
+        }
+      });
+    }
+
+    let spawnable_tables = self
+      .vtables
+      .iter()
+      .filter(|(_, vtable)| !(vtable.unique)())
+      .map(|(id, vtable)| (id, (vtable.name)()))
+      .sorted_by(|(_, a), (_, b)| a.cmp(b));
+
+    if spawnable_tables.len() > 0 {
+      ui.menu_button("Insert", |ui| {
+        for (id, name) in spawnable_tables {
+          let vtable = &self.vtables[id];
+          if ui.button(name).clicked() {
+            let mut world = self.world.borrow_mut();
+            let entity = (vtable.spawn)(&mut world);
+            world.send_event(AddUiEvent::new(surface, node, entity));
+          }
+        }
+      });
+    }
+  }
+
   fn context_menu(
     &mut self,
     ui: &mut egui::Ui,
@@ -383,53 +462,13 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     surface: SurfaceIndex,
     node: NodeIndex,
   ) {
-    ui.menu_button("View", |ui| {
-      let unique_tabs = self
-        .vtables
-        .iter()
-        .filter(|(_, vtable)| (vtable.unique)() && !(vtable.hidden)())
-        .map(|(id, vtable)| (id, (vtable.name)()))
-        .sorted_by(|(_, a), (_, b)| a.cmp(b));
-
-      for (id, name) in unique_tabs {
-        let vtable = &self.vtables[id];
-        let mut world = self.world.borrow_mut();
-        let count = (vtable.count)(&mut world);
-
-        let mut exists = count > 0;
-        let enabled = !exists;
-
-        ui.add_enabled_ui(enabled, |ui| {
-          if ui.checkbox(&mut exists, name).clicked() {
-            let entity = (vtable.spawn)(&mut world);
-            world.send_event(AddUiEvent::new(surface, node, entity));
-          }
-        });
-      }
-
-      let spawnable_tables = self
-        .vtables
-        .iter()
-        .filter(|(_, vtable)| !(vtable.unique)())
-        .map(|(id, vtable)| (id, (vtable.name)()))
-        .sorted_by(|(_, a), (_, b)| a.cmp(b));
-
-      if spawnable_tables.len() > 0 {
-        ui.menu_button("Insert", |ui| {
-          for (id, name) in spawnable_tables {
-            let vtable = &self.vtables[id];
-            if ui.button(name).clicked() {
-              let mut world = self.world.borrow_mut();
-              let entity = (vtable.spawn)(&mut world);
-              world.send_event(AddUiEvent::new(surface, node, entity));
-            }
-          }
-        });
-      }
-    });
-
     let vtable = self.vtable_of(*tab);
-    (vtable.context_menu)(*tab, ui, &mut self.world.borrow_mut());
+    (vtable.context_menu)(*tab, ui, &mut self.world.borrow_mut(), surface, node);
+  }
+
+  fn allowed_in_windows(&self, tab: &mut Self::Tab) -> bool {
+    let vtable = self.vtable_of(*tab);
+    (vtable.popout)()
   }
 
   fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {

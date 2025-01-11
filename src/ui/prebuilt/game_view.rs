@@ -123,4 +123,8 @@ where
       .add_systems(PreUpdate, Self::on_preupdate)
       .add_systems(PostUpdate, Self::set_viewport);
   }
+
+  fn popout() -> bool {
+    false
+  }
 }

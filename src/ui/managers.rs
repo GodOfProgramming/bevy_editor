@@ -147,6 +147,8 @@ impl UiManager {
 
         DockArea::new(&mut self.state)
           .id(self.id)
+          .show_add_buttons(true)
+          .show_add_popup(true)
           .show_inside(ui, &mut tab_viewer);
       });
   }

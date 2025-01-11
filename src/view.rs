@@ -98,3 +98,9 @@ fn can_run(
 fn mouse_actions_enabled(q_editor_views: Query<&EditorView>) -> bool {
   q_editor_views.iter().any(|gv| gv.hovered())
 }
+
+pub fn disable_camera<C: Component>(mut q_camera: Query<&mut Camera, With<C>>) {
+  for mut camera in &mut q_camera {
+    camera.is_active = false;
+  }
+}

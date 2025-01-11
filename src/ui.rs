@@ -146,6 +146,9 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
   fn spawn(world: &mut World) -> Self;
 
   #[allow(unused_variables)]
+  fn on_despawn(entity: Entity, world: &mut World) {}
+
+  #[allow(unused_variables)]
   fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
     Self::NAME.into()
   }
@@ -175,9 +178,6 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
   fn closeable(entity: Entity, world: &mut World) -> bool {
     true
   }
-
-  #[allow(unused_variables)]
-  fn on_close(entity: Entity, world: &mut World) {}
 
   /// Used to prevent this Ui from appearing in the view menu
   ///
@@ -249,7 +249,7 @@ pub trait Ui: RawUi {
   }
 
   #[allow(unused_variables)]
-  fn on_close(&mut self, params: Self::Params<'_, '_>) {}
+  fn on_despawn(&mut self, params: Self::Params<'_, '_>) {}
 
   /// Used to prevent this Ui from appearing in the view menu
   ///
@@ -323,8 +323,8 @@ where
     Self::get_entity(entity, world, Ui::closeable)
   }
 
-  fn on_close(entity: Entity, world: &mut World) {
-    Self::get_entity_mut(entity, world, <Self as Ui>::on_close)
+  fn on_despawn(entity: Entity, world: &mut World) {
+    Self::get_entity_mut(entity, world, <Self as Ui>::on_despawn)
   }
 
   fn handle_tab_response(entity: Entity, world: &mut World, response: &egui::Response) {
@@ -396,6 +396,7 @@ struct VTable {
   name: fn() -> &'static str,
   init: fn(&mut App),
   spawn: fn(&mut World) -> Entity,
+  despawn: fn(Entity, &mut World),
   title: fn(Entity, &mut World) -> egui::WidgetText,
   render: fn(Entity, &mut egui::Ui, &mut World),
   when_rendered: fn(Entity, &mut World),
@@ -403,7 +404,6 @@ struct VTable {
   context_menu: fn(Entity, &mut egui::Ui, &mut World, SurfaceIndex, NodeIndex),
   handle_tab_response: fn(Entity, &mut World, &egui::Response),
   closeable: fn(Entity, &mut World) -> bool,
-  on_close: fn(Entity, &mut World),
   hidden: fn() -> bool,
   can_clear: fn(Entity, &mut World) -> bool,
   unique: fn() -> bool,
@@ -420,6 +420,7 @@ impl VTable {
       name: || T::NAME,
       init: T::init,
       spawn: Self::spawn::<T>,
+      despawn: Self::despawn::<T>,
       title: T::title,
       render: T::render,
       when_rendered: T::when_rendered,
@@ -427,7 +428,6 @@ impl VTable {
       context_menu: T::context_menu,
       handle_tab_response: T::handle_tab_response,
       closeable: T::closeable,
-      on_close: T::on_close,
       hidden: T::hidden,
       can_clear: T::can_clear,
       unique: T::unique,
@@ -447,6 +447,12 @@ impl VTable {
         UiInfo::default(),
       ))
       .id()
+  }
+
+  fn despawn<T: RawUi>(entity: Entity, world: &mut World) {
+    info!("Despawning UI component {}", T::NAME);
+    T::on_despawn(entity, world);
+    world.send_event(RemoveUiEvent::new(entity));
   }
 
   fn count<T: RawUi>(world: &mut World) -> usize {
@@ -566,11 +572,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
   fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
     let vtable = self.vtable_of(*tab);
-    (vtable.on_close)(*tab, &mut self.world.borrow_mut());
-
-    let mut world = self.world.borrow_mut();
-    world.send_event(RemoveUiEvent::new(*tab));
-
+    (vtable.despawn)(*tab, &mut self.world.borrow_mut());
     true
   }
 

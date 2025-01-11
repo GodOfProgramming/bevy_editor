@@ -14,19 +14,17 @@ pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 use bevy::color::palettes::tailwind::{self, PINK_100, RED_500};
-use bevy::log::{Level, LogPlugin, DEFAULT_FILTER};
+use bevy::log::{LogPlugin, DEFAULT_FILTER};
 use bevy::picking::pointer::PointerInteraction;
 use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
-use bevy::utils::tracing::level_filters::LevelFilter;
 use bevy::window::{EnabledButtons, WindowCloseRequested, WindowMode};
 use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
-use cache::{Cache, Saveable};
+use cache::Cache;
 use input::InputPlugin;
 use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
-use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use ui::{managers::UiManager, UiPlugin};
 pub use ui::{RawUi, Ui};
@@ -392,57 +390,8 @@ impl EditorPlugin {
     }
   }
 
-  fn on_app_exit(
-    log_info: Res<LogInfo>,
-    mut cache: ResMut<Cache>,
-    mut app_exit: EventWriter<AppExit>,
-  ) {
-    cache.store(log_info.into_inner());
+  fn on_app_exit(cache: ResMut<Cache>, mut app_exit: EventWriter<AppExit>) {
     cache.save();
-
     app_exit.send(AppExit::Success);
-  }
-}
-
-#[derive(Default, Clone, Resource, Serialize, Deserialize)]
-struct LogInfo {
-  level: LogLevel,
-}
-
-impl Saveable for LogInfo {
-  const KEY: &str = "logging";
-}
-
-#[derive(Reflect, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
-enum LogLevel {
-  Trace,
-  Debug,
-  #[default]
-  Info,
-  Warn,
-  Error,
-}
-
-impl Into<Level> for LogLevel {
-  fn into(self) -> Level {
-    match self {
-      LogLevel::Trace => Level::TRACE,
-      LogLevel::Debug => Level::DEBUG,
-      LogLevel::Info => Level::INFO,
-      LogLevel::Warn => Level::WARN,
-      LogLevel::Error => Level::ERROR,
-    }
-  }
-}
-
-impl Into<LevelFilter> for LogLevel {
-  fn into(self) -> LevelFilter {
-    match self {
-      LogLevel::Trace => LevelFilter::TRACE,
-      LogLevel::Debug => LevelFilter::DEBUG,
-      LogLevel::Info => LevelFilter::INFO,
-      LogLevel::Warn => LevelFilter::WARN,
-      LogLevel::Error => LevelFilter::ERROR,
-    }
   }
 }

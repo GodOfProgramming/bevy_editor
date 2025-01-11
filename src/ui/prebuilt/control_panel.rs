@@ -58,7 +58,10 @@ impl Ui for ControlPanel {
         let prev_view = view;
 
         ui.push_id("view-selector", |ui| {
-          ui_for_value(&mut view, ui, &type_registry);
+          ui.horizontal(|ui| {
+            ui.label("Camera Mode");
+            ui_for_value(&mut view, ui, &type_registry);
+          });
         });
 
         if prev_view != view {
@@ -149,7 +152,10 @@ impl Ui for ControlPanel {
     };
 
     ui.push_id("log-level-selector", |ui| {
-      ui_for_value(&mut params.log_info.level, ui, &type_registry);
+      ui.horizontal(|ui| {
+        ui.label("Log Level");
+        ui_for_value(&mut params.log_info.level, ui, &type_registry);
+      });
     });
   }
 }

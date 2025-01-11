@@ -210,11 +210,11 @@ impl UiManager {
         ui.menu_button("Restore", |ui| {
           for (layout, dock) in &self.layout_manager.layouts {
             if ui.button(layout).clicked() {
-              let dock = DockState::restore(dock, &self.vtables, world);
-              for (_, entity) in self.state.iter_all_tabs() {
-                world.despawn(*entity);
+              for entity in self.state.iter_all_tabs().map(|(_, entity)| *entity) {
+                let vtable = self.vtable_of(entity, world);
+                (vtable.despawn)(entity, world);
               }
-              self.state = dock;
+              self.state = DockState::restore(dock, &self.vtables, world);
             }
           }
         });

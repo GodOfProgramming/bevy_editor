@@ -1,6 +1,6 @@
 use crate::{
   ui::{misc::UiInfo, Ui},
-  view::ActiveEditorCamera,
+  view::{self, ActiveEditorCamera},
 };
 use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::egui;
@@ -77,6 +77,12 @@ impl Ui for EditorView {
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
+  }
+
+  fn on_despawn(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = false;
+    }
   }
 
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {

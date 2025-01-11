@@ -108,6 +108,12 @@ where
     default()
   }
 
+  fn on_despawn(&mut self, mut params: Self::Params<'_, '_>) {
+    for mut camera in &mut params.q_cameras {
+      camera.is_active = false;
+    }
+  }
+
   fn render(&mut self, ui: &mut egui::Ui, _params: Self::Params<'_, '_>) {
     self.was_rendered = true;
 

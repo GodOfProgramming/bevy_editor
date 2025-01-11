@@ -37,6 +37,7 @@ impl Plugin for ViewPlugin {
 }
 
 #[derive(Component)]
+#[require(EditorCamera)]
 pub struct ActiveEditorCamera;
 
 #[derive(Default, Component, Reflect)]
@@ -69,6 +70,23 @@ pub enum ViewState {
 
 impl Saveable for ViewState {
   const KEY: &str = "view_state";
+}
+
+#[derive(SystemSet, PartialEq, Eq, Hash, Clone, Debug)]
+struct ViewSystems;
+
+impl ViewSystems {
+  fn run_condition(
+    editor_state: Option<Res<State<EditorState>>>,
+    q_egui: Query<&bevy_egui::EguiContext>,
+  ) -> bool {
+    editor_state
+      .map(|state| *state == EditorState::Editing)
+      .unwrap_or_default()
+      && q_egui
+        .iter()
+        .any(|ctx| ctx.get().memory(|mem| mem.focused().is_none()))
+  }
 }
 
 fn can_run(

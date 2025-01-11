@@ -51,21 +51,22 @@ pub struct Editor {
 
 impl Default for Editor {
   fn default() -> Self {
-    Self::new()
+    Self::new(App::new())
   }
 }
 
 impl Editor {
-  pub fn new() -> Self {
-    Self::new_with_default_modifications(|p| p)
+  pub fn new(app: App) -> Self {
+    Self::new_with_default_modifications(app, |p| p)
   }
 
-  pub fn new_with_default_modifications<P>(f: impl FnOnce(DefaultPlugins) -> P) -> Self
+  pub fn new_with_default_modifications<P>(
+    mut app: App,
+    f: impl FnOnce(DefaultPlugins) -> P,
+  ) -> Self
   where
     P: PluginGroup,
   {
-    let mut app = App::new();
-
     let defaults = DefaultPlugins;
     let defaults = f(defaults);
 
@@ -92,8 +93,6 @@ impl Editor {
           }),
       )
       .insert_resource(log_info);
-
-    Self::inject_editor_systems(&mut app);
 
     Self {
       app,
@@ -135,26 +134,6 @@ impl Editor {
   {
     view::add_game_camera::<C>(&mut self.app);
     self.register_ui::<GameView<C>>()
-  }
-
-  pub fn launch(self) -> AppExit {
-    let Self {
-      mut app,
-      scene_type_registry,
-      prefab_registrar,
-      layout,
-      cache,
-    } = self;
-
-    app
-      .add_plugins(UiPlugin(Mutex::new(RefCell::new(Some(layout)))))
-      .insert_resource(cache)
-      .insert_resource(scene_type_registry)
-      .insert_resource(prefab_registrar);
-
-    debug!("Launching Editor");
-
-    app.run()
   }
 
   fn register_type<T>(&mut self)
@@ -273,14 +252,29 @@ impl Editor {
     app_exit.send(AppExit::Success);
   }
 
-  fn inject_editor_systems(app: &mut App) {
+  pub fn inject(self) -> App {
+    let Self {
+      mut app,
+      scene_type_registry,
+      prefab_registrar,
+      layout,
+      cache,
+    } = self;
+
     app
       .add_plugins((
         EditorViewPlugin,
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
         InputPlugin,
+        UiPlugin(Mutex::new(RefCell::new(Some(layout)))),
       ))
+      .insert_resource(cache)
+      .insert_resource(scene_type_registry)
+      .insert_resource(prefab_registrar)
+      .insert_state(EditorState::Editing)
+      .add_event::<SaveEvent>()
+      .add_event::<LoadEvent>()
       .configure_sets(
         Update,
         (
@@ -290,9 +284,6 @@ impl Editor {
             .run_if(in_state(EditorState::Editing)),
         ),
       )
-      .add_event::<SaveEvent>()
-      .add_event::<LoadEvent>()
-      .insert_state(EditorState::Editing)
       .add_systems(
         Startup,
         (Self::set_picking_settings, Self::initialize_prefabs),
@@ -331,6 +322,8 @@ impl Editor {
           .chain()
           .in_set(EditorGlobal),
       );
+
+    app
   }
 }
 

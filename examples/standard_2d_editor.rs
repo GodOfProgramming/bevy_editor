@@ -2,13 +2,15 @@ use bevy::{color::palettes::css::PURPLE, prelude::*};
 use bevy_editor::Editor;
 
 fn main() {
-  let mut editor = Editor::new();
+  let mut editor = Editor::default();
 
   editor
     .add_game_camera::<GameCamera>()
     .add_systems(Startup, startup);
 
-  editor.launch();
+  let mut app = editor.inject();
+
+  app.run();
 }
 
 #[derive(Component, Reflect)]

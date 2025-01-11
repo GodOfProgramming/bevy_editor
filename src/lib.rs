@@ -28,7 +28,7 @@ use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
-use ui::{Layout, UiPlugin};
+use ui::{MainUi, UiPlugin};
 pub use ui::{PersistentId, Ui, UiComponent};
 pub use util::*;
 use view::{EditorCamera, EditorCamera2d, EditorCamera3d, ViewPlugin, ViewState};
@@ -47,7 +47,7 @@ pub struct Editor {
   cache: Cache,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
-  layout: Layout,
+  layout: MainUi,
 }
 
 impl Editor {

@@ -15,6 +15,7 @@ use bevy::prelude::*;
 use bevy::reflect::GetTypeRegistration;
 use bevy::utils::HashMap;
 use bevy_egui::egui::text::LayoutJob;
+use bevy_egui::egui::{Align2, TextBuffer};
 use bevy_egui::{egui, EguiPlugin};
 use bevy_inspector_egui::bevy_inspector;
 use control_panel::ControlPanel;
@@ -31,10 +32,11 @@ use serde::{Deserialize, Serialize};
 use std::any::TypeId;
 use std::borrow::BorrowMut;
 use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 use uuid::{uuid, Uuid};
 
-pub(crate) struct UiPlugin(pub Mutex<RefCell<Option<Layout>>>);
+pub(crate) struct UiPlugin(pub Mutex<RefCell<Option<MainUi>>>);
 
 impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
@@ -55,10 +57,12 @@ impl Plugin for UiPlugin {
       .register_type::<Assets>()
       .add_event::<AddUiEvent>()
       .add_event::<RemoveUiEvent>()
+      .add_event::<SaveLayout>()
       .init_resource::<InspectorSelection>()
       .add_plugins(EguiPlugin)
       .add_systems(Startup, init_resources)
-      .add_systems(Update, (on_remove_ui, (render, on_add_ui)).chain());
+      .add_systems(Update, (on_remove_ui, (render, on_add_ui)).chain())
+      .add_systems(FixedUpdate, on_save_layout);
 
     for vtable in layout.vtables.values() {
       (vtable.init)(app);
@@ -69,32 +73,28 @@ impl Plugin for UiPlugin {
 }
 
 fn init_resources(world: &mut World) {
-  world.resource_scope(|world, mut layout: Mut<Layout>| {
+  world.resource_scope(|world, mut layout: Mut<MainUi>| {
     layout.restore_or_init(world);
   });
 }
 
 pub fn render(world: &mut World) {
-  world.resource_scope(|world, mut layout: Mut<Layout>| {
+  world.resource_scope(|world, mut layout: Mut<MainUi>| {
     layout.render(world);
   });
 }
 
 pub fn on_app_exit(
   mut cache: ResMut<Cache>,
-  layout: Res<Layout>,
+  main_ui: Res<MainUi>,
   q_uuids: Query<&PersistentId, Without<MissingUi>>,
   q_missing: Query<&MissingUi>,
 ) {
-  let new_state = layout.state.map_tabs(|tab| {
-    if let Ok(missing_uuid) = q_missing.get(*tab) {
-      missing_uuid.1
-    } else {
-      **q_uuids.get(*tab).unwrap()
-    }
+  let new_state = save_dock(&main_ui.state, &q_uuids, &q_missing);
+  cache.store(&LayoutState {
+    dock: new_state,
+    layouts: main_ui.layout_settings.layouts.clone(),
   });
-
-  cache.store(&LayoutState(new_state));
 }
 
 trait UiComponentInfo {
@@ -418,26 +418,39 @@ impl VTable {
   }
 }
 
-#[derive(Deref, DerefMut, Serialize, Deserialize)]
-struct LayoutState(DockState<Uuid>);
+#[derive(Serialize, Deserialize)]
+struct LayoutState {
+  dock: DockState<Uuid>,
+  layouts: BTreeMap<String, DockState<Uuid>>,
+}
 
 impl Saveable for LayoutState {
   const KEY: &str = "Layout";
 }
 
 #[derive(Resource)]
-pub(crate) struct Layout {
+pub(crate) struct MainUi {
   state: DockState<Entity>,
   vtables: HashMap<PersistentId, VTable>,
   id: egui::Id,
+
+  layout_settings: LayoutSettings,
 }
 
-impl Default for Layout {
+#[derive(Default)]
+struct LayoutSettings {
+  save_name_text: String,
+  show_save_layout_modal: bool,
+  layouts: BTreeMap<String, DockState<Uuid>>,
+}
+
+impl Default for MainUi {
   fn default() -> Self {
     let mut this = Self {
       state: DockState::new(Vec::new()),
       vtables: default(),
       id: egui::Id::new(TypeId::of::<Self>()),
+      layout_settings: default(),
     };
 
     this.register::<MissingUi>();
@@ -453,24 +466,13 @@ impl Default for Layout {
   }
 }
 
-impl Layout {
+impl MainUi {
   pub fn restore_or_init(&mut self, world: &mut World) {
     let state = world
       .resource_scope(|world, cache: Mut<Cache>| {
-        cache.get::<LayoutState>().map(|persistent_layout| {
-          persistent_layout.map_tabs(|tab| {
-            self
-              .vtables
-              .get(&PersistentId(*tab))
-              .map(|vtable| (vtable.spawn)(world))
-              .unwrap_or_else(|| {
-                let entity_id = world.spawn((MissingUi::new(*tab), MissingUi::ID)).id();
-                world.entity_mut(entity_id).insert(Name::new("Missing Ui"));
-                info!("Failed to find ui with uuid: {tab}");
-                entity_id
-              })
-          })
-        })
+        cache
+          .get::<LayoutState>()
+          .map(|layout| restore_dock(&layout.dock, &self.vtables, world))
       })
       .unwrap_or_else(|| {
         let mut state = DockState::new(vec![self.spawn_type::<EditorView>(world)]);
@@ -522,6 +524,34 @@ impl Layout {
       return;
     };
 
+    let mut save_clicked = false;
+    egui::Window::new("Save Layout")
+      .open(&mut self.layout_settings.show_save_layout_modal)
+      .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
+      .title_bar(true)
+      .resizable(false)
+      .movable(false)
+      .collapsible(false)
+      .show(&ctx, |ui| {
+        ui.horizontal(|ui| {
+          ui.label("Name");
+          ui.text_edit_singleline(&mut self.layout_settings.save_name_text);
+        });
+
+        if ui.button("Save").clicked() {
+          save_clicked = true;
+          let name = self.layout_settings.save_name_text.take();
+          world.send_event(SaveLayout {
+            name,
+            dock: self.state.clone(),
+          });
+        }
+      });
+
+    if save_clicked {
+      self.layout_settings.show_save_layout_modal = false;
+    }
+
     egui::CentralPanel::default()
       .frame(
         egui::Frame::central_panel(&ctx.style())
@@ -530,7 +560,7 @@ impl Layout {
       )
       .show(&ctx, |ui| {
         egui::menu::bar(ui, |ui| {
-          self.menu_bar_ui(ui);
+          self.menu_bar_ui(ui, world);
         });
 
         let mut tab_viewer = TabViewer {
@@ -544,11 +574,32 @@ impl Layout {
       });
   }
 
-  fn menu_bar_ui(&mut self, ui: &mut egui::Ui) {
+  fn menu_bar_ui(&mut self, ui: &mut egui::Ui, world: &mut World) {
     ui.menu_button("Tools", |ui| {
       if ui.button("Generate UUID").clicked() {
         ui.output_mut(|output| {
           output.copied_text = Uuid::new_v4().to_string();
+        });
+      }
+    });
+
+    ui.menu_button("View", |ui| {
+      if ui.button("Save Layout").clicked() {
+        self.layout_settings.save_name_text.clear();
+        self.layout_settings.show_save_layout_modal = true;
+      }
+
+      if !self.layout_settings.layouts.is_empty() {
+        ui.menu_button("Restore", |ui| {
+          for (layout, dock) in &self.layout_settings.layouts {
+            if ui.button(layout).clicked() {
+              let dock = restore_dock(dock, &self.vtables, world);
+              for (_, entity) in self.state.iter_all_tabs() {
+                world.despawn(*entity);
+              }
+              self.state = dock;
+            }
+          }
         });
       }
     });
@@ -661,7 +712,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 #[derive(Event, Clone, Copy)]
 struct AddUiEvent(SurfaceIndex, NodeIndex, Entity);
 
-fn on_add_ui(mut events: EventReader<AddUiEvent>, mut layout: ResMut<Layout>) {
+fn on_add_ui(mut events: EventReader<AddUiEvent>, mut layout: ResMut<MainUi>) {
   for event in events.read() {
     let AddUiEvent(surface, node, tab) = *event;
 
@@ -727,4 +778,57 @@ impl Ui for MissingUi {
   fn unique() -> bool {
     true // prevents this from showing up in the spawn ui menu
   }
+}
+
+#[derive(Event)]
+struct SaveLayout {
+  name: String,
+  dock: DockState<Entity>,
+}
+
+fn on_save_layout(
+  mut events: EventReader<SaveLayout>,
+  mut main_ui: ResMut<MainUi>,
+  q_uuids: Query<&PersistentId, Without<MissingUi>>,
+  q_missing: Query<&MissingUi>,
+) {
+  for save_event in events.read() {
+    let dock = save_dock(&save_event.dock, &q_uuids, &q_missing);
+    main_ui
+      .layout_settings
+      .layouts
+      .insert(save_event.name.clone(), dock);
+  }
+}
+
+fn restore_dock(
+  dock: &DockState<Uuid>,
+  vtables: &HashMap<PersistentId, VTable>,
+  world: &mut World,
+) -> DockState<Entity> {
+  dock.map_tabs(|tab| {
+    vtables
+      .get(&PersistentId(*tab))
+      .map(|vtable| (vtable.spawn)(world))
+      .unwrap_or_else(|| {
+        let entity_id = world.spawn((MissingUi::new(*tab), MissingUi::ID)).id();
+        world.entity_mut(entity_id).insert(Name::new("Missing Ui"));
+        info!("Failed to find ui with uuid: {tab}");
+        entity_id
+      })
+  })
+}
+
+fn save_dock(
+  dock: &DockState<Entity>,
+  q_uuids: &Query<&PersistentId, Without<MissingUi>>,
+  q_missing: &Query<&MissingUi>,
+) -> DockState<Uuid> {
+  dock.map_tabs(|tab| {
+    if let Ok(missing_uuid) = q_missing.get(*tab) {
+      missing_uuid.1
+    } else {
+      **q_uuids.get(*tab).unwrap()
+    }
+  })
 }

@@ -14,18 +14,18 @@ serde = { version = "1.0", features = ["derive"] }
 # internal
 bevy = { version = "0.15", features = ["default", "serialize"] }
 async-std = "1.13"
-bevy-inspector-egui = "0.28"
-derive-new = "0.7"
-derive_more = { version = "1", features = ["full"] }
+bevy-inspector-egui = "0.28.1"
+derive-new = "0.7.0"
+derive_more = { version = "1.0.0", features = ["full"] }
 egui-file-dialog = "0.7"
 egui_dock = { version = "0.14", features = ["serde"] }
-itertools = "0.13"
-leafwing-input-manager = "0.16"
-parking_lot = "0.12"
-platform-dirs = "0.3"
-ron = "0.8"
-serde_json = "1"
-thiserror = "2.0"
+itertools = "0.14.0"
+leafwing-input-manager = "0.16.0"
+parking_lot = "0.12.3"
+platform-dirs = "0.3.0"
+ron = "0.8.1"
+serde_json = "1.0.135"
+thiserror = "2.0.11"
 
 [features]
 

@@ -9,7 +9,6 @@ use uuid::uuid;
 #[derive(Default, Component, Reflect)]
 pub struct EditorView {
   viewport_rect: Rect,
-  mouse_hovered: bool,
   was_rendered: bool,
 }
 
@@ -19,10 +18,6 @@ impl EditorView {
       max: egui::Pos2::new(self.viewport_rect.max.x, self.viewport_rect.max.y),
       min: egui::Pos2::new(self.viewport_rect.min.x, self.viewport_rect.min.y),
     }
-  }
-
-  pub fn hovered(&self) -> bool {
-    self.mouse_hovered
   }
 
   fn on_preupdate(mut editor_view: Single<&mut Self>) {
@@ -79,6 +74,12 @@ impl Ui for EditorView {
 
   type Params<'w, 's> = NoParams;
 
+  fn init(app: &mut App) {
+    app
+      .add_systems(PreUpdate, Self::on_preupdate)
+      .add_systems(PostUpdate, Self::set_viewport);
+  }
+
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
   }
@@ -91,7 +92,6 @@ impl Ui for EditorView {
       max: Vec2::new(egui_rect.max.x, egui_rect.max.y),
       min: Vec2::new(egui_rect.min.x, egui_rect.min.y),
     };
-    self.mouse_hovered = ui.ui_contains_pointer();
   }
 
   fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {
@@ -100,12 +100,6 @@ impl Ui for EditorView {
 
   fn unique() -> bool {
     true
-  }
-
-  fn init(app: &mut App) {
-    app
-      .add_systems(PreUpdate, Self::on_preupdate)
-      .add_systems(PostUpdate, Self::set_viewport);
   }
 
   fn popout() -> bool {

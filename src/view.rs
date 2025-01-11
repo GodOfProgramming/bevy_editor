@@ -3,7 +3,7 @@ pub mod view3d;
 
 use crate::{
   cache::{Cache, Saveable},
-  ui::prebuilt::editor_view::EditorView,
+  ui::{misc::UiInfo, prebuilt::editor_view::EditorView},
   EditorState,
 };
 use bevy::prelude::*;
@@ -95,8 +95,8 @@ fn can_run(
   }
 }
 
-fn mouse_actions_enabled(q_editor_views: Query<&EditorView>) -> bool {
-  q_editor_views.iter().any(|gv| gv.hovered())
+fn mouse_actions_enabled(q_ui_info: Query<&UiInfo, With<EditorView>>) -> bool {
+  q_ui_info.iter().any(|info| info.hovered())
 }
 
 pub fn disable_camera<C: Component>(mut q_camera: Query<&mut Camera, With<C>>) {

@@ -18,7 +18,7 @@ use egui_dock::{DockState, NodeIndex, SurfaceIndex};
 use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
 use itertools::Itertools;
 use managers::UiManager;
-use misc::{MissingUi, UiExtensions};
+use misc::{MissingUi, UiExtensions, UiInfo};
 use parking_lot::Mutex;
 use prebuilt::{
   assets::Assets, control_panel::ControlPanel, editor_view::EditorView, hierarchy::Hierarchy,
@@ -108,30 +108,10 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
 
   fn spawn(world: &mut World) -> Self;
 
-  /// Used to prevent this Ui from appearing in the view menu
-  ///
-  /// Typically for Ui's that are programmatically created
-  fn hidden() -> bool {
-    false
-  }
-
   #[allow(unused_variables)]
   fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
     Self::NAME.into()
   }
-
-  #[allow(unused_variables)]
-  fn can_clear(entity: Entity, world: &mut World) -> bool {
-    true
-  }
-
-  #[allow(unused_variables)]
-  fn closeable(world: &mut World) -> bool {
-    true
-  }
-
-  #[allow(unused_variables)]
-  fn on_close(entity: Entity, world: &mut World) {}
 
   fn render(entity: Entity, ui: &mut egui::Ui, world: &mut World);
 
@@ -143,6 +123,29 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
     surface: SurfaceIndex,
     node: NodeIndex,
   ) {
+  }
+
+  #[allow(unused_variables)]
+  fn handle_tab_response(entity: Entity, world: &mut World, response: &egui::Response) {}
+
+  #[allow(unused_variables)]
+  fn closeable(entity: Entity, world: &mut World) -> bool {
+    true
+  }
+
+  #[allow(unused_variables)]
+  fn on_close(entity: Entity, world: &mut World) {}
+
+  /// Used to prevent this Ui from appearing in the view menu
+  ///
+  /// Typically for Ui's that are programmatically created
+  fn hidden() -> bool {
+    false
+  }
+
+  #[allow(unused_variables)]
+  fn can_clear(entity: Entity, world: &mut World) -> bool {
+    true
   }
 
   fn unique() -> bool {
@@ -171,30 +174,10 @@ pub trait Ui: RawUi {
 
   fn spawn(params: Self::Params<'_, '_>) -> Self;
 
-  /// Used to prevent this Ui from appearing in the view menu
-  ///
-  /// Typically for Ui's that are programmatically created
-  fn hidden() -> bool {
-    false
-  }
-
   #[allow(unused_variables)]
   fn title(&mut self, params: Self::Params<'_, '_>) -> egui::WidgetText {
     <Self as Ui>::NAME.into()
   }
-
-  #[allow(unused_variables)]
-  fn can_clear(&self, params: Self::Params<'_, '_>) -> bool {
-    true
-  }
-
-  #[allow(unused_variables)]
-  fn closeable() -> bool {
-    true
-  }
-
-  #[allow(unused_variables)]
-  fn on_close(&mut self, params: Self::Params<'_, '_>) {}
 
   fn render(&mut self, ui: &mut egui::Ui, params: Self::Params<'_, '_>);
 
@@ -206,6 +189,29 @@ pub trait Ui: RawUi {
     surface: SurfaceIndex,
     node: NodeIndex,
   ) {
+  }
+
+  #[allow(unused_variables)]
+  fn handle_tab_response(&mut self, params: Self::Params<'_, '_>, response: &egui::Response) {}
+
+  #[allow(unused_variables)]
+  fn closeable(&self, params: Self::Params<'_, '_>) -> bool {
+    true
+  }
+
+  #[allow(unused_variables)]
+  fn on_close(&mut self, params: Self::Params<'_, '_>) {}
+
+  /// Used to prevent this Ui from appearing in the view menu
+  ///
+  /// Typically for Ui's that are programmatically created
+  fn hidden() -> bool {
+    false
+  }
+
+  #[allow(unused_variables)]
+  fn can_clear(&self, params: Self::Params<'_, '_>) -> bool {
+    true
   }
 
   fn unique() -> bool {
@@ -234,22 +240,8 @@ where
     Self::with_params(entity, world, Ui::spawn)
   }
 
-  fn hidden() -> bool {
-    <Self as Ui>::hidden()
-  }
-
   fn title(entity: Entity, world: &mut World) -> egui::WidgetText {
     Self::get_entity_mut(entity, world, Ui::title)
-  }
-
-  fn can_clear(entity: Entity, world: &mut World) -> bool {
-    Self::get_entity(entity, world, Ui::can_clear)
-  }
-
-  fn on_close(entity: Entity, world: &mut World) {
-    Self::get_entity_mut(entity, world, |this, params| {
-      this.on_close(params);
-    })
   }
 
   fn render(entity: Entity, ui: &mut egui::Ui, world: &mut World) {
@@ -268,6 +260,30 @@ where
     Self::get_entity_mut(entity, world, |this, params| {
       this.context_menu(ui, params, surface, node);
     })
+  }
+
+  fn closeable(entity: Entity, world: &mut World) -> bool {
+    Self::get_entity(entity, world, Ui::closeable)
+  }
+
+  fn on_close(entity: Entity, world: &mut World) {
+    Self::get_entity_mut(entity, world, |this, params| {
+      this.on_close(params);
+    })
+  }
+
+  fn handle_tab_response(entity: Entity, world: &mut World, response: &egui::Response) {
+    Self::get_entity_mut(entity, world, |this, params| {
+      this.handle_tab_response(params, response);
+    });
+  }
+
+  fn hidden() -> bool {
+    <Self as Ui>::hidden()
+  }
+
+  fn can_clear(entity: Entity, world: &mut World) -> bool {
+    Self::get_entity(entity, world, Ui::can_clear)
   }
 
   fn unique() -> bool {
@@ -326,13 +342,15 @@ struct VTable {
   init: fn(&mut App),
   spawn: fn(&mut World) -> Entity,
   title: fn(Entity, &mut World) -> egui::WidgetText,
-  can_clear: fn(Entity, &mut World) -> bool,
-  on_close: fn(Entity, &mut World),
   render: fn(Entity, &mut egui::Ui, &mut World),
   context_menu: fn(Entity, &mut egui::Ui, &mut World, SurfaceIndex, NodeIndex),
+  handle_tab_response: fn(Entity, &mut World, &egui::Response),
+  closeable: fn(Entity, &mut World) -> bool,
+  on_close: fn(Entity, &mut World),
+  hidden: fn() -> bool,
+  can_clear: fn(Entity, &mut World) -> bool,
   unique: fn() -> bool,
   popout: fn() -> bool,
-  hidden: fn() -> bool,
   count: fn(&mut World) -> usize,
 }
 
@@ -344,26 +362,37 @@ impl VTable {
     Self {
       name: || T::NAME,
       init: T::init,
-      spawn: |world| {
-        let instance = T::spawn(world);
-        let entity_id = world.spawn((instance, PersistentId(T::ID))).id();
-        world.entity_mut(entity_id).insert(Name::new(T::NAME));
-        info!("Spawned UI component {}", T::NAME);
-        entity_id
-      },
+      spawn: Self::spawn::<T>,
       title: T::title,
-      can_clear: T::can_clear,
-      on_close: T::on_close,
       render: T::render,
       context_menu: T::context_menu,
+      handle_tab_response: T::handle_tab_response,
+      closeable: T::closeable,
+      on_close: T::on_close,
+      hidden: T::hidden,
+      can_clear: T::can_clear,
       unique: T::unique,
       popout: T::popout,
-      hidden: T::hidden,
-      count: |world| {
-        let mut q_uis = world.query::<&T>();
-        q_uis.iter(world).len()
-      },
+      count: Self::count::<T>,
     }
+  }
+
+  fn spawn<T: RawUi>(world: &mut World) -> Entity {
+    info!("Spawning UI component {}", T::NAME);
+    let instance = T::spawn(world);
+    world
+      .spawn((
+        instance,
+        Name::new(T::NAME),
+        PersistentId(T::ID),
+        UiInfo::default(),
+      ))
+      .id()
+  }
+
+  fn count<T: RawUi>(world: &mut World) -> usize {
+    let mut q_uis = world.query::<&T>();
+    q_uis.iter(world).len()
   }
 }
 
@@ -379,6 +408,16 @@ impl TabViewer<'_> {
     let id = q_ids.get(&world, entity).unwrap();
     self.vtables[id].clone()
   }
+
+  fn ui_info(&self, entity: Entity, f: impl FnOnce(&mut UiInfo)) {
+    let mut world = self.world.borrow_mut();
+    let mut q_ids = world.query::<&mut UiInfo>();
+    let mut ui_info = q_ids.get_mut(&mut world, entity).ok();
+    let ui_info = ui_info.as_deref_mut();
+    if let Some(ui_info) = ui_info {
+      f(ui_info);
+    }
+  }
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
@@ -389,24 +428,13 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     (vtable.title)(*tab, &mut self.world.borrow_mut())
   }
 
-  fn clear_background(&self, tab: &Self::Tab) -> bool {
-    let vtable = self.vtable_of(*tab);
-    (vtable.can_clear)(*tab, &mut self.world.borrow_mut())
-  }
-
-  fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
-    let vtable = self.vtable_of(*tab);
-    (vtable.on_close)(*tab, &mut self.world.borrow_mut());
-
-    let mut world = self.world.borrow_mut();
-    world.send_event(RemoveUiEvent::new(*tab));
-
-    true
-  }
-
   fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
     let vtable = self.vtable_of(*tab);
     (vtable.render)(*tab, ui, &mut self.world.borrow_mut());
+
+    self.ui_info(*tab, |ui_info| {
+      ui_info.hovered = ui.ui_contains_pointer();
+    });
   }
 
   fn add_popup(&mut self, ui: &mut egui::Ui, surface: SurfaceIndex, node: NodeIndex) {
@@ -464,6 +492,31 @@ impl egui_dock::TabViewer for TabViewer<'_> {
   ) {
     let vtable = self.vtable_of(*tab);
     (vtable.context_menu)(*tab, ui, &mut self.world.borrow_mut(), surface, node);
+  }
+
+  fn on_tab_button(&mut self, tab: &mut Self::Tab, response: &egui::Response) {
+    let vtable = self.vtable_of(*tab);
+    (vtable.handle_tab_response)(*tab, &mut self.world.borrow_mut(), response)
+  }
+
+  fn closeable(&mut self, tab: &mut Self::Tab) -> bool {
+    let vtable = self.vtable_of(*tab);
+    (vtable.closeable)(*tab, &mut self.world.borrow_mut())
+  }
+
+  fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
+    let vtable = self.vtable_of(*tab);
+    (vtable.on_close)(*tab, &mut self.world.borrow_mut());
+
+    let mut world = self.world.borrow_mut();
+    world.send_event(RemoveUiEvent::new(*tab));
+
+    true
+  }
+
+  fn clear_background(&self, tab: &Self::Tab) -> bool {
+    let vtable = self.vtable_of(*tab);
+    (vtable.can_clear)(*tab, &mut self.world.borrow_mut())
   }
 
   fn allowed_in_windows(&self, tab: &mut Self::Tab) -> bool {

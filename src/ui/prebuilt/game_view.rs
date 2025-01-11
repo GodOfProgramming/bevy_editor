@@ -96,6 +96,12 @@ where
 
   type Params<'w, 's> = NoParams;
 
+  fn init(app: &mut App) {
+    app
+      .add_systems(PreUpdate, Self::on_preupdate)
+      .add_systems(PostUpdate, Self::set_viewport);
+  }
+
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
   }
@@ -110,18 +116,18 @@ where
     };
   }
 
+  fn handle_tab_response(&mut self, params: Self::Params<'_, '_>, response: &egui::Response) {
+    if response.is_pointer_button_down_on() {
+      info!("POINTER DOWN");
+    }
+  }
+
   fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {
     false
   }
 
   fn unique() -> bool {
     true
-  }
-
-  fn init(app: &mut App) {
-    app
-      .add_systems(PreUpdate, Self::on_preupdate)
-      .add_systems(PostUpdate, Self::set_viewport);
   }
 
   fn popout() -> bool {

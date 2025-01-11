@@ -9,6 +9,17 @@ use derive_more::derive::Deref;
 use egui_dock::DockState;
 use uuid::{uuid, Uuid};
 
+#[derive(Component, Default)]
+pub struct UiInfo {
+  pub(super) hovered: bool,
+}
+
+impl UiInfo {
+  pub fn hovered(&self) -> bool {
+    self.hovered
+  }
+}
+
 pub(super) trait UiComponentExtensions {
   const VTABLE: VTable;
 }

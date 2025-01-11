@@ -1,6 +1,6 @@
 use crate::{
   ui::{misc::UiInfo, Ui},
-  view::{self, ActiveEditorCamera},
+  view::ActiveEditorCamera,
 };
 use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::egui;

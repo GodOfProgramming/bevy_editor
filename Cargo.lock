@@ -740,6 +740,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
+ "static_assertions",
  "thiserror 2.0.11",
  "uuid",
 ]

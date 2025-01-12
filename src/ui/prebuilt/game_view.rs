@@ -39,6 +39,10 @@ where
     }
   }
 
+  fn exists(q_game_views: Query<Entity, With<Self>>) -> bool {
+    q_game_views.iter().len() > 0
+  }
+
   fn on_preupdate(mut game_view: Single<&mut Self>) {
     game_view.was_rendered = false;
   }
@@ -100,8 +104,8 @@ where
 
   fn init(app: &mut App) {
     app
-      .add_systems(PreUpdate, Self::on_preupdate)
-      .add_systems(PostUpdate, Self::set_viewport);
+      .add_systems(PreUpdate, Self::on_preupdate.run_if(Self::exists))
+      .add_systems(PostUpdate, Self::set_viewport.run_if(Self::exists));
   }
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {

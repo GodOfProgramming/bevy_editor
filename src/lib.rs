@@ -245,7 +245,7 @@ impl Editor {
     app_exit.send(AppExit::Success);
   }
 
-  pub fn build(self) -> App {
+  pub fn launch(self) -> AppExit {
     let Self {
       mut app,
       scene_type_registry,
@@ -314,9 +314,8 @@ impl Editor {
         )
           .chain()
           .in_set(EditorGlobal),
-      );
-
-    app
+      )
+      .run()
   }
 }
 

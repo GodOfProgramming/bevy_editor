@@ -8,9 +8,7 @@ fn main() {
     .add_game_camera::<GameCamera>()
     .add_systems(Startup, startup);
 
-  let mut app = editor.build();
-
-  app.run();
+  editor.launch();
 }
 
 #[derive(Component, Reflect)]

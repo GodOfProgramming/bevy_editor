@@ -245,7 +245,7 @@ impl Editor {
     app_exit.send(AppExit::Success);
   }
 
-  pub fn inject(self) -> App {
+  pub fn build(self) -> App {
     let Self {
       mut app,
       scene_type_registry,

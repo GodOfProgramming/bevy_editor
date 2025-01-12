@@ -9,7 +9,7 @@ fn main() {
     .register_static_prefab::<Cube>()
     .add_systems(Startup, startup);
 
-  let mut app = editor.inject();
+  let mut app = editor.build();
 
   app.run();
 }

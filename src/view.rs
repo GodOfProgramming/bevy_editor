@@ -7,7 +7,7 @@ use crate::{
     misc::UiInfo,
     prebuilt::{editor_view::EditorView, game_view::GameView},
   },
-  Editing,
+  Editing, EditorGlobal,
 };
 use bevy::{color::palettes::tailwind, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -41,12 +41,17 @@ impl Plugin for EditorViewPlugin {
             .in_set(Editing),
           View2d.run_if(in_state(ActiveEditorCamera::Cam2D)),
           View3d.run_if(in_state(ActiveEditorCamera::Cam3D)),
+          OrbitSet.run_if(in_state(OrbitState::Active)),
+          PanSet.run_if(in_state(PanState::Active)),
+          ZoomSet.in_set(CameraInput::Mouse),
         ),
       )
       .register_type::<ActiveEditorCamera>()
       .register_type::<view2d::CameraSettings>()
       .register_type::<view2d::CameraState>()
       .insert_state(ActiveEditorCamera::None)
+      .insert_state(OrbitState::Inactive)
+      .insert_state(PanState::Inactive)
       .add_systems(PostStartup, Self::set_initial_state)
       .add_systems(OnEnter(ActiveEditorCamera::None), despawn_editor_cameras)
       .add_systems(OnEnter(ActiveEditorCamera::Cam2D), view2d::enable)
@@ -56,13 +61,16 @@ impl Plugin for EditorViewPlugin {
       .add_systems(
         Update,
         (
-          view2d::movement_system.in_set(CameraInput::Keyboard),
+          view2d::released_mouse_input_actions.in_set(EditorGlobal),
           (
-            view2d::mouse_input_actions,
-            (view2d::zoom_system, view2d::pan_system),
+            view2d::mouse_input_actions.in_set(CameraInput::Mouse),
+            (
+              view2d::pan_system.in_set(PanSet),
+              view2d::zoom_system.in_set(ZoomSet),
+            ),
           )
-            .chain()
-            .in_set(CameraInput::Mouse),
+            .chain(),
+          view2d::movement_system.in_set(CameraInput::Keyboard),
         )
           .chain()
           .in_set(View2d),
@@ -70,16 +78,16 @@ impl Plugin for EditorViewPlugin {
       .add_systems(
         Update,
         (
+          view3d::released_mouse_input_actions.in_set(EditorGlobal),
           (
-            view3d::mouse_input_actions,
+            view3d::mouse_input_actions.in_set(CameraInput::Mouse),
             (
-              view3d::orbit_system,
-              view3d::zoom_system,
-              view3d::pan_system,
+              view3d::orbit_system.in_set(OrbitSet),
+              view3d::pan_system.in_set(PanSet),
+              view3d::zoom_system.in_set(ZoomSet),
             ),
           )
-            .chain()
-            .in_set(CameraInput::Mouse),
+            .chain(),
           view3d::movement_system.in_set(CameraInput::Keyboard),
         )
           .chain()
@@ -217,3 +225,24 @@ fn show_camera(transform: Transform, scaler: f32, gizmos: &mut Gizmos) {
     gizmos.line(start, corner, GAME_CAMERA_COLOR);
   }
 }
+
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct OrbitSet;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum OrbitState {
+  Active,
+  Inactive,
+}
+
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct PanSet;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
+enum PanState {
+  Active,
+  Inactive,
+}
+
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct ZoomSet;

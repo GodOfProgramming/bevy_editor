@@ -1,4 +1,4 @@
-use super::{EditorCamera, UP};
+use super::{EditorCamera, OrbitState, PanState, UP};
 use crate::{
   cache::{Cache, Saveable},
   hide_cursor,
@@ -56,32 +56,60 @@ pub fn save_settings(
   }
 }
 
-pub fn mouse_input_actions(
+pub(super) fn mouse_input_actions(
   q_action_states: Query<&ActionState<EditorActions>>,
   mut windows: Query<&mut Window>,
+  mut orbit_state: ResMut<NextState<OrbitState>>,
+  mut pan_state: ResMut<NextState<PanState>>,
 ) {
   for action_state in &q_action_states {
-    if action_state.just_pressed(&EditorActions::OrbitCamera)
-      || action_state.just_pressed(&EditorActions::PanCamera)
-    {
+    let orbit_active = action_state.just_pressed(&EditorActions::OrbitCamera);
+    let pan_active = action_state.just_pressed(&EditorActions::PanCamera);
+
+    if orbit_active || pan_active {
       let Ok(mut window) = windows.get_single_mut() else {
         return;
       };
 
       hide_cursor(&mut window);
-      continue;
     }
 
-    if (action_state.just_released(&EditorActions::OrbitCamera)
-      && action_state.released(&EditorActions::PanCamera))
-      || (action_state.just_released(&EditorActions::PanCamera)
-        && action_state.released(&EditorActions::OrbitCamera))
+    if orbit_active {
+      orbit_state.set(OrbitState::Active);
+    }
+
+    if pan_active {
+      pan_state.set(PanState::Active);
+    }
+  }
+}
+
+pub(super) fn released_mouse_input_actions(
+  q_action_states: Query<&ActionState<EditorActions>>,
+  mut windows: Query<&mut Window>,
+  mut orbit_state: ResMut<NextState<OrbitState>>,
+  mut pan_state: ResMut<NextState<PanState>>,
+) {
+  for action_state in &q_action_states {
+    let orbit_inactive = action_state.just_released(&EditorActions::OrbitCamera);
+    let pan_inactive = action_state.just_released(&EditorActions::PanCamera);
+
+    if (orbit_inactive && action_state.released(&EditorActions::PanCamera))
+      || (pan_inactive && action_state.released(&EditorActions::OrbitCamera))
     {
       let Ok(mut window) = windows.get_single_mut() else {
         return;
       };
 
       show_cursor(&mut window);
+    }
+
+    if orbit_inactive {
+      orbit_state.set(OrbitState::Inactive);
+    }
+
+    if pan_inactive {
+      pan_state.set(PanState::Inactive);
     }
   }
 }

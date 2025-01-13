@@ -1,4 +1,4 @@
-use super::{EditorCamera, UP};
+use super::{EditorCamera, PanState, UP};
 use crate::{
   cache::{Cache, Saveable},
   input::EditorActions,
@@ -70,12 +70,13 @@ pub fn save_settings(
   }
 }
 
-pub fn mouse_input_actions(
+pub(super) fn mouse_input_actions(
   mut commands: Commands,
   mut q_cam_states: Query<(&mut CameraState, &Camera), With<EditorCamera2d>>,
   q_action_states: Query<&ActionState<EditorActions>>,
   primary_window: Single<Entity, With<PrimaryWindow>>,
   q_pointers: Query<&PointerLocation>,
+  mut pan_state: ResMut<NextState<PanState>>,
 ) {
   for action_state in &q_action_states {
     if action_state.just_pressed(&EditorActions::PanCamera) {
@@ -89,11 +90,22 @@ pub fn mouse_input_actions(
           .map(|(location, viewport)| location.position - viewport.physical_position.as_vec2());
       }
 
-      continue;
+      pan_state.set(PanState::Active);
     }
+  }
+}
 
+pub(super) fn released_mouse_input_actions(
+  mut commands: Commands,
+  q_action_states: Query<&ActionState<EditorActions>>,
+  primary_window: Single<Entity, With<PrimaryWindow>>,
+  mut pan_state: ResMut<NextState<PanState>>,
+) {
+  for action_state in &q_action_states {
     if action_state.just_released(&EditorActions::PanCamera) {
-      set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::default())
+      set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::default());
+
+      pan_state.set(PanState::Inactive);
     }
   }
 }

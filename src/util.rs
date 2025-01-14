@@ -5,6 +5,10 @@ use std::{
 
 use bevy::{
   log::Level,
+  log::{
+    tracing_subscriber::{self, reload, Layer},
+    BoxedLayer,
+  },
   prelude::*,
   reflect::GetTypeRegistration,
   state::state::FreelyMutableState,
@@ -64,50 +68,6 @@ where
   }
 }
 
-pub struct ValueCache<T> {
-  value: T,
-  dirty: bool,
-}
-
-impl<T> ValueCache<T> {
-  pub fn new(value: T) -> Self {
-    Self {
-      value,
-      dirty: false,
-    }
-  }
-
-  pub fn is_dirty(&self) -> bool {
-    self.dirty
-  }
-
-  pub fn dirty(&mut self) {
-    self.dirty = true;
-  }
-
-  pub fn emplace(&mut self, value: T) {
-    self.value = value;
-    self.dirty = false;
-  }
-
-  pub fn value(&self) -> &T {
-    &self.value
-  }
-
-  pub fn value_mut(&mut self) -> &mut T {
-    &mut self.value
-  }
-}
-
-impl<T> Default for ValueCache<T>
-where
-  T: Default,
-{
-  fn default() -> Self {
-    Self::new(T::default())
-  }
-}
-
 pub trait WorldExtensions {
   fn primary_window_mut(&mut self) -> Mut<Window>;
 
@@ -152,9 +112,9 @@ where
   ordered.serialize(serializer)
 }
 
-#[derive(Default, Clone, Resource, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct LogInfo {
-  pub level: LogLevel,
+  level: LogLevel,
 }
 
 impl Saveable for LogInfo {
@@ -162,9 +122,54 @@ impl Saveable for LogInfo {
 }
 
 impl LogInfo {
-  pub fn on_app_exit(log_info: Res<Self>, mut cache: ResMut<Cache>) {
-    cache.store(log_info.into_inner());
+  pub fn on_app_exit(logging_settings: Res<LoggingSettings>, mut cache: ResMut<Cache>) {
+    cache.store(&LogInfo {
+      level: logging_settings.level,
+    });
   }
+}
+
+#[derive(Resource)]
+pub struct LoggingSettings {
+  level: LogLevel,
+  filter_handle: reload::Handle<LevelFilter, tracing_subscriber::Registry>,
+}
+
+impl LoggingSettings {
+  pub fn level(&self) -> LogLevel {
+    self.level
+  }
+
+  pub fn set_level(&mut self, level: LogLevel) {
+    self.level = level;
+    self
+      .filter_handle
+      .modify(|filter| *filter = level.into())
+      .inspect_err(|err| {
+        eprintln!("Failed to set log level filter: {err}");
+      })
+      .ok();
+  }
+
+  pub fn restore(mut logging: ResMut<Self>, cache: Res<Cache>) {
+    let Some(log_info) = cache.get::<LogInfo>() else {
+      error!("Failed to get log info, using default logging settings");
+      return;
+    };
+
+    logging.set_level(log_info.level);
+  }
+}
+
+pub fn dynamic_log_layer(app: &mut App) -> Option<BoxedLayer> {
+  let level = LogLevel::Info;
+  let (filter, handle) = reload::Layer::new(level.into());
+  app.insert_resource(LoggingSettings {
+    level,
+    filter_handle: handle,
+  });
+
+  Some(filter.boxed())
 }
 
 #[derive(Reflect, Default, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]

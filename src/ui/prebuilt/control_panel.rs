@@ -1,6 +1,7 @@
 use crate::ui::{InspectorSelection, Ui};
+use crate::util::LoggingSettings;
 use crate::view::{self, EditorCamera};
-use crate::{view::ActiveEditorCamera, EditorState, LogInfo};
+use crate::{view::ActiveEditorCamera, EditorState};
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
 use bevy_inspector_egui::reflect_inspector::ui_for_value;
@@ -112,7 +113,12 @@ impl ControlPanel {
         let type_registry = params.type_registry.as_ref().read();
 
         ui.label("Log Level");
-        ui_for_value(&mut params.log_info.level, ui, &type_registry);
+        let mut level = params.logging.level();
+        ui_for_value(&mut level, ui, &type_registry);
+
+        if level != params.logging.level() {
+          params.logging.set_level(level);
+        }
       });
     });
   }
@@ -126,7 +132,7 @@ pub struct Params<'w, 's> {
   next_editor_state: ResMut<'w, NextState<EditorState>>,
   editor_camera: Res<'w, State<ActiveEditorCamera>>,
   next_view_state: ResMut<'w, NextState<ActiveEditorCamera>>,
-  log_info: ResMut<'w, LogInfo>,
+  logging: ResMut<'w, LoggingSettings>,
   q_transforms: Query<'w, 's, &'static Transform, Without<EditorCamera>>,
   q_editor_camera_transforms: Query<'w, 's, &'static mut Transform, With<EditorCamera>>,
 }

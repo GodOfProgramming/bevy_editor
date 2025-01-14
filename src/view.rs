@@ -7,7 +7,7 @@ use crate::{
     misc::UiInfo,
     prebuilt::{editor_view::EditorView, game_view::GameView},
   },
-  Editing, EditorGlobal,
+  Editing,
 };
 use bevy::{color::palettes::tailwind, prelude::*};
 use serde::{Deserialize, Serialize};

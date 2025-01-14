@@ -10,7 +10,7 @@ pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;
 pub use ui::{RawUi, Ui};
-use util::LogInfo;
+use util::{LogInfo, LogLevel, LoggingSettings};
 pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
@@ -61,35 +61,30 @@ impl Editor {
   }
 
   pub fn new_with_defaults(mut app: App, plugins: impl PluginGroup) -> Self {
-    let cache = Cache::load_or_default();
-    let log_info = cache.get::<LogInfo>().unwrap_or_default();
-
     let defaults = plugins.build();
 
-    app
-      .add_plugins(
-        defaults
-          .add(WindowPlugin {
-            primary_window: Some(Window {
-              title: String::from("Bevy Editor"),
-              mode: WindowMode::Windowed,
-              visible: false,
-              ..default()
-            }),
-            close_when_requested: false,
-            ..default()
-          })
-          .add(LogPlugin {
-            level: log_info.level.into(),
-            filter: DEFAULT_FILTER.to_string(),
+    app.add_plugins(
+      defaults
+        .set(WindowPlugin {
+          primary_window: Some(Window {
+            title: String::from("Bevy Editor"),
+            mode: WindowMode::Windowed,
+            visible: false,
             ..default()
           }),
-      )
-      .insert_resource(log_info);
+          close_when_requested: false,
+          ..default()
+        })
+        .set(LogPlugin {
+          level: LogLevel::Trace.into(),
+          filter: DEFAULT_FILTER.to_string(),
+          custom_layer: util::dynamic_log_layer,
+        }),
+    );
 
     Self {
       app,
-      cache,
+      cache: Cache::load_or_default(),
       scene_type_registry: default(),
       prefab_registrar: default(),
       layout: default(),
@@ -279,7 +274,11 @@ impl Editor {
       )
       .add_systems(
         Startup,
-        (Self::set_picking_settings, Self::initialize_prefabs),
+        (
+          Self::set_picking_settings,
+          Self::initialize_prefabs,
+          LoggingSettings::restore,
+        ),
       )
       .add_systems(PostStartup, Self::show_window)
       .add_systems(OnEnter(EditorState::Editing), Self::show_window_cursor)

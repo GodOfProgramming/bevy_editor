@@ -538,16 +538,15 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
     if spawnable_tables.len() > 0 {
-      ui.menu_button("Insert", |ui| {
-        for (id, name) in spawnable_tables {
-          let vtable = &self.vtables[id];
-          if ui.button(name).clicked() {
-            let mut world = self.world.borrow_mut();
-            let entity = (vtable.spawn)(&mut world);
-            world.send_event(AddUiEvent::new(surface, node, entity));
-          }
+      for (id, name) in spawnable_tables {
+        let vtable = &self.vtables[id];
+        if ui.button(name).clicked() {
+          let mut world = self.world.borrow_mut();
+          let entity = (vtable.spawn)(&mut world);
+          world.send_event(AddUiEvent::new(surface, node, entity));
+          ui.memory_mut(|mem| mem.close_popup());
         }
-      });
+      }
     }
   }
 

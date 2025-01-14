@@ -39,8 +39,12 @@ impl Plugin for EditorViewPlugin {
           CameraInput::Mouse
             .run_if(CameraInput::mouse_hovered)
             .in_set(Editing),
-          View2d.run_if(in_state(ActiveEditorCamera::Cam2D)),
-          View3d.run_if(in_state(ActiveEditorCamera::Cam3D)),
+          View2d
+            .in_set(Editing)
+            .run_if(in_state(ActiveEditorCamera::Cam2D)),
+          View3d
+            .in_set(Editing)
+            .run_if(in_state(ActiveEditorCamera::Cam3D)),
           OrbitSet.run_if(in_state(OrbitState::Active)),
           PanSet.run_if(in_state(PanState::Active)),
           ZoomSet.in_set(CameraInput::Mouse),
@@ -61,7 +65,7 @@ impl Plugin for EditorViewPlugin {
       .add_systems(
         Update,
         (
-          view2d::released_mouse_input_actions.in_set(EditorGlobal),
+          view2d::released_mouse_input_actions,
           (
             view2d::mouse_input_actions.in_set(CameraInput::Mouse),
             (
@@ -78,7 +82,7 @@ impl Plugin for EditorViewPlugin {
       .add_systems(
         Update,
         (
-          view3d::released_mouse_input_actions.in_set(EditorGlobal),
+          view3d::released_mouse_input_actions,
           (
             view3d::mouse_input_actions.in_set(CameraInput::Mouse),
             (

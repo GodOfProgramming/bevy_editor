@@ -1,4 +1,3 @@
-use crate::short_name_of;
 use bevy::{
   asset::{io::Reader, AssetLoader, LoadContext, LoadedFolder},
   ecs::system::{SystemParam, SystemState},
@@ -8,6 +7,8 @@ use bevy::{
 };
 use serde::Deserialize;
 use std::marker::PhantomData;
+
+use crate::util;
 
 pub struct PrefabPlugin<T> {
   _pd: PhantomData<T>,
@@ -42,7 +43,7 @@ where
   fn on_start(assets: ResMut<AssetServer>, mut commands: Commands) {
     let handle = assets.load_folder(T::DIR);
     commands.insert_resource(PrefabFolder::<T>::new(handle));
-    info!("Started folder load for {}", short_name_of::<T>());
+    info!("Started folder load for {}", util::short_name_of::<T>());
   }
 
   fn on_load(
@@ -52,7 +53,7 @@ where
     mut event_writer: EventWriter<PrefabLoadedEvent<T>>,
   ) {
     for event in event_reader.read() {
-      info!("Loaded folder for {}", short_name_of::<T>());
+      info!("Loaded folder for {}", util::short_name_of::<T>());
       if event.is_loaded_with_dependencies(folder.handle()) {
         let folders = loaded_folders.get(folder.handle()).unwrap();
         for handle in folders.handles.iter() {
@@ -70,7 +71,10 @@ where
     assets: Res<AssetServer>,
   ) {
     for event in event_reader.read() {
-      info!("Received prefab load event for {}", short_name_of::<T>());
+      info!(
+        "Received prefab load event for {}",
+        util::short_name_of::<T>()
+      );
 
       let Some(desc) = descriptors.get(event.id) else {
         warn!("asset id did not resolve to a descriptor asset");
@@ -95,7 +99,7 @@ impl PrefabRegistrar {
   where
     T: StaticPrefab,
   {
-    self.register_internal(short_name_of::<T>(), |world| {
+    self.register_internal(util::short_name_of::<T>(), |world| {
       let mut state = SystemState::<T::Params<'_, '_>>::new(world);
 
       // the below is what's stored in Prefabs
@@ -171,7 +175,7 @@ pub trait Prefab: GetTypeRegistration + Bundle + Clone {
   type Descriptor: Asset + for<'a> Deserialize<'a>;
 
   fn name(&self) -> &str {
-    short_name_of::<Self>()
+    util::short_name_of::<Self>()
   }
 
   fn transform(desc: &Self::Descriptor, assets: &AssetServer) -> Self;

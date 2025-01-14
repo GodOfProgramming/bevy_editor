@@ -1,9 +1,8 @@
 use super::{EditorCamera, OrbitState, PanState, UP};
 use crate::{
   cache::{Cache, Saveable},
-  hide_cursor,
   input::EditorActions,
-  show_cursor,
+  util,
 };
 use bevy::{input::mouse::MouseMotion, prelude::*};
 use leafwing_input_manager::prelude::ActionState;
@@ -71,7 +70,7 @@ pub(super) fn mouse_input_actions(
         return;
       };
 
-      hide_cursor(&mut window);
+      util::hide_cursor(&mut window);
     }
 
     if orbit_active {
@@ -101,7 +100,7 @@ pub(super) fn released_mouse_input_actions(
         return;
       };
 
-      show_cursor(&mut window);
+      util::show_cursor(&mut window);
     }
 
     if orbit_inactive {

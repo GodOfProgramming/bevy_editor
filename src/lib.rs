@@ -10,7 +10,7 @@ pub use bevy_egui;
 pub use bevy_egui::egui;
 pub use serde;
 pub use ui::{RawUi, Ui};
-pub use util::*;
+use util::LogInfo;
 pub use uuid;
 
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
@@ -151,7 +151,7 @@ impl Editor {
 
   fn show_window_cursor(mut q_windows: Query<&mut Window>) {
     for mut window in q_windows.iter_mut() {
-      show_cursor(&mut window);
+      util::show_cursor(&mut window);
     }
   }
 

@@ -2,7 +2,7 @@ use super::{EditorCamera, PanState, UP};
 use crate::{
   cache::{Cache, Saveable},
   input::EditorActions,
-  set_cursor_icon,
+  util,
 };
 use bevy::{
   input::mouse::MouseMotion,
@@ -80,7 +80,7 @@ pub(super) fn mouse_input_actions(
 ) {
   for action_state in &q_action_states {
     if action_state.just_pressed(&EditorActions::PanCamera) {
-      set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::Grab);
+      util::set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::Grab);
 
       for (mut cam_state, camera) in &mut q_cam_states {
         cam_state.pan_viewport_start = q_pointers
@@ -103,7 +103,7 @@ pub(super) fn released_mouse_input_actions(
 ) {
   for action_state in &q_action_states {
     if action_state.just_released(&EditorActions::PanCamera) {
-      set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::default());
+      util::set_cursor_icon(&mut commands, *primary_window, SystemCursorIcon::default());
 
       pan_state.set(PanState::Inactive);
     }

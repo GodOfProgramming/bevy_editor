@@ -9,6 +9,9 @@ use derive_more::derive::Deref;
 use egui_dock::DockState;
 use uuid::{uuid, Uuid};
 
+#[derive(SystemParam)]
+pub struct NoParams;
+
 #[derive(Component, Default)]
 pub struct UiInfo {
   pub(super) rendered: bool,
@@ -38,13 +41,15 @@ where
 
 type UiParams<'w, 's, T> = UiComponentState<<T as Ui>::Params<'w, 's>>;
 
-pub trait UiExtensions: Ui {
+/// # Safety
+/// Cannot access the world mutably in the system params
+/// Though it is on the user to not query for a mutable reference to themselves when they also have a self reference
+pub unsafe trait UiExtensions: Ui {
   fn get_entity<T>(
     entity: Entity,
     world: &mut World,
     f: impl FnOnce(&Self, Self::Params<'_, '_>) -> T,
   ) -> T {
-    Self::register_params(entity, world);
     let mut q = world.query::<(&Self, &mut UiParams<Self>)>();
     let world_cell = world.as_unsafe_world_cell();
     let (this, mut params) = q
@@ -59,7 +64,6 @@ pub trait UiExtensions: Ui {
     world: &mut World,
     f: impl FnOnce(&mut Self, Self::Params<'_, '_>) -> T,
   ) -> T {
-    Self::register_params(entity, world);
     let mut q = world.query::<(&mut Self, &mut UiParams<Self>)>();
     let world_cell = world.as_unsafe_world_cell();
     let (mut this, mut params) = q
@@ -89,7 +93,7 @@ pub trait UiExtensions: Ui {
   }
 }
 
-impl<T> UiExtensions for T where T: Ui {}
+unsafe impl<T> UiExtensions for T where T: Ui {}
 
 #[derive(Component, Deref, DerefMut)]
 struct UiComponentState<P>(SystemState<P>)

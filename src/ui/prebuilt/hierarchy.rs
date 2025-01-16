@@ -11,7 +11,7 @@ impl RawUi for Hierarchy {
   const NAME: &str = stringify!(Hierarchy);
   const ID: Uuid = uuid!("860ac319-5c6e-4a2e-83ae-8bb0000d5cb4");
 
-  fn spawn(_world: &mut World) -> Self {
+  fn spawn(_entity: Entity, _world: &mut World) -> Self {
     default()
   }
 

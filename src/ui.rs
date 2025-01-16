@@ -81,6 +81,7 @@ impl Plugin for UiPlugin {
 
 impl UiPlugin {
   fn init_resources(world: &mut World) {
+    world.spawn((Name::new("Editor Ui Panels"), UiPanels));
     world.resource_scope(|world, mut layout: Mut<UiManager>| {
       layout.restore_or_init(world);
     });
@@ -144,7 +145,7 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
   #[allow(unused_variables)]
   fn init(app: &mut App) {}
 
-  fn spawn(world: &mut World) -> Self;
+  fn spawn(entity: Entity, world: &mut World) -> Self;
 
   #[allow(unused_variables)]
   fn on_despawn(entity: Entity, world: &mut World) {}
@@ -200,9 +201,6 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
     true
   }
 }
-
-#[derive(SystemParam)]
-pub struct NoParams;
 
 pub trait Ui: RawUi {
   const NAME: &str;
@@ -284,8 +282,7 @@ where
     <Self as Ui>::init(app)
   }
 
-  fn spawn(world: &mut World) -> Self {
-    let entity = world.spawn_empty().id();
+  fn spawn(entity: Entity, world: &mut World) -> Self {
     Self::register_params(entity, world);
     Self::with_params(entity, world, Ui::spawn)
   }
@@ -351,47 +348,6 @@ where
   }
 }
 
-#[derive(Serialize, Deserialize)]
-struct LayoutState {
-  dock: DockState<Uuid>,
-  layouts: BTreeMap<String, DockState<Uuid>>,
-}
-
-impl Saveable for LayoutState {
-  const KEY: &str = "Layout";
-}
-
-#[derive(Resource)]
-pub enum InspectorSelection {
-  Entities(SelectedEntities),
-  Resource(TypeId, String),
-  Asset(TypeId, String, UntypedAssetId),
-}
-
-impl Default for InspectorSelection {
-  fn default() -> Self {
-    Self::Entities(default())
-  }
-}
-
-impl InspectorSelection {
-  pub fn add_selected(&mut self, entity: Entity, add: bool) {
-    if let InspectorSelection::Entities(selected_entities) = self {
-      selected_entities.select_maybe_add(entity, add);
-    } else {
-      let mut selected_entities = SelectedEntities::default();
-      selected_entities.select_replace(entity);
-      *self = Self::Entities(selected_entities);
-    }
-  }
-}
-
-#[derive(Default, Deref, DerefMut, Debug)]
-pub struct SelectedEntities(bevy_inspector::hierarchy::SelectedEntities);
-
-#[derive(Default, Deref, DerefMut, Component, Clone, Copy, Hash, PartialEq, Eq, Reflect, From)]
-pub struct PersistentId(#[reflect(ignore)] pub Uuid);
-
 #[derive(Clone)]
 struct VTable {
   name: fn() -> &'static str,
@@ -439,15 +395,19 @@ impl VTable {
 
   fn spawn<T: RawUi>(world: &mut World) -> Entity {
     info!("Spawning UI component {}", T::NAME);
-    let instance = T::spawn(world);
-    world
-      .spawn((
-        instance,
-        Name::new(T::NAME),
-        PersistentId(T::ID),
-        UiInfo::default(),
-      ))
-      .id()
+    let entity = world
+      .spawn((Name::new(T::NAME), PersistentId(T::ID), UiInfo::default()))
+      .id();
+
+    let ui_scene = world
+      .query_filtered::<Entity, With<UiPanels>>()
+      .iter(world)
+      .next()
+      .unwrap();
+    world.entity_mut(ui_scene).add_child(entity);
+
+    let instance = T::spawn(entity, world);
+    world.entity_mut(entity).insert(instance).id()
   }
 
   fn despawn<T: RawUi>(entity: Entity, world: &mut World) {
@@ -591,3 +551,48 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     egui::Id::new(tab)
   }
 }
+
+#[derive(Serialize, Deserialize)]
+struct LayoutState {
+  dock: DockState<Uuid>,
+  layouts: BTreeMap<String, DockState<Uuid>>,
+}
+
+impl Saveable for LayoutState {
+  const KEY: &str = "Layout";
+}
+
+#[derive(Resource)]
+pub enum InspectorSelection {
+  Entities(SelectedEntities),
+  Resource(TypeId, String),
+  Asset(TypeId, String, UntypedAssetId),
+}
+
+impl Default for InspectorSelection {
+  fn default() -> Self {
+    Self::Entities(default())
+  }
+}
+
+impl InspectorSelection {
+  pub fn add_selected(&mut self, entity: Entity, add: bool) {
+    if let InspectorSelection::Entities(selected_entities) = self {
+      selected_entities.select_maybe_add(entity, add);
+    } else {
+      let mut selected_entities = SelectedEntities::default();
+      selected_entities.select_replace(entity);
+      *self = Self::Entities(selected_entities);
+    }
+  }
+}
+
+#[derive(Default, Deref, DerefMut, Debug)]
+pub struct SelectedEntities(bevy_inspector::hierarchy::SelectedEntities);
+
+#[derive(Default, Deref, DerefMut, Component, Clone, Copy, Hash, PartialEq, Eq, Reflect, From)]
+pub struct PersistentId(#[reflect(ignore)] pub Uuid);
+
+/// Component that stores all ui components as children for organization
+#[derive(Component)]
+pub struct UiPanels;

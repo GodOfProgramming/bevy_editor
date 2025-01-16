@@ -10,7 +10,7 @@ impl RawUi for Prefabs {
   const NAME: &str = stringify!(Prefabs);
   const ID: Uuid = uuid!("fa977fad-ed99-4842-bab4-7c00641b39b0");
 
-  fn spawn(_world: &mut World) -> Self {
+  fn spawn(_entity: Entity, _world: &mut World) -> Self {
     default()
   }
 

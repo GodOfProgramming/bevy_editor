@@ -133,8 +133,8 @@ impl CameraInput {
       .any(|ctx| ctx.get().memory(|mem| mem.focused().is_some()))
   }
 
-  fn mouse_hovered(editor_view_ui_info: Single<&UiInfo, With<EditorView>>) -> bool {
-    editor_view_ui_info.hovered()
+  fn mouse_hovered(q_editor_view_ui_info: Query<&UiInfo, With<EditorView>>) -> bool {
+    q_editor_view_ui_info.iter().any(UiInfo::hovered)
   }
 }
 

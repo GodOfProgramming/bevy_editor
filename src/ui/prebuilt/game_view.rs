@@ -39,49 +39,47 @@ where
     }
   }
 
-  fn exists(q_game_views: Query<Entity, With<Self>>) -> bool {
-    q_game_views.iter().len() > 0
-  }
-
-  fn on_preupdate(mut game_view: Single<&mut Self>) {
-    game_view.was_rendered = false;
+  fn on_preupdate(mut q_game_views: Query<&mut Self>) {
+    for mut game_view in &mut q_game_views {
+      game_view.was_rendered = false;
+    }
   }
 
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
     egui_settings: Single<&bevy_egui::EguiSettings>,
-    game_view: Single<(&Self, &UiInfo)>,
+    q_game_views: Query<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<C>>,
   ) {
-    let (game_view, ui_info) = &*game_view;
+    for (game_view, ui_info) in &q_game_views {
+      if ui_info.rendered() {
+        for mut camera in &mut q_cameras {
+          let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
-    if ui_info.rendered() {
-      for mut camera in &mut q_cameras {
-        let scale_factor = window.scale_factor() * egui_settings.scale_factor;
+          let viewport = game_view.viewport();
+          let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
+          let viewport_size = viewport.size() * scale_factor;
 
-        let viewport = game_view.viewport();
-        let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
-        let viewport_size = viewport.size() * scale_factor;
+          let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
+          let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
 
-        let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
-        let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
+          // The desired viewport rectangle at its offset in "physical pixel space"
+          let rect = physical_position + physical_size;
 
-        // The desired viewport rectangle at its offset in "physical pixel space"
-        let rect = physical_position + physical_size;
+          let window_size = window.physical_size();
+          if rect.x <= window_size.x && rect.y <= window_size.y {
+            let depth = camera
+              .viewport
+              .as_ref()
+              .map(|vp| vp.depth.clone())
+              .unwrap_or(0.0..1.0);
 
-        let window_size = window.physical_size();
-        if rect.x <= window_size.x && rect.y <= window_size.y {
-          let depth = camera
-            .viewport
-            .as_ref()
-            .map(|vp| vp.depth.clone())
-            .unwrap_or(0.0..1.0);
-
-          camera.viewport = Some(Viewport {
-            physical_position,
-            physical_size,
-            depth,
-          });
+            camera.viewport = Some(Viewport {
+              physical_position,
+              physical_size,
+              depth,
+            });
+          }
         }
       }
     }
@@ -104,8 +102,8 @@ where
 
   fn init(app: &mut App) {
     app
-      .add_systems(PreUpdate, Self::on_preupdate.run_if(Self::exists))
-      .add_systems(PostUpdate, Self::set_viewport.run_if(Self::exists));
+      .add_systems(PreUpdate, Self::on_preupdate)
+      .add_systems(PostUpdate, Self::set_viewport);
   }
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {

@@ -22,38 +22,38 @@ impl EditorView {
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
     egui_settings: Single<&bevy_egui::EguiSettings>,
-    editor_view: Single<(&Self, &UiInfo)>,
+    q_editor_views: Query<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<EditorCamera>>,
   ) {
-    let (editor_view, ui_info) = &*editor_view;
+    for (editor_view, ui_info) in &q_editor_views {
+      if ui_info.rendered() {
+        for mut camera in &mut q_cameras {
+          let scale_factor = window.scale_factor() * egui_settings.scale_factor;
 
-    if ui_info.rendered() {
-      for mut camera in &mut q_cameras {
-        let scale_factor = window.scale_factor() * egui_settings.scale_factor;
+          let viewport = editor_view.viewport();
+          let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
+          let viewport_size = viewport.size() * scale_factor;
 
-        let viewport = editor_view.viewport();
-        let viewport_pos = viewport.left_top().to_vec2() * scale_factor;
-        let viewport_size = viewport.size() * scale_factor;
+          let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
+          let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
 
-        let physical_position = UVec2::new(viewport_pos.x as u32, viewport_pos.y as u32);
-        let physical_size = UVec2::new(viewport_size.x as u32, viewport_size.y as u32);
+          // The desired viewport rectangle at its offset in "physical pixel space"
+          let rect = physical_position + physical_size;
 
-        // The desired viewport rectangle at its offset in "physical pixel space"
-        let rect = physical_position + physical_size;
+          let window_size = window.physical_size();
+          if rect.x <= window_size.x && rect.y <= window_size.y {
+            let depth = camera
+              .viewport
+              .as_ref()
+              .map(|vp| vp.depth.clone())
+              .unwrap_or(0.0..1.0);
 
-        let window_size = window.physical_size();
-        if rect.x <= window_size.x && rect.y <= window_size.y {
-          let depth = camera
-            .viewport
-            .as_ref()
-            .map(|vp| vp.depth.clone())
-            .unwrap_or(0.0..1.0);
-
-          camera.viewport = Some(Viewport {
-            physical_position,
-            physical_size,
-            depth,
-          });
+            camera.viewport = Some(Viewport {
+              physical_position,
+              physical_size,
+              depth,
+            });
+          }
         }
       }
     }

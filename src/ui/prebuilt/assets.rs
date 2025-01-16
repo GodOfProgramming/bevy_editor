@@ -9,6 +9,7 @@ pub struct Assets;
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
   set: ParamSet<'w, 's, (&'w World, ResMut<'w, InspectorSelection>)>,
+  filter: Local<'s, String>,
 }
 
 impl Ui for Assets {
@@ -34,11 +35,9 @@ impl Ui for Assets {
       .iter()
       .filter_map(|registration| {
         let reflect_asset = registration.data::<ReflectAsset>()?;
-        Some((
-          registration.type_info().type_path_table().short_path(),
-          registration.type_id(),
-          reflect_asset,
-        ))
+        let name = registration.type_info().type_path_table().short_path();
+        (params.filter.is_empty() || name.to_lowercase().contains(params.filter.as_str()))
+          .then(|| (name, registration.type_id(), reflect_asset))
       })
       .collect::<Vec<_>>();
 
@@ -46,6 +45,8 @@ impl Ui for Assets {
 
     let mut selection = None;
     let current_selection = world.resource::<InspectorSelection>();
+
+    ui.text_edit_singleline(&mut *params.filter).changed();
 
     for (asset_name, asset_type_id, reflect_asset) in assets {
       let handles = reflect_asset.ids(world).collect::<Vec<_>>();

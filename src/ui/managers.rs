@@ -2,12 +2,17 @@ use super::{
   events::SaveLayoutEvent,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
   prebuilt::{
-    assets::Assets, components, control_panel::ControlPanel, editor_view::EditorView,
-    hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
+    assets::Assets, components, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
+    inspector::Inspector, prefabs::Prefabs, resources::Resources,
   },
-  LayoutState, PersistentId, RawUi, TabViewer, VTable,
+  InspectorSelection, LayoutState, PersistentId, RawUi, TabViewer, VTable,
 };
-use crate::cache::Cache;
+use crate::{
+  cache::Cache,
+  util::WorldExtensions,
+  view::{self, ActiveEditorCamera, EditorCamera},
+  EditorState,
+};
 use bevy::{
   prelude::*,
   utils::{hashbrown::hash_map, HashMap},
@@ -40,7 +45,7 @@ impl Default for UiManager {
     this.register::<MissingUi>();
     this.register::<EditorView>();
     this.register::<Hierarchy>();
-    this.register::<ControlPanel>();
+    this.register::<DebugMenu>();
     this.register::<Inspector>();
     this.register::<Prefabs>();
     this.register::<Resources>();
@@ -153,7 +158,7 @@ impl UiManager {
 
     let tabs = vec![
       self.spawn_type::<Hierarchy>(world),
-      self.spawn_type::<ControlPanel>(world),
+      self.spawn_type::<DebugMenu>(world),
     ];
     let [central_panel, _left_panel] = tree.split_left(root, 1.0 / 6.0, tabs);
 
@@ -188,6 +193,23 @@ impl UiManager {
     });
 
     ui.menu_button("View", |ui| {
+      self.layout_menu(ui, world);
+      self.camera_menu(ui, world);
+    });
+
+    match world.get_state::<EditorState>() {
+      EditorState::Editing => {
+        self.play_button(ui, world);
+      }
+      EditorState::Testing => {
+        self.pause_button(ui, world);
+      }
+      _ => (),
+    }
+  }
+
+  fn layout_menu(&mut self, ui: &mut egui::Ui, world: &mut World) {
+    ui.menu_button("Layouts", |ui| {
       if ui.button("Save Layout").clicked() {
         self.layout_manager.save_name_text.clear();
         self.layout_manager.show_save_layout_modal = true;
@@ -212,6 +234,118 @@ impl UiManager {
         self.layout_manager.show_confirm_reset_modal = true;
       }
     });
+  }
+
+  fn camera_menu(&self, ui: &mut egui::Ui, world: &mut World) {
+    ui.menu_button("Camera", |ui| {
+      if world.get_state::<EditorState>() == EditorState::Editing {
+        self.camera_selector(ui, world);
+
+        let editor_camera_type = world.get_state::<ActiveEditorCamera>();
+        if editor_camera_type == ActiveEditorCamera::Cam3D {
+          self.look_at_origin_button(ui, world);
+        }
+
+        self.entity_commands(ui, world, editor_camera_type);
+      }
+    });
+  }
+
+  fn camera_selector(&self, ui: &mut egui::Ui, world: &mut World) {
+    if ui.button("Use 3D Camera").clicked() {
+      world.set_state(ActiveEditorCamera::Cam3D);
+    }
+
+    if ui.button("Use 2D Camera").clicked() {
+      world.set_state(ActiveEditorCamera::Cam2D);
+    };
+  }
+
+  fn look_at_origin_button(&self, ui: &mut egui::Ui, world: &mut World) {
+    if ui.button("Look At Origin").clicked() {
+      let mut q = world.query_filtered::<&mut Transform, With<EditorCamera>>();
+      for mut cam in q.iter_mut(world) {
+        cam.look_at(Vec3::ZERO, view::UP);
+      }
+    }
+  }
+
+  fn entity_commands(
+    &self,
+    ui: &mut egui::Ui,
+    world: &mut World,
+    editor_camera_type: ActiveEditorCamera,
+  ) {
+    let Some(entity) =
+      world.resource_scope(|_, selection: Mut<InspectorSelection>| match &*selection {
+        InspectorSelection::Entities(selected_entities) => {
+          if selected_entities.len() == 1 {
+            selected_entities.iter().next()
+          } else {
+            None
+          }
+        }
+        _ => None,
+      })
+    else {
+      return;
+    };
+
+    if editor_camera_type == ActiveEditorCamera::Cam2D
+      || editor_camera_type == ActiveEditorCamera::Cam3D
+    {
+      self.move_to_target_button(ui, world, entity);
+
+      if editor_camera_type == ActiveEditorCamera::Cam3D {
+        self.look_at_target_button(ui, world, entity);
+      }
+    }
+  }
+
+  fn move_to_target_button(&self, ui: &mut egui::Ui, world: &mut World, entity: Entity) {
+    if ui.button("Move To Selected").clicked() {
+      'move_block: {
+        let Some(transform) = world.entity(entity).get::<Transform>() else {
+          break 'move_block;
+        };
+
+        let entity_pos = transform.translation;
+
+        let mut q = world.query_filtered::<&mut Transform, With<EditorCamera>>();
+        for mut cam in q.iter_mut(world) {
+          cam.translation = entity_pos;
+        }
+      }
+    }
+  }
+
+  fn look_at_target_button(&self, ui: &mut egui::Ui, world: &mut World, entity: Entity) {
+    if ui.button("Look At Selected").clicked() {
+      'look_block: {
+        let Some(transform) = world.entity(entity).get::<Transform>() else {
+          break 'look_block;
+        };
+
+        let entity_pos = transform.translation;
+
+        let mut q = world.query_filtered::<&mut Transform, With<EditorCamera>>();
+        for mut cam_transform in q.iter_mut(world) {
+          cam_transform.look_at(entity_pos, view::UP);
+        }
+      }
+    }
+  }
+
+  fn play_button(&self, ui: &mut egui::Ui, world: &mut World) {
+    if ui.button("▶").clicked() {
+      world.set_state(EditorState::Testing);
+    }
+  }
+
+  fn pause_button(&self, ui: &mut egui::Ui, world: &mut World) {
+    if ui.button("⏸").clicked() {
+      world.set_state(EditorState::Editing);
+    }
   }
 
   fn modal_ui(&mut self, ctx: &egui::Context, world: &mut World) {

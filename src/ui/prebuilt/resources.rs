@@ -12,6 +12,8 @@ pub struct Params<'w, 's> {
   type_registry: Res<'w, AppTypeRegistry>,
   selection: ResMut<'w, InspectorSelection>,
 
+  filter: Local<'s, String>,
+
   #[system_param(ignore)]
   _pd: PhantomData<&'s ()>,
 }
@@ -36,14 +38,15 @@ impl Ui for Resources {
     let mut resources: Vec<_> = type_registry
       .iter()
       .filter(|registration| registration.data::<ReflectResource>().is_some())
-      .map(|registration| {
-        (
-          registration.type_info().type_path_table().short_path(),
-          registration.type_id(),
-        )
+      .filter_map(|registration| {
+        let name = registration.type_info().type_path_table().short_path();
+        (params.filter.is_empty() || name.to_lowercase().contains(params.filter.as_str()))
+          .then(|| (name, registration.type_id()))
       })
       .collect();
     resources.sort_by(|(name_a, _), (name_b, _)| name_a.cmp(name_b));
+
+    ui.text_edit_singleline(&mut *params.filter).changed();
 
     for (resource_name, type_id) in resources {
       let selected = match *params.selection {

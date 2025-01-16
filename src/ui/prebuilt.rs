@@ -1,6 +1,6 @@
 pub mod assets;
 pub mod components;
-pub mod control_panel;
+pub mod debug;
 pub mod editor_view;
 pub mod game_view;
 pub mod hierarchy;

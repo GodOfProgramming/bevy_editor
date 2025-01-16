@@ -16,6 +16,9 @@ pub use uuid;
 use assets::{Prefab, PrefabPlugin, PrefabRegistrar, Prefabs, StaticPrefab};
 use bevy::{
   color::palettes::tailwind::{PINK_100, RED_500},
+  diagnostic::{
+    EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin, SystemInformationDiagnosticsPlugin,
+  },
   log::{LogPlugin, DEFAULT_FILTER},
   picking::pointer::PointerInteraction,
   prelude::*,
@@ -256,6 +259,9 @@ impl Editor {
         DefaultInspectorConfigPlugin,
         InputPlugin,
         UiPlugin(Mutex::new(RefCell::new(Some(layout)))),
+        FrameTimeDiagnosticsPlugin,
+        EntityCountDiagnosticsPlugin,
+        SystemInformationDiagnosticsPlugin,
       ))
       .insert_resource(cache)
       .insert_resource(scene_type_registry)

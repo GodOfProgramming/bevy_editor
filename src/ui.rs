@@ -21,7 +21,7 @@ use managers::UiManager;
 use misc::{MissingUi, UiExtensions, UiInfo};
 use parking_lot::Mutex;
 use prebuilt::{
-  assets::Assets, control_panel::ControlPanel, editor_view::EditorView, hierarchy::Hierarchy,
+  assets::Assets, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
   inspector::Inspector, prefabs::Prefabs, resources::Resources,
 };
 use serde::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ impl Plugin for UiPlugin {
       .register_type::<MissingUi>()
       .register_type::<EditorView>()
       .register_type::<Hierarchy>()
-      .register_type::<ControlPanel>()
+      .register_type::<DebugMenu>()
       .register_type::<Inspector>()
       .register_type::<Prefabs>()
       .register_type::<Resources>()

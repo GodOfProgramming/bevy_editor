@@ -21,6 +21,7 @@ egui-file-dialog = "0.7"
 egui_dock = { version = "0.14.0", features = ["serde"] }
 itertools = "0.14.0"
 leafwing-input-manager = "0.16.0"
+nucleo = "0.5.0"
 parking_lot = "0.12.3"
 platform-dirs = "0.3.0"
 profiling = "1.0.16"

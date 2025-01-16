@@ -71,7 +71,7 @@ where
 pub trait WorldExtensions {
   fn primary_window_mut(&mut self) -> Mut<Window>;
 
-  fn get_state<T>(&mut self) -> T
+  fn get_state<T>(&self) -> T
   where
     T: FreelyMutableState + Copy;
 
@@ -86,7 +86,7 @@ impl WorldExtensions for World {
     q_window.single_mut(self)
   }
 
-  fn get_state<T>(&mut self) -> T
+  fn get_state<T>(&self) -> T
   where
     T: FreelyMutableState + Copy,
   {

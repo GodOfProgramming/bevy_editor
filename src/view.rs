@@ -1,6 +1,8 @@
 pub mod view2d;
 pub mod view3d;
 
+use std::f32::consts::FRAC_PI_2;
+
 use crate::{
   cache::{Cache, Saveable},
   ui::{
@@ -161,7 +163,10 @@ where
 {
   app
     .register_type::<GameView<C>>()
-    .add_systems(PostStartup, disable_camera::<C>)
+    .add_systems(
+      PostStartup,
+      (spawn_physical_camera::<C>, disable_camera::<C>),
+    )
     .add_systems(
       Update,
       (
@@ -169,6 +174,49 @@ where
         render_3d_cameras::<C>.in_set(View3d),
       ),
     );
+}
+
+fn spawn_physical_camera<C: Component>(
+  mut commands: Commands,
+  mut meshes: ResMut<Assets<Mesh>>,
+  mut materials: ResMut<Assets<StandardMaterial>>,
+  q_game_cameras: Query<Entity, With<C>>,
+) {
+  for entity in &q_game_cameras {
+    let camera_base_mesh_id = commands
+      .spawn((
+        Name::new("Camera Body"),
+        Mesh3d(meshes.add(Cuboid::new(0.4, 0.5, 1.0))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(128, 128, 128))),
+      ))
+      .id();
+
+    let camera_reel1_mesh_id = commands
+      .spawn((
+        Name::new("Camera Reel Top"),
+        Mesh3d(meshes.add(Cylinder::new(0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(128, 128, 128))),
+        Transform::from_translation(Vec3::new(0.0, 0.4, 0.0))
+          .with_rotation(Quat::from_rotation_z(FRAC_PI_2)),
+      ))
+      .id();
+
+    let camera_reel2_mesh_id = commands
+      .spawn((
+        Name::new("Camera Reel Back"),
+        Mesh3d(meshes.add(Cylinder::new(0.2, 0.2))),
+        MeshMaterial3d(materials.add(Color::srgb_u8(128, 128, 128))),
+        Transform::from_translation(Vec3::new(0.0, 0.3, 0.5))
+          .with_rotation(Quat::from_rotation_z(FRAC_PI_2)),
+      ))
+      .id();
+
+    commands.entity(entity).add_children(&[
+      camera_base_mesh_id,
+      camera_reel1_mesh_id,
+      camera_reel2_mesh_id,
+    ]);
+  }
 }
 
 #[allow(clippy::type_complexity)]
@@ -204,8 +252,6 @@ fn render_3d_cameras<C: Component>(
 }
 
 fn show_camera(transform: Transform, scaler: f32, gizmos: &mut Gizmos) {
-  gizmos.cuboid(transform, GAME_CAMERA_COLOR);
-
   let forward = transform.forward().as_vec3();
 
   let rect_pos = transform.translation + forward;

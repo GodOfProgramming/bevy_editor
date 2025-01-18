@@ -33,9 +33,7 @@ impl Plugin for EditorViewPlugin {
       .configure_sets(
         Update,
         (
-          CameraInput::Keyboard
-            .run_if(CameraInput::ui_not_focused)
-            .in_set(Editing),
+          CameraInput::Keyboard.in_set(Editing),
           CameraInput::Mouse
             .run_if(CameraInput::mouse_hovered)
             .in_set(Editing),
@@ -127,12 +125,6 @@ enum CameraInput {
 }
 
 impl CameraInput {
-  fn ui_not_focused(q_egui: Query<&bevy_egui::EguiContext>) -> bool {
-    !q_egui
-      .iter()
-      .any(|ctx| ctx.get().memory(|mem| mem.focused().is_some()))
-  }
-
   fn mouse_hovered(q_editor_view_ui_info: Query<&UiInfo, With<EditorView>>) -> bool {
     q_editor_view_ui_info.iter().any(UiInfo::hovered)
   }

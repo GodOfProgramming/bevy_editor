@@ -8,7 +8,7 @@ rust-version = "1.83.0"
 
 # exports
 uuid = { version = "1.11", features = ["serde"] }
-bevy_egui = { version = "0.31", features = ["immutable_ctx"] }
+bevy_egui = { version = "0.31.1", features = ["immutable_ctx"] }
 serde = { version = "1.0", features = ["derive"] }
 
 # internal
@@ -20,7 +20,7 @@ derive_more = { version = "1.0.0", features = ["full"] }
 egui-file-dialog = "0.7"
 egui_dock = { version = "0.14.0", features = ["serde"] }
 itertools = "0.14.0"
-leafwing-input-manager = "0.16.0"
+leafwing-input-manager = { version = "0.16.0", features = ["egui"] }
 nucleo = "0.5.0"
 parking_lot = "0.12.3"
 platform-dirs = "0.3.0"

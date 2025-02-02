@@ -3145,6 +3145,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c89e71d2afcb4afae71f5f064fe709d15a379bb6b42397ef4d89cb9d5bd0f5bf"
 dependencies = [
  "bevy",
+ "bevy_egui",
  "derive_more 0.99.18",
  "dyn-clone",
  "dyn-eq",

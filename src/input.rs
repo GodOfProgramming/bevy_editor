@@ -2,7 +2,7 @@ use crate::EditorState;
 use bevy::prelude::*;
 use leafwing_input_manager::{
   plugin::InputManagerPlugin,
-  prelude::{ActionState, Buttonlike, InputMap, MouseScrollAxis},
+  prelude::{ActionState, InputMap, MouseScrollAxis},
   Actionlike, InputManagerBundle,
 };
 
@@ -44,7 +44,6 @@ impl Plugin for InputPlugin {
   fn build(&self, app: &mut App) {
     app
       .add_plugins(InputManagerPlugin::<EditorActions>::default())
-      .register_type::<Box<dyn Buttonlike>>()
       .add_systems(Startup, Self::init_input);
   }
 }

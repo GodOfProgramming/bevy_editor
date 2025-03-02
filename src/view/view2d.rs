@@ -116,7 +116,7 @@ pub fn movement_system(
   time: Res<Time>,
 ) {
   for action_state in &q_action_states {
-    let (cam_settings, ref mut cam_transform) = &mut *q_cam;
+    let (cam_settings, cam_transform) = &mut *q_cam;
 
     let mut movement = Vec3::ZERO;
 
@@ -186,7 +186,7 @@ pub fn pan_system(
     return;
   }
 
-  let (cam_settings, ref mut cam_transform, cam_g_transform, ref mut cam_state, cam) = &mut *q_cam;
+  let (cam_settings, cam_transform, cam_g_transform, cam_state, cam) = &mut *q_cam;
 
   let pan_motion = mouse_motion
     .read()

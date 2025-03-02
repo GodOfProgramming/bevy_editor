@@ -5,7 +5,7 @@ use bevy_inspector_egui::bevy_inspector::{
   by_type_id::{ui_for_asset, ui_for_resource},
   ui_for_entities_shared_components, ui_for_entity_with_children,
 };
-use uuid::{uuid, Uuid};
+use uuid::{Uuid, uuid};
 
 #[derive(Default, Component, Reflect)]
 pub struct Inspector;
@@ -32,11 +32,11 @@ impl RawUi for Inspector {
           &[entity] => ui_for_entity_with_children(world, entity, ui),
           entities => ui_for_entities_shared_components(world, entities, ui),
         },
-        InspectorSelection::Resource(type_id, ref name) => {
+        InspectorSelection::Resource(type_id, name) => {
           ui.label(name);
           ui_for_resource(world, *type_id, ui, name, &type_registry)
         }
-        InspectorSelection::Asset(type_id, ref name, handle) => {
+        InspectorSelection::Asset(type_id, name, handle) => {
           ui.label(name);
           ui_for_asset(world, *type_id, *handle, ui, &type_registry);
         }

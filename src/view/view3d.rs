@@ -119,7 +119,7 @@ pub fn movement_system(
   time: Res<Time>,
 ) {
   for action_state in &q_action_states {
-    let (cam_settings, ref mut cam_transform) = &mut *q_cam;
+    let (cam_settings, cam_transform) = &mut *q_cam;
 
     let forward = cam_transform.forward().as_vec3();
     let mut movement = Vec3::ZERO;
@@ -163,7 +163,7 @@ pub fn orbit_system(
     return;
   }
 
-  let (settings, ref mut transform) = &mut *q_cam;
+  let (settings, transform) = &mut *q_cam;
 
   let orbit = mouse_motion
     .read()
@@ -191,7 +191,7 @@ pub fn pan_system(
     return;
   }
 
-  let (cam_settings, ref mut cam_transform) = &mut *q_cam;
+  let (cam_settings, cam_transform) = &mut *q_cam;
 
   let pan = mouse_motion
     .read()

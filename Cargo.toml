@@ -14,7 +14,7 @@ serde = { version = "1.0", features = ["derive"] }
 
 # internal
 async-std = "1.13.0"
-bevy = { version = "0.15.1", features = ["default", "serialize"] }
+bevy = { version = "0.15.3", features = ["default", "serialize"] }
 bevy-inspector-egui = "0.28.1"
 derive-new = "0.7.0"
 derive_more = { version = "1.0.0", features = ["full"] }

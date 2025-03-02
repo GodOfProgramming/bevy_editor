@@ -66,11 +66,11 @@ impl SaveEvent {
             let asset_handle = ref_handle
               .downcast_handle_untyped(dyn_ref.as_any())
               .unwrap();
-            if let Some(path) = asset_handle.path() {
+            match asset_handle.path() { Some(path) => {
               info!("asset path => {:?}", path);
-            } else {
+            } _ => {
               continue;
-            }
+            }}
           } else {
             ref_comp.copy(
               world,

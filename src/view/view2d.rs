@@ -152,7 +152,7 @@ pub fn zoom_system(
   mut q_cam: Query<(&CameraSettings, &mut Projection), With<EditorCamera2d>>,
   time: Res<Time>,
 ) {
-  let Ok((cam_settings, mut projection)) = q_cam.get_single_mut() else {
+  let Ok((cam_settings, mut projection)) = q_cam.single_mut() else {
     return;
   };
 

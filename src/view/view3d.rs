@@ -229,6 +229,7 @@ pub fn zoom_system(
       Projection::Orthographic(orthographic_projection) => {
         orthographic_projection.scale *= zoom;
       }
+      _ => (),
     }
   }
 }

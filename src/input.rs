@@ -1,9 +1,9 @@
 use crate::EditorState;
 use bevy::prelude::*;
 use leafwing_input_manager::{
+  Actionlike, InputManagerBundle,
   plugin::InputManagerPlugin,
   prelude::{ActionState, InputMap, MouseScrollAxis},
-  Actionlike, InputManagerBundle,
 };
 
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]

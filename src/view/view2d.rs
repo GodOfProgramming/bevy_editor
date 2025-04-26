@@ -37,10 +37,10 @@ pub fn enable(
     orthographic_scale,
   } = cache.get().unwrap_or_default();
 
-  let mut projection = OrthographicProjection::default_2d();
+  let mut ortho = OrthographicProjection::default_2d();
 
   if let Some(scale) = orthographic_scale {
-    projection.scale = scale;
+    ortho.scale = scale;
   }
 
   commands.spawn((
@@ -49,7 +49,7 @@ pub fn enable(
     CameraState::default(),
     settings,
     transform,
-    projection,
+    Projection::Orthographic(ortho),
     Camera {
       order: isize::MIN,
       ..default()

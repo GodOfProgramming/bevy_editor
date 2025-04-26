@@ -5,7 +5,10 @@ pub mod prebuilt;
 
 use crate::cache::{Cache, Saveable};
 use bevy::{
-  asset::UntypedAssetId, ecs::system::SystemParam, platform::collections::HashMap, prelude::*,
+  asset::UntypedAssetId,
+  ecs::{component::Mutable, system::SystemParam},
+  platform::collections::HashMap,
+  prelude::*,
   reflect::GetTypeRegistration,
 };
 use bevy_egui::{
@@ -275,7 +278,7 @@ pub trait Ui: RawUi {
 
 impl<T> RawUi for T
 where
-  T: Ui + 'static,
+  T: Component<Mutability = Mutable> + Ui + 'static,
 {
   const NAME: &str = <Self as Ui>::NAME;
   const ID: Uuid = <T as Ui>::ID;

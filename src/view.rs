@@ -166,15 +166,13 @@ where
 #[allow(clippy::type_complexity)]
 fn render_2d_cameras<C: Component>(
   mut gizmos: Gizmos,
-  q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
+  q_cam: Query<(&Transform, &Projection), (With<Camera2d>, With<C>)>,
 ) {
   for (transform, projection) in &q_cam {
-    let rect_pos = transform.translation;
-    gizmos.rect(
-      rect_pos,
-      projection.area.max - projection.area.min,
-      GAME_CAMERA_COLOR,
-    );
+    if let Projection::Orthographic(ortho) = projection {
+      let rect_pos = transform.translation;
+      gizmos.rect(rect_pos, ortho.area.max - ortho.area.min, GAME_CAMERA_COLOR);
+    }
   }
 }
 
@@ -191,6 +189,7 @@ fn render_3d_cameras<C: Component>(
       Projection::Orthographic(orthographic) => {
         show_camera(*transform, orthographic.scale, &mut gizmos);
       }
+      _ => (),
     }
   }
 }

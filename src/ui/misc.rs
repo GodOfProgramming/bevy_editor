@@ -1,18 +1,15 @@
 use super::{PersistentId, RawUi, Ui, VTable};
 use bevy::{
   ecs::{
-    component::{ComponentMutability, Mutable},
-    query::QueryData,
+    component::Mutable,
     system::{SystemParam, SystemState},
   },
   platform::collections::HashMap,
   prelude::*,
 };
 use bevy_egui::egui::{self, text::LayoutJob};
-use bevy_inspector_egui::egui_utils::easymark::parser::Item;
 use derive_more::derive::Deref;
 use egui_dock::DockState;
-use nucleo::Item;
 use uuid::{Uuid, uuid};
 
 #[derive(SystemParam)]
@@ -69,7 +66,10 @@ pub unsafe trait UiExtensions: Ui {
     entity: Entity,
     world: &mut World,
     f: impl FnOnce(&mut Self, Self::Params<'_, '_>) -> T,
-  ) -> T {
+  ) -> T
+  where
+    Self: Component<Mutability = Mutable>,
+  {
     let mut q = world.query::<(&mut Self, &mut UiParams<Self>)>();
     let world_cell = world.as_unsafe_world_cell();
     let (mut this, mut params) = q

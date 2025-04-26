@@ -235,7 +235,7 @@ impl Editor {
 
   fn on_app_exit(cache: ResMut<Cache>, mut app_exit: EventWriter<AppExit>) {
     cache.save();
-    app_exit.send(AppExit::Success);
+    app_exit.write(AppExit::Success);
   }
 
   pub fn launch(self) -> AppExit {

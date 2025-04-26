@@ -1,13 +1,19 @@
 use super::{PersistentId, RawUi, Ui, VTable};
 use bevy::{
-  ecs::system::{SystemParam, SystemState},
+  ecs::{
+    component::{ComponentMutability, Mutable},
+    query::QueryData,
+    system::{SystemParam, SystemState},
+  },
+  platform::collections::HashMap,
   prelude::*,
-  utils::HashMap,
 };
 use bevy_egui::egui::{self, text::LayoutJob};
+use bevy_inspector_egui::egui_utils::easymark::parser::Item;
 use derive_more::derive::Deref;
 use egui_dock::DockState;
-use uuid::{uuid, Uuid};
+use nucleo::Item;
+use uuid::{Uuid, uuid};
 
 #[derive(SystemParam)]
 pub struct NoParams;

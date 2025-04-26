@@ -1,9 +1,9 @@
 use bevy::{
-  asset::{io::Reader, AssetLoader, LoadContext, LoadedFolder},
+  asset::{AssetLoader, LoadContext, LoadedFolder, io::Reader},
   ecs::system::{SystemParam, SystemState},
+  platform::collections::HashMap,
   prelude::*,
   reflect::GetTypeRegistration,
-  utils::hashbrown::HashMap,
 };
 use serde::Deserialize;
 use std::marker::PhantomData;
@@ -58,7 +58,7 @@ where
         let folders = loaded_folders.get(folder.handle()).unwrap();
         for handle in folders.handles.iter() {
           let id = handle.id().typed_unchecked::<T::Descriptor>();
-          event_writer.send(PrefabLoadedEvent::<T>::new(id));
+          event_writer.write(PrefabLoadedEvent::<T>::new(id));
         }
       }
     }

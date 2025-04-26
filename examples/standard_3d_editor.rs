@@ -1,5 +1,5 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
-use bevy_editor::{assets::StaticPrefab, Editor};
+use bevy_editor::{Editor, assets::StaticPrefab};
 
 fn main() {
   let mut editor = Editor::default();

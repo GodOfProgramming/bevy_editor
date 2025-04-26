@@ -2,12 +2,12 @@ pub mod view2d;
 pub mod view3d;
 
 use crate::{
+  Editing,
   cache::{Cache, Saveable},
   ui::{
     misc::UiInfo,
     prebuilt::{editor_view::EditorView, game_view::GameView},
   },
-  Editing,
 };
 use bevy::{color::palettes::tailwind, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -99,7 +99,7 @@ impl Plugin for EditorViewPlugin {
 }
 
 #[derive(Default, Component, Reflect)]
-#[require(RayCastPickable)]
+#[require(MeshPickingCamera)]
 pub struct EditorCamera;
 
 impl EditorCamera {}

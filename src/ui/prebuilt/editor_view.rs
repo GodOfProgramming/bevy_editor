@@ -1,5 +1,5 @@
 use crate::{
-  ui::{misc::UiInfo, Ui},
+  ui::{Ui, misc::UiInfo},
   view::EditorCamera,
 };
 use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
@@ -21,7 +21,7 @@ impl EditorView {
 
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
-    egui_settings: Single<&bevy_egui::EguiSettings>,
+    egui_settings: Single<&bevy_egui::EguiContextSettings>,
     q_editor_views: Query<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<EditorCamera>>,
   ) {

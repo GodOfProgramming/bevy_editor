@@ -37,10 +37,10 @@ pub fn enable(
     orthographic_scale,
   } = cache.get().unwrap_or_default();
 
-  let mut projection = OrthographicProjection::default_2d();
+  let mut ortho = OrthographicProjection::default_2d();
 
   if let Some(scale) = orthographic_scale {
-    projection.scale = scale;
+    ortho.scale = scale;
   }
 
   commands.spawn((
@@ -49,7 +49,7 @@ pub fn enable(
     CameraState::default(),
     settings,
     transform,
-    projection,
+    Projection::Orthographic(ortho),
     Camera {
       order: isize::MIN,
       ..default()
@@ -59,14 +59,16 @@ pub fn enable(
 
 pub fn save_settings(
   mut cache: ResMut<Cache>,
-  q_cam: Query<(&Transform, &CameraSettings, &OrthographicProjection), With<EditorCamera2d>>,
+  q_cam: Query<(&Transform, &CameraSettings, &Projection), With<EditorCamera2d>>,
 ) {
-  for (cam_transform, cam_settings, cam_ortho) in &q_cam {
-    cache.store(&CameraSaveData {
-      settings: cam_settings.clone(),
-      transform: *cam_transform,
-      orthographic_scale: Some(cam_ortho.scale),
-    });
+  for (cam_transform, cam_settings, cam_proj) in &q_cam {
+    if let Projection::Orthographic(cam_ortho) = &cam_proj {
+      cache.store(&CameraSaveData {
+        settings: cam_settings.clone(),
+        transform: *cam_transform,
+        orthographic_scale: Some(cam_ortho.scale),
+      });
+    }
   }
 }
 
@@ -147,10 +149,14 @@ pub fn movement_system(
 
 pub fn zoom_system(
   q_action_states: Query<&ActionState<EditorActions>>,
-  mut q_cam: Query<(&CameraSettings, &mut OrthographicProjection), With<EditorCamera2d>>,
+  mut q_cam: Query<(&CameraSettings, &mut Projection), With<EditorCamera2d>>,
   time: Res<Time>,
 ) {
-  let Ok((cam_settings, mut projection)) = q_cam.get_single_mut() else {
+  let Ok((cam_settings, mut projection)) = q_cam.single_mut() else {
+    return;
+  };
+
+  let Projection::Orthographic(projection) = &mut *projection else {
     return;
   };
 

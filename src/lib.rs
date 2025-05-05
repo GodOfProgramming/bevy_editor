@@ -19,7 +19,7 @@ use bevy::{
   diagnostic::{
     EntityCountDiagnosticsPlugin, FrameTimeDiagnosticsPlugin, SystemInformationDiagnosticsPlugin,
   },
-  log::{LogPlugin, DEFAULT_FILTER},
+  log::{DEFAULT_FILTER, LogPlugin},
   picking::pointer::PointerInteraction,
   prelude::*,
   reflect::GetTypeRegistration,
@@ -32,7 +32,7 @@ use input::InputPlugin;
 use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
 use std::cell::RefCell;
-use ui::{managers::UiManager, prebuilt::game_view::GameView, UiPlugin};
+use ui::{UiPlugin, managers::UiManager, prebuilt::game_view::GameView};
 use view::EditorViewPlugin;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States)]
@@ -155,12 +155,10 @@ impl Editor {
 
   fn remove_picking_from_targets(
     mut commands: Commands,
-    q_targets: Query<Entity, (With<RayCastPickable>, Without<Camera>)>,
+    q_targets: Query<Entity, (With<Pickable>, Without<Camera>)>,
   ) {
     for target in q_targets.iter() {
-      commands
-        .entity(target)
-        .remove::<(RayCastPickable, PickingBehavior)>();
+      commands.entity(target).remove::<Pickable>();
     }
   }
 
@@ -180,20 +178,17 @@ impl Editor {
     q_entities: Query<
       Entity,
       (
-        Without<RayCastPickable>,
+        Without<Pickable>,
         Or<(With<Sprite>, With<Mesh2d>, With<Mesh3d>)>,
       ),
     >,
   ) {
     for entity in &q_entities {
       debug!("Registered Picking: {}", entity);
-      commands.entity(entity).insert((
-        RayCastPickable,
-        PickingBehavior {
-          is_hoverable: true,
-          should_block_lower: true,
-        },
-      ));
+      commands.entity(entity).insert(Pickable {
+        is_hoverable: true,
+        should_block_lower: true,
+      });
     }
   }
 
@@ -201,7 +196,7 @@ impl Editor {
     mut selection: ResMut<ui::InspectorSelection>,
     mut click_events: EventReader<Pointer<Click>>,
     mut q_egui: Single<&mut EguiContext>,
-    q_raycast_pickables: Query<&RayCastPickable>,
+    q_raycast_pickables: Query<&Pickable>,
   ) {
     let egui_context = q_egui.get_mut();
     let modifiers = egui_context.input(|i| i.modifiers);
@@ -240,7 +235,7 @@ impl Editor {
 
   fn on_app_exit(cache: ResMut<Cache>, mut app_exit: EventWriter<AppExit>) {
     cache.save();
-    app_exit.send(AppExit::Success);
+    app_exit.write(AppExit::Success);
   }
 
   pub fn launch(self) -> AppExit {
@@ -259,7 +254,7 @@ impl Editor {
         DefaultInspectorConfigPlugin,
         InputPlugin,
         UiPlugin(Mutex::new(RefCell::new(Some(layout)))),
-        FrameTimeDiagnosticsPlugin,
+        FrameTimeDiagnosticsPlugin::default(),
         EntityCountDiagnosticsPlugin,
         SystemInformationDiagnosticsPlugin,
       ))

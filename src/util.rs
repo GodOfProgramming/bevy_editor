@@ -4,18 +4,18 @@ use std::{
 };
 
 use bevy::{
-  log::Level,
   log::{
-    tracing_subscriber::{self, reload, Layer},
-    BoxedLayer,
+    BoxedLayer, Level,
+    tracing_subscriber::{self, Layer, reload},
   },
+  platform::collections::HashMap,
   prelude::*,
   reflect::GetTypeRegistration,
   state::state::FreelyMutableState,
-  utils::{tracing::level_filters::LevelFilter, HashMap},
   window::{CursorGrabMode, PrimaryWindow},
   winit::cursor::CursorIcon,
 };
+use profiling::tracing::level_filters::LevelFilter;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::cache::{Cache, Saveable};
@@ -83,7 +83,7 @@ pub trait WorldExtensions {
 impl WorldExtensions for World {
   fn primary_window_mut(&mut self) -> Mut<Window> {
     let mut q_window = self.query_filtered::<&mut Window, With<PrimaryWindow>>();
-    q_window.single_mut(self)
+    q_window.single_mut(self).unwrap() // TODO leverage the result
   }
 
   fn get_state<T>(&self) -> T

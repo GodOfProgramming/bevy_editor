@@ -1,21 +1,21 @@
 use super::{
+  InspectorSelection, LayoutState, PersistentId, RawUi, TabViewer, VTable,
   events::SaveLayoutEvent,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
   prebuilt::{
     assets::Assets, components, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
     inspector::Inspector, prefabs::Prefabs, resources::Resources,
   },
-  InspectorSelection, LayoutState, PersistentId, RawUi, TabViewer, VTable,
 };
 use crate::{
+  EditorState,
   cache::Cache,
   util::WorldExtensions,
   view::{self, ActiveEditorCamera, EditorCamera},
-  EditorState,
 };
 use bevy::{
+  platform::collections::{HashMap, hash_map},
   prelude::*,
-  utils::{hashbrown::hash_map, HashMap},
 };
 use bevy_egui::egui::{self, TextBuffer};
 use egui_dock::{DockArea, DockState, NodeIndex, Surface, SurfaceIndex};
@@ -79,7 +79,7 @@ impl UiManager {
   pub fn render(&mut self, world: &mut World) {
     let Ok(ctx) = world
       .query::<&mut bevy_egui::EguiContext>()
-      .get_single_mut(world)
+      .single(world)
       .map(|ctx| ctx.get().clone())
     else {
       return;
@@ -187,7 +187,9 @@ impl UiManager {
     ui.menu_button("Tools", |ui| {
       if ui.button("Generate UUID").clicked() {
         ui.output_mut(|output| {
-          output.copied_text = Uuid::new_v4().to_string();
+          output
+            .commands
+            .push(egui::OutputCommand::CopyText(Uuid::new_v4().to_string()));
         });
       }
     });

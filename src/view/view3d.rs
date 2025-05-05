@@ -66,7 +66,7 @@ pub(super) fn mouse_input_actions(
     let pan_active = action_state.just_pressed(&EditorActions::PanCamera);
 
     if orbit_active || pan_active {
-      let Ok(mut window) = windows.get_single_mut() else {
+      let Ok(mut window) = windows.single_mut() else {
         return;
       };
 
@@ -96,7 +96,7 @@ pub(super) fn released_mouse_input_actions(
     if (orbit_inactive && action_state.released(&EditorActions::PanCamera))
       || (pan_inactive && action_state.released(&EditorActions::OrbitCamera))
     {
-      let Ok(mut window) = windows.get_single_mut() else {
+      let Ok(mut window) = windows.single_mut() else {
         return;
       };
 
@@ -212,7 +212,7 @@ pub fn zoom_system(
   mut q_cam: Query<(&CameraSettings, &mut Projection), With<EditorCamera3d>>,
   time: Res<Time>,
 ) {
-  let Ok((cam_settings, mut projection)) = q_cam.get_single_mut() else {
+  let Ok((cam_settings, mut projection)) = q_cam.single_mut() else {
     return;
   };
 
@@ -229,6 +229,7 @@ pub fn zoom_system(
       Projection::Orthographic(orthographic_projection) => {
         orthographic_projection.scale *= zoom;
       }
+      _ => (),
     }
   }
 }

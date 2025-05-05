@@ -14,7 +14,6 @@ pub struct Params<'w, 's> {
 
   filter: Local<'s, String>,
 
-  #[system_param(ignore)]
   _pd: PhantomData<&'s ()>,
 }
 

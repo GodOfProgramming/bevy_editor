@@ -1,4 +1,4 @@
-use crate::ui::{misc::UiInfo, Ui};
+use crate::ui::{Ui, misc::UiInfo};
 use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::egui;
 use std::marker::PhantomData;
@@ -47,7 +47,7 @@ where
 
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
-    egui_settings: Single<&bevy_egui::EguiSettings>,
+    egui_settings: Single<&bevy_egui::EguiContextSettings>,
     q_game_views: Query<(&Self, &UiInfo)>,
     mut q_cameras: Query<&mut Camera, With<C>>,
   ) {

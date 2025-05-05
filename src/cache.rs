@@ -1,5 +1,5 @@
 use crate::util::sorted_keys;
-use bevy::{prelude::*, utils::HashMap};
+use bevy::{platform::collections::HashMap, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 

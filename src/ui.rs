@@ -5,12 +5,15 @@ pub mod prebuilt;
 
 use crate::cache::{Cache, Saveable};
 use bevy::{
-  asset::UntypedAssetId, ecs::system::SystemParam, prelude::*, reflect::GetTypeRegistration,
-  utils::HashMap,
+  asset::UntypedAssetId,
+  ecs::{component::Mutable, system::SystemParam},
+  platform::collections::HashMap,
+  prelude::*,
+  reflect::GetTypeRegistration,
 };
 use bevy_egui::{
-  egui::{self},
   EguiPlugin,
+  egui::{self},
 };
 use bevy_inspector_egui::bevy_inspector;
 use derive_more::derive::From;
@@ -51,7 +54,9 @@ impl Plugin for UiPlugin {
       .add_event::<RemoveUiEvent>()
       .add_event::<SaveLayoutEvent>()
       .init_resource::<InspectorSelection>()
-      .add_plugins(EguiPlugin)
+      .add_plugins(EguiPlugin {
+        enable_multipass_for_primary_context: false,
+      })
       .add_systems(Startup, Self::init_resources)
       .add_systems(
         Update,
@@ -273,7 +278,7 @@ pub trait Ui: RawUi {
 
 impl<T> RawUi for T
 where
-  T: Ui + 'static,
+  T: Component<Mutability = Mutable> + Ui + 'static,
 {
   const NAME: &str = <Self as Ui>::NAME;
   const ID: Uuid = <T as Ui>::ID;
@@ -412,7 +417,7 @@ impl VTable {
 
   fn despawn<T: RawUi>(entity: Entity, world: &mut World) {
     info!("Despawning UI component {}", T::NAME);
-    T::on_despawn(entity, world);
+    <T as RawUi>::on_despawn(entity, world);
     world.send_event(RemoveUiEvent::new(entity));
   }
 

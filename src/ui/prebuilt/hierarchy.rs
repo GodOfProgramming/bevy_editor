@@ -2,7 +2,7 @@ use crate::ui::{InspectorSelection, RawUi, SelectedEntities};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::hierarchy::hierarchy_ui;
-use uuid::{uuid, Uuid};
+use uuid::{Uuid, uuid};
 
 #[derive(Default, Component, Reflect)]
 pub struct Hierarchy;

@@ -2,12 +2,12 @@ pub mod view2d;
 pub mod view3d;
 
 use crate::{
+  Editing,
   cache::{Cache, Saveable},
   ui::{
     misc::UiInfo,
     prebuilt::{editor_view::EditorView, game_view::GameView},
   },
-  Editing,
 };
 use bevy::{color::palettes::tailwind, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -99,7 +99,7 @@ impl Plugin for EditorViewPlugin {
 }
 
 #[derive(Default, Component, Reflect)]
-#[require(RayCastPickable)]
+#[require(MeshPickingCamera)]
 pub struct EditorCamera;
 
 impl EditorCamera {}
@@ -166,15 +166,13 @@ where
 #[allow(clippy::type_complexity)]
 fn render_2d_cameras<C: Component>(
   mut gizmos: Gizmos,
-  q_cam: Query<(&Transform, &OrthographicProjection), (With<Camera2d>, With<C>)>,
+  q_cam: Query<(&Transform, &Projection), (With<Camera2d>, With<C>)>,
 ) {
   for (transform, projection) in &q_cam {
-    let rect_pos = transform.translation;
-    gizmos.rect(
-      rect_pos,
-      projection.area.max - projection.area.min,
-      GAME_CAMERA_COLOR,
-    );
+    if let Projection::Orthographic(ortho) = projection {
+      let rect_pos = transform.translation;
+      gizmos.rect(rect_pos, ortho.area.max - ortho.area.min, GAME_CAMERA_COLOR);
+    }
   }
 }
 
@@ -191,6 +189,7 @@ fn render_3d_cameras<C: Component>(
       Projection::Orthographic(orthographic) => {
         show_camera(*transform, orthographic.scale, &mut gizmos);
       }
+      _ => (),
     }
   }
 }

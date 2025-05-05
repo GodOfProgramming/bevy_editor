@@ -1,9 +1,9 @@
 use super::{
-  InspectorSelection, LayoutState, PersistentId, RawUi, TabViewer, VTable,
+  InspectorSelection, LayoutState, PersistentId, RawUi, TabViewer, VTable, components,
   events::SaveLayoutEvent,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
   prebuilt::{
-    assets::Assets, components, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
+    assets::Assets, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
     inspector::Inspector, prefabs::Prefabs, resources::Resources,
   },
 };

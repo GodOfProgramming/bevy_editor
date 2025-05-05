@@ -1,6 +1,7 @@
 pub mod assets;
 mod cache;
 mod input;
+mod registry;
 mod scenes;
 mod ui;
 mod util;
@@ -8,6 +9,7 @@ mod view;
 
 pub use bevy_egui;
 pub use bevy_egui::egui;
+use registry::components::{ComponentRegistry, RegistrableComponent};
 pub use serde;
 pub use ui::{RawUi, Ui};
 use util::{LogInfo, LogLevel, LoggingSettings};
@@ -49,7 +51,8 @@ pub struct Editor {
   cache: Cache,
   scene_type_registry: SceneTypeRegistry,
   prefab_registrar: PrefabRegistrar,
-  layout: UiManager,
+  ui_manager: UiManager,
+  component_registry: ComponentRegistry,
 }
 
 impl Default for Editor {
@@ -90,12 +93,18 @@ impl Editor {
       cache: Cache::load_or_default(),
       scene_type_registry: default(),
       prefab_registrar: default(),
-      layout: default(),
+      ui_manager: default(),
+      component_registry: default(),
     }
   }
 
   pub fn register_ui<U: RawUi>(&mut self) -> &mut Self {
-    self.layout.register::<U>();
+    self.ui_manager.register::<U>();
+    self
+  }
+
+  pub fn register_components<T: RegistrableComponent>(&mut self) -> &mut Self {
+    T::register(&mut self.component_registry);
     self
   }
 
@@ -243,8 +252,9 @@ impl Editor {
       mut app,
       scene_type_registry,
       prefab_registrar,
-      layout,
+      ui_manager,
       cache,
+      ..
     } = self;
 
     app
@@ -253,7 +263,7 @@ impl Editor {
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
         InputPlugin,
-        UiPlugin(Mutex::new(RefCell::new(Some(layout)))),
+        UiPlugin(Mutex::new(RefCell::new(Some(ui_manager)))),
         FrameTimeDiagnosticsPlugin::default(),
         EntityCountDiagnosticsPlugin,
         SystemInformationDiagnosticsPlugin,

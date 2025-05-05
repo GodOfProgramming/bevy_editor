@@ -105,6 +105,7 @@ impl Editor {
 
   pub fn register_component<T: RegistrableComponent>(&mut self) -> &mut Self {
     T::register(&mut self.component_registry);
+    self.register_type::<T>();
     self
   }
 

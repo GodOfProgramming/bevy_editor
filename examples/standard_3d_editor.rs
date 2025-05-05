@@ -6,12 +6,16 @@ fn main() {
 
   editor
     .add_game_camera::<GameCamera>()
-    .register_component::<GameCamera>()
+    .register_component::<Health>()
     .register_static_prefab::<Cube>()
     .add_systems(Startup, startup);
 
   editor.launch();
 }
+
+/// Example of health
+#[derive(Component, Reflect, Default)]
+struct Health(i32);
 
 #[derive(Component, Reflect, Default)]
 struct GameCamera;
@@ -23,18 +27,21 @@ fn startup(
 ) {
   // circular base
   commands.spawn((
+    Name::new("Base"),
     Mesh3d(meshes.add(Circle::new(4.0))),
     MeshMaterial3d(materials.add(Color::WHITE)),
     Transform::from_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
   ));
   // cube
   commands.spawn((
+    Name::new("Cube"),
     Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
     MeshMaterial3d(materials.add(Color::srgb_u8(124, 144, 255))),
     Transform::from_xyz(0.0, 0.5, 0.0),
   ));
   // light
   commands.spawn((
+    Name::new("Light"),
     PointLight {
       shadows_enabled: true,
       ..default()

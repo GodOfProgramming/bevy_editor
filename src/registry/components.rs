@@ -36,7 +36,7 @@ impl RegisteredComponent {
   }
 }
 
-pub trait RegistrableComponent: FromWorld {
+pub trait RegistrableComponent: GetTypeRegistration + FromWorld {
   fn register(component_registry: &mut ComponentRegistry);
 }
 

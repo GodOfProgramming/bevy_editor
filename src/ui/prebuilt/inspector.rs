@@ -35,9 +35,10 @@ impl RawUi for Inspector {
       |world, selection: Mut<InspectorSelection>| match selection.as_ref() {
         InspectorSelection::Entities(selected_entities) => match selected_entities.as_slice() {
           &[entity] => {
-            let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(egui::Frame::default(), |ui| {
-              ui_for_entity_with_children(world, entity, ui);
-            });
+            let (_, component_id) =
+              ui.dnd_drop_zone::<TypeId, ()>(egui::Frame::canvas(ui.style()), |ui| {
+                ui_for_entity_with_children(world, entity, ui);
+              });
 
             if let Some(component_id) = component_id {
               world.resource_scope(

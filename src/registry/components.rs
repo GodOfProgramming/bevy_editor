@@ -1,5 +1,9 @@
 use bevy::{
-  ecs::{component::Component, resource::Resource, world::FromWorld},
+  ecs::{
+    component::{Component, ComponentId},
+    resource::Resource,
+    world::FromWorld,
+  },
   prelude::*,
   reflect::{GetTypeRegistration, Reflect},
   utils::TypeIdMap,
@@ -21,9 +25,11 @@ impl ComponentRegistry {
   }
 }
 
+#[derive(Clone)]
 pub struct RegisteredComponent {
   name: &'static str,
   spawn_fn: fn(entity: Entity, &mut World),
+  id: ComponentId,
 }
 
 impl RegisteredComponent {
@@ -34,17 +40,21 @@ impl RegisteredComponent {
   pub fn spawn(&self, entity: Entity, world: &mut World) {
     (self.spawn_fn)(entity, world);
   }
+
+  pub fn id(&self) -> ComponentId {
+    self.id
+  }
 }
 
-pub trait RegistrableComponent: GetTypeRegistration + FromWorld {
-  fn register(component_registry: &mut ComponentRegistry);
+pub trait RegistrableComponent: GetTypeRegistration + FromWorld + Component {
+  fn register(component_registry: &mut ComponentRegistry, id: ComponentId);
 }
 
 impl<T> RegistrableComponent for T
 where
   T: Reflect + GetTypeRegistration + FromWorld + Component,
 {
-  fn register(component_registry: &mut ComponentRegistry) {
+  fn register(component_registry: &mut ComponentRegistry, id: ComponentId) {
     component_registry.mapping.insert(
       TypeId::of::<T>(),
       RegisteredComponent {
@@ -53,6 +63,7 @@ where
           let comp = T::from_world(world);
           world.entity_mut(entity).insert(comp);
         },
+        id,
       },
     );
   }

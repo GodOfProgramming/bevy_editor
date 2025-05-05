@@ -37,4 +37,8 @@ impl Ui for Components {
       });
     }
   }
+
+  fn unique() -> bool {
+    true
+  }
 }

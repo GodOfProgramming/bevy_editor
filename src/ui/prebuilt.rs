@@ -1,4 +1,5 @@
 pub mod assets;
+pub mod components;
 pub mod debug;
 pub mod editor_view;
 pub mod game_view;

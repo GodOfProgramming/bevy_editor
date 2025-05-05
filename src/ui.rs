@@ -25,8 +25,8 @@ use managers::UiManager;
 use misc::{MissingUi, UiExtensions, UiInfo};
 use parking_lot::Mutex;
 use prebuilt::{
-  assets::Assets, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
-  inspector::Inspector, prefabs::Prefabs, resources::Resources,
+  assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
+  hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
 };
 use serde::{Deserialize, Serialize};
 use std::{any::TypeId, borrow::BorrowMut, cell::RefCell, collections::BTreeMap};
@@ -51,6 +51,7 @@ impl Plugin for UiPlugin {
       .register_type::<Prefabs>()
       .register_type::<Resources>()
       .register_type::<Assets>()
+      .register_type::<Components>()
       .add_event::<AddUiEvent>()
       .add_event::<RemoveUiEvent>()
       .add_event::<SaveLayoutEvent>()

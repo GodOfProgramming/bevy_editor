@@ -1,4 +1,9 @@
-use crate::ui::{InspectorSelection, RawUi};
+use std::any::TypeId;
+
+use crate::{
+  registry::components::ComponentRegistry,
+  ui::{InspectorSelection, RawUi},
+};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::{
@@ -29,8 +34,24 @@ impl RawUi for Inspector {
     world.resource_scope(
       |world, selection: Mut<InspectorSelection>| match selection.as_ref() {
         InspectorSelection::Entities(selected_entities) => match selected_entities.as_slice() {
-          &[entity] => ui_for_entity_with_children(world, entity, ui),
-          entities => ui_for_entities_shared_components(world, entities, ui),
+          &[entity] => {
+            let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(egui::Frame::default(), |ui| {
+              ui_for_entity_with_children(world, entity, ui);
+            });
+
+            if let Some(component_id) = component_id {
+              world.resource_scope(
+                |world: &mut World, component_registry: Mut<ComponentRegistry>| {
+                  if let Some(comp) = component_registry.get(&component_id) {
+                    comp.spawn(entity, world);
+                  }
+                },
+              );
+            }
+          }
+          entities => {
+            ui_for_entities_shared_components(world, entities, ui);
+          }
         },
         InspectorSelection::Resource(type_id, name) => {
           ui.label(name);

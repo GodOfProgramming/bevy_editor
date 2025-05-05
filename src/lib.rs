@@ -103,7 +103,7 @@ impl Editor {
     self
   }
 
-  pub fn register_components<T: RegistrableComponent>(&mut self) -> &mut Self {
+  pub fn register_component<T: RegistrableComponent>(&mut self) -> &mut Self {
     T::register(&mut self.component_registry);
     self
   }
@@ -254,7 +254,7 @@ impl Editor {
       prefab_registrar,
       ui_manager,
       cache,
-      ..
+      component_registry,
     } = self;
 
     app
@@ -271,6 +271,7 @@ impl Editor {
       .insert_resource(cache)
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar)
+      .insert_resource(component_registry)
       .insert_state(EditorState::Editing)
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()

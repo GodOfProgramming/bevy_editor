@@ -3,8 +3,8 @@ use super::{
   events::SaveLayoutEvent,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
   prebuilt::{
-    assets::Assets, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
-    inspector::Inspector, prefabs::Prefabs, resources::Resources,
+    assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
+    hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
   },
 };
 use crate::{
@@ -50,6 +50,7 @@ impl Default for UiManager {
     this.register::<Prefabs>();
     this.register::<Resources>();
     this.register::<Assets>();
+    this.register::<Components>();
 
     this
   }
@@ -167,6 +168,7 @@ impl UiManager {
 
     let tabs = vec![
       self.spawn_type::<Prefabs>(world),
+      self.spawn_type::<Components>(world),
       self.spawn_type::<Resources>(world),
       self.spawn_type::<Assets>(world),
     ];

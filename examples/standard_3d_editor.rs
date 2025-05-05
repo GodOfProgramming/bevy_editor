@@ -6,13 +6,14 @@ fn main() {
 
   editor
     .add_game_camera::<GameCamera>()
+    .register_component::<GameCamera>()
     .register_static_prefab::<Cube>()
     .add_systems(Startup, startup);
 
   editor.launch();
 }
 
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Default)]
 struct GameCamera;
 
 fn startup(

@@ -4,7 +4,10 @@ pub mod managers;
 pub mod misc;
 pub mod prebuilt;
 
-use crate::cache::{Cache, Saveable};
+use crate::{
+  EditorSettings,
+  cache::{Cache, Saveable},
+};
 use bevy::{
   asset::UntypedAssetId,
   ecs::{component::Mutable, system::SystemParam},
@@ -74,7 +77,8 @@ impl Plugin for UiPlugin {
             AddUiEvent::on_event,
           ),
         )
-          .chain(),
+          .chain()
+          .run_if(|editor_settings: Res<EditorSettings>| editor_settings.render_ui),
       )
       .add_systems(FixedUpdate, SaveLayoutEvent::on_event);
 

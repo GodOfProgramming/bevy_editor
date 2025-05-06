@@ -102,8 +102,6 @@ impl Plugin for EditorViewPlugin {
 #[require(MeshPickingCamera)]
 pub struct EditorCamera;
 
-impl EditorCamera {}
-
 #[derive(
   Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default, Serialize, Deserialize, Reflect,
 )]

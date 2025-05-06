@@ -187,18 +187,23 @@ impl Editor {
   fn auto_register_picking_targets(
     mut commands: Commands,
     q_entities: Query<
-      Entity,
+      (Entity, Option<&Name>),
       (
         Without<Pickable>,
         Or<(With<Sprite>, With<Mesh2d>, With<Mesh3d>)>,
       ),
     >,
   ) {
-    for entity in &q_entities {
-      debug!("Registered Picking: {}", entity);
+    for (entity, name) in &q_entities {
+      if let Some(name) = name {
+        debug!("Registered picking on object: {name}");
+      } else {
+        debug!("Registered picking on entity: {entity}");
+      }
+
       commands.entity(entity).insert(Pickable {
         is_hoverable: true,
-        should_block_lower: true,
+        should_block_lower: false,
       });
     }
   }
@@ -207,7 +212,7 @@ impl Editor {
     mut selection: ResMut<ui::InspectorSelection>,
     mut click_events: EventReader<Pointer<Click>>,
     mut q_egui: Single<&mut EguiContext>,
-    q_raycast_pickables: Query<&Pickable>,
+    q_pickables: Query<&Pickable>,
   ) {
     let egui_context = q_egui.get_mut();
     let modifiers = egui_context.input(|i| i.modifiers);
@@ -218,7 +223,7 @@ impl Editor {
     {
       let target = click.target;
 
-      if q_raycast_pickables.get(target).is_ok() {
+      if q_pickables.get(target).is_ok() {
         selection.add_selected(target, modifiers.ctrl);
       }
     }
@@ -274,6 +279,7 @@ impl Editor {
       .insert_resource(scene_type_registry)
       .insert_resource(prefab_registrar)
       .insert_resource(component_registry)
+      .init_resource::<EditorSettings>()
       .insert_state(EditorState::Editing)
       .add_event::<SaveEvent>()
       .add_event::<LoadEvent>()
@@ -337,3 +343,14 @@ struct EditorGlobal;
 
 #[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
 struct Editing;
+
+#[derive(Resource)]
+struct EditorSettings {
+  render_ui: bool,
+}
+
+impl Default for EditorSettings {
+  fn default() -> Self {
+    Self { render_ui: true }
+  }
+}

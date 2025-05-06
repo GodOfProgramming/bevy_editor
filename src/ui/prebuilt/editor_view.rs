@@ -19,6 +19,8 @@ impl EditorView {
     }
   }
 
+  // TODO somewhere in here the physical <-> logical pixel values became wrong (with a grain of salt) in the 0.16 migration
+  // fix to enable the viewport resize again
   fn set_viewport(
     window: Single<&Window, With<PrimaryWindow>>,
     egui_settings: Single<&bevy_egui::EguiContextSettings>,
@@ -103,10 +105,6 @@ impl Ui for EditorView {
     for mut camera in &mut params.q_cameras {
       camera.is_active = false;
     }
-  }
-
-  fn handle_tab_response(&mut self, _params: Self::Params<'_, '_>, response: &egui::Response) {
-    if response.is_pointer_button_down_on() {}
   }
 
   fn can_clear(&self, _params: Self::Params<'_, '_>) -> bool {

@@ -805,6 +805,7 @@ dependencies = [
  "derive-new",
  "derive_more",
  "egui-file-dialog",
+ "egui-phosphor",
  "egui_demo_lib",
  "egui_dock",
  "itertools 0.14.0",
@@ -2414,6 +2415,15 @@ dependencies = [
  "egui",
  "serde",
  "sysinfo 0.33.1",
+]
+
+[[package]]
+name = "egui-phosphor"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "171d57331491e92f0a7c73fad1088716e3200984309f4f8684731b750cee1378"
+dependencies = [
+ "egui",
 ]
 
 [[package]]

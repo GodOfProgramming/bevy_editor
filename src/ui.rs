@@ -571,7 +571,7 @@ impl Saveable for LayoutState {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-struct LayoutInfo {
+pub struct LayoutInfo {
   id: PersistentId,
   name: String,
 }

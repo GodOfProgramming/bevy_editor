@@ -18,6 +18,7 @@ const_format = "0.2.34"
 derive-new = "0.7.0"
 derive_more = "1.0.0"
 egui-file-dialog = "0.9.0"
+egui-phosphor = "0.9.0"
 egui_demo_lib = "0.31.1"
 egui_dock = "0.16.0"
 itertools = "0.14.0"
@@ -39,7 +40,7 @@ uuid = "1.11"
 
 # exports
 uuid = { workspace = true, features = ["serde"] }
-bevy_egui = { workspace = true, features = ["immutable_ctx"] }
+bevy_egui = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 macros = { workspace = true }
 persistent-id = { workspace = true }
@@ -53,6 +54,7 @@ const_format = { workspace = true }
 derive-new = { workspace = true }
 derive_more = { workspace = true, features = ["full"] }
 egui-file-dialog = { workspace = true }
+egui-phosphor = { workspace = true }
 egui_dock = { workspace = true, features = ["serde"] }
 itertools = { workspace = true }
 leafwing-input-manager = { workspace = true }

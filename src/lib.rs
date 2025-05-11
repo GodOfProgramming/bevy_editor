@@ -10,7 +10,7 @@ mod view;
 pub use bevy_egui;
 pub use bevy_egui::egui;
 use persistent_id::Identifiable;
-use registry::components::{ComponentRegistry, RegistrableComponent};
+use registry::components::{ComponentRegistry, RegisterableComponent, RegisterableComponents};
 pub use serde;
 pub use ui::{RawUi, Ui, misc};
 use util::{LogInfo, LogLevel, LoggingSettings};
@@ -104,10 +104,15 @@ impl Editor {
     self
   }
 
-  pub fn register_component<T: RegistrableComponent>(&mut self) -> &mut Self {
-    let id = self.world_mut().register_component::<T>();
-    T::register(&mut self.component_registry, id);
+  pub fn register_component<T: RegisterableComponent>(&mut self) -> &mut Self {
+    T::register(self.app.world_mut(), &mut self.component_registry);
     self.register_type::<T>();
+    self
+  }
+
+  pub fn register_components<T: RegisterableComponents>(&mut self) -> &mut Self {
+    T::register_components(self.app.world_mut(), &mut self.component_registry);
+    T::register_types(self);
     self
   }
 

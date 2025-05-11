@@ -81,8 +81,8 @@ impl UiManager {
   pub fn render(&mut self, world: &mut World) {
     let Ok(ctx) = world
       .query::<&mut bevy_egui::EguiContext>()
-      .single(world)
-      .map(|ctx| ctx.get().clone())
+      .single_mut(world)
+      .map(|mut ctx| ctx.get_mut().clone())
     else {
       return;
     };

@@ -7,16 +7,11 @@ fn main() {
 
   editor
     .add_game_camera::<GameCamera>()
-    .register_component::<Health>()
     .register_static_prefab::<Cube>()
     .add_systems(Startup, startup);
 
   editor.launch();
 }
-
-/// Example of health
-#[derive(Component, Reflect, Default)]
-struct Health(i32);
 
 #[derive(Component, Reflect, Default, Identifiable)]
 #[id("d0d75fdd-e1b9-4eac-86fc-6eaab8865bad")]

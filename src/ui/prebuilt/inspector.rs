@@ -16,14 +16,20 @@ use uuid::{Uuid, uuid};
 pub struct Inspector;
 
 impl Inspector {
-  fn dnd_drop_ui<F: FnOnce(&mut World, &mut egui::Ui)>(
+  fn dnd_drop_ui<F>(
     entities: impl AsRef<[Entity]>,
     world: &mut World,
     ui: &mut egui::Ui,
     render_fn: F,
-  ) {
+  ) where
+    F: FnOnce(&mut World, &mut egui::Ui),
+  {
     let frame = egui::Frame::default();
-    let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(frame, |ui| render_fn(world, ui));
+    let available_rect = ui.available_rect_before_wrap();
+    let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(frame, |ui| {
+      ui.set_min_size(available_rect.size());
+      render_fn(world, ui);
+    });
 
     if let Some(component_id) = component_id {
       Self::spawn_components_on(&component_id, entities.as_ref(), world);

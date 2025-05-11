@@ -6,10 +6,15 @@ use uuid::uuid;
 fn main() {
   let mut editor = Editor::default();
 
-  editor.register_ui::<CustomPanel>();
+  editor
+    .register_ui::<CustomPanel>()
+    .register_component::<SomeComponent>();
 
   editor.launch();
 }
+
+#[derive(Component, Reflect, Default)]
+struct SomeComponent;
 
 #[derive(Reflect, Component)]
 struct CustomPanel;
@@ -26,13 +31,6 @@ impl Ui for CustomPanel {
   }
 
   fn render(&mut self, ui: &mut bevy_egui::egui::Ui, _params: Self::Params<'_, '_>) {
-    let available_rect = ui.available_rect_before_wrap();
-    ui.set_min_size(available_rect.size());
-    ui.set_max_size(available_rect.size());
-    egui::Frame::default()
-      .fill(egui::Color32::RED)
-      .show(ui, |ui| {
-        ui.label("here");
-      });
+    ui.label("Custom Ui Panel");
   }
 }

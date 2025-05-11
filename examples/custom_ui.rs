@@ -1,23 +1,18 @@
 use bevy::prelude::*;
 use bevy_editor::{Editor, Ui, misc::NoParams};
-use bevy_egui::egui;
+use egui_demo_lib::{View, WidgetGallery};
 use uuid::uuid;
 
 fn main() {
   let mut editor = Editor::default();
 
-  editor
-    .register_ui::<CustomPanel>()
-    .register_component::<SomeComponent>();
+  editor.register_ui::<CustomPanel>();
 
   editor.launch();
 }
 
-#[derive(Component, Reflect, Default)]
-struct SomeComponent;
-
-#[derive(Reflect, Component)]
-struct CustomPanel;
+#[derive(Reflect, Component, Default)]
+struct CustomPanel(#[reflect(ignore)] WidgetGallery);
 
 impl Ui for CustomPanel {
   const NAME: &str = "Custom Panel";
@@ -27,14 +22,10 @@ impl Ui for CustomPanel {
   type Params<'w, 's> = NoParams;
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
-    Self
+    Self::default()
   }
 
   fn render(&mut self, ui: &mut bevy_egui::egui::Ui, _params: Self::Params<'_, '_>) {
-    let rect = ui.available_rect_before_wrap();
-    let bg_fill = ui.style().visuals.window_fill();
-    egui::Frame::default().fill(bg_fill).show(ui, |ui| {
-      ui.set_min_size(rect.size());
-    });
+    self.0.ui(ui);
   }
 }

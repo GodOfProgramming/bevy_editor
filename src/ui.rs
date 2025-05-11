@@ -565,12 +565,18 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
 #[derive(Serialize, Deserialize)]
 struct LayoutState {
-  dock: DockState<Uuid>,
-  layouts: BTreeMap<String, DockState<Uuid>>,
+  dock: DockState<LayoutInfo>,
+  layouts: BTreeMap<String, DockState<LayoutInfo>>,
 }
 
 impl Saveable for LayoutState {
   const KEY: &str = "Layout";
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct LayoutInfo {
+  id: PersistentId,
+  name: String,
 }
 
 #[derive(Resource)]

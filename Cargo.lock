@@ -4359,6 +4359,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "derive_more",
+ "serde",
  "uuid",
 ]
 

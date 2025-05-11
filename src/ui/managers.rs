@@ -1,5 +1,5 @@
 use super::{
-  InspectorSelection, LayoutState, RawUi, TabViewer, VTable, components,
+  InspectorSelection, LayoutInfo, LayoutState, RawUi, TabViewer, VTable, components,
   events::SaveLayoutEvent,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
   prebuilt::{
@@ -121,15 +121,15 @@ impl UiManager {
     &self,
     q_uuids: &Query<&PersistentId, Without<MissingUi>>,
     q_missing: &Query<&MissingUi>,
-  ) -> DockState<Uuid> {
-    self.state.decouple(q_uuids, q_missing)
+  ) -> DockState<LayoutInfo> {
+    self.state.decouple(self, q_uuids, q_missing)
   }
 
-  pub fn save_layout(&mut self, name: impl Into<String>, dock: DockState<Uuid>) {
+  pub fn save_layout(&mut self, name: impl Into<String>, dock: DockState<LayoutInfo>) {
     self.layout_manager.layouts.insert(name.into(), dock);
   }
 
-  pub fn saved_layouts(&self) -> &BTreeMap<String, DockState<Uuid>> {
+  pub fn saved_layouts(&self) -> &BTreeMap<String, DockState<LayoutInfo>> {
     &self.layout_manager.layouts
   }
 
@@ -140,6 +140,10 @@ impl UiManager {
   pub(super) fn vtable_of(&self, entity: Entity, world: &mut World) -> &VTable {
     let mut q_ids = world.query::<&PersistentId>();
     let id = q_ids.get(world, entity).unwrap();
+    self.get_vtable_by_id(id)
+  }
+
+  pub fn get_vtable_by_id(&self, id: &PersistentId) -> &VTable {
     &self.vtables[id]
   }
 
@@ -419,5 +423,5 @@ struct LayoutManager {
   save_name_text: String,
   show_save_layout_modal: bool,
   show_confirm_reset_modal: bool,
-  layouts: BTreeMap<String, DockState<Uuid>>,
+  layouts: BTreeMap<String, DockState<LayoutInfo>>,
 }

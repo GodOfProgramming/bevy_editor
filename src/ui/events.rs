@@ -21,7 +21,7 @@ impl SaveLayoutEvent {
     q_missing: Query<&MissingUi>,
   ) {
     for save_event in events.read() {
-      let dock = save_event.dock.decouple(&q_uuids, &q_missing);
+      let dock = save_event.dock.decouple(&ui_manager, &q_uuids, &q_missing);
       ui_manager.save_layout(&save_event.name, dock);
     }
   }

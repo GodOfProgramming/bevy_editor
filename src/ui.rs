@@ -15,10 +15,7 @@ use bevy::{
   prelude::*,
   reflect::GetTypeRegistration,
 };
-use bevy_egui::{
-  EguiPlugin,
-  egui::{self},
-};
+use bevy_egui::{EguiPlugin, egui};
 use bevy_inspector_egui::bevy_inspector;
 use egui_dock::{DockState, NodeIndex, SurfaceIndex};
 use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};

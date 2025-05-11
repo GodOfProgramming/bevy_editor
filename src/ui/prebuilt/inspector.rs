@@ -26,6 +26,10 @@ impl Inspector {
   {
     let frame = egui::Frame::default();
     let available_rect = ui.available_rect_before_wrap();
+
+    let bg_fill = ui.style().visuals.window_fill();
+    ui.style_mut().visuals.widgets.inactive.bg_fill = bg_fill;
+
     let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(frame, |ui| {
       ui.set_min_size(available_rect.size());
       render_fn(world, ui);

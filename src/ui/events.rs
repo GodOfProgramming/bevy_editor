@@ -1,11 +1,11 @@
 use super::{
   managers::UiManager,
   misc::{DockExtensions, MissingUi},
-  PersistentId,
 };
 use bevy::prelude::*;
 use derive_new::new;
 use egui_dock::{DockState, NodeIndex, SurfaceIndex};
+use persistent_id::PersistentId;
 
 #[derive(Event, new)]
 pub struct SaveLayoutEvent {

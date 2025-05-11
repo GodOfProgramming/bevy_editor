@@ -16,6 +16,20 @@ use uuid::{Uuid, uuid};
 pub struct Inspector;
 
 impl Inspector {
+  fn dnd_drop_ui<F: FnOnce(&mut World, &mut egui::Ui)>(
+    entities: impl AsRef<[Entity]>,
+    world: &mut World,
+    ui: &mut egui::Ui,
+    render_fn: F,
+  ) {
+    let frame = egui::Frame::default();
+    let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(frame, |ui| render_fn(world, ui));
+
+    if let Some(component_id) = component_id {
+      Self::spawn_components_on(&component_id, entities.as_ref(), world);
+    }
+  }
+
   fn spawn_components_on(component_id: &TypeId, entities: &[Entity], world: &mut World) {
     let Some(component) = world.resource_scope(
       |_: &mut World, component_registry: Mut<ComponentRegistry>| {
@@ -48,7 +62,7 @@ impl RawUi for Inspector {
     true
   }
 
-  fn render(entity: Entity, ui: &mut egui::Ui, world: &mut World) {
+  fn render(_entity: Entity, ui: &mut egui::Ui, world: &mut World) {
     let type_registry = world.resource::<AppTypeRegistry>().0.clone();
     let type_registry = type_registry.read();
 
@@ -56,22 +70,14 @@ impl RawUi for Inspector {
       |world, selection: Mut<InspectorSelection>| match selection.as_ref() {
         InspectorSelection::Entities(selected_entities) => match selected_entities.as_slice() {
           &[entity] => {
-            let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(egui::Frame::NONE, |ui| {
+            Self::dnd_drop_ui([entity], world, ui, |world, ui| {
               ui_for_entity_with_children(world, entity, ui);
             });
-
-            if let Some(component_id) = component_id {
-              Inspector::spawn_components_on(&component_id, &[entity], world);
-            }
           }
           entities => {
-            let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(egui::Frame::NONE, |ui| {
+            Self::dnd_drop_ui(entities, world, ui, |world, ui| {
               ui_for_entities_shared_components(world, entities, ui);
             });
-
-            if let Some(component_id) = component_id {
-              Inspector::spawn_components_on(&component_id, &[entity], world);
-            }
           }
         },
         InspectorSelection::Resource(type_id, name) => {

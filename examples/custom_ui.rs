@@ -1,0 +1,38 @@
+use bevy::prelude::*;
+use bevy_editor::{Editor, Ui, misc::NoParams};
+use bevy_egui::egui;
+use uuid::uuid;
+
+fn main() {
+  let mut editor = Editor::default();
+
+  editor.register_ui::<CustomPanel>();
+
+  editor.launch();
+}
+
+#[derive(Reflect, Component)]
+struct CustomPanel;
+
+impl Ui for CustomPanel {
+  const NAME: &str = "Custom Panel";
+
+  const ID: uuid::Uuid = uuid!("b2d3a7ea-a68c-4788-a9e5-16b51d94ce52");
+
+  type Params<'w, 's> = NoParams;
+
+  fn spawn(_params: Self::Params<'_, '_>) -> Self {
+    Self
+  }
+
+  fn render(&mut self, ui: &mut bevy_egui::egui::Ui, _params: Self::Params<'_, '_>) {
+    let available_rect = ui.available_rect_before_wrap();
+    ui.set_min_size(available_rect.size());
+    ui.set_max_size(available_rect.size());
+    egui::Frame::default()
+      .fill(egui::Color32::RED)
+      .show(ui, |ui| {
+        ui.label("here");
+      });
+  }
+}

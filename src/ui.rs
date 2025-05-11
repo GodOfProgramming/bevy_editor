@@ -20,13 +20,13 @@ use bevy_egui::{
   egui::{self},
 };
 use bevy_inspector_egui::bevy_inspector;
-use derive_more::derive::From;
 use egui_dock::{DockState, NodeIndex, SurfaceIndex};
 use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
 use itertools::{Either, Itertools};
 use managers::UiManager;
 use misc::{MissingUi, UiExtensions, UiInfo};
 use parking_lot::Mutex;
+use persistent_id::PersistentId;
 use prebuilt::{
   assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
   hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
@@ -361,7 +361,7 @@ where
 
 #[derive(Clone)]
 struct VTable {
-  name: fn() -> &'static str,
+  name: &'static str,
   init: fn(&mut App),
   spawn: fn(&mut World) -> Entity,
   despawn: fn(Entity, &mut World),
@@ -385,7 +385,7 @@ impl VTable {
     T: RawUi,
   {
     Self {
-      name: || T::NAME,
+      name: T::NAME,
       init: T::init,
       spawn: Self::spawn::<T>,
       despawn: Self::despawn::<T>,
@@ -482,7 +482,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       .vtables
       .iter()
       .filter(|(_, vtable)| (vtable.unique)() && !(vtable.hidden)())
-      .map(|(id, vtable)| (id, (vtable.name)()))
+      .map(|(id, vtable)| (id, vtable.name))
       .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
     for (id, name) in unique_tabs {
@@ -505,7 +505,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       .vtables
       .iter()
       .filter(|(_, vtable)| !(vtable.unique)())
-      .map(|(id, vtable)| (id, (vtable.name)()))
+      .map(|(id, vtable)| (id, vtable.name))
       .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
     if spawnable_tables.len() > 0 {
@@ -600,9 +600,6 @@ impl InspectorSelection {
 
 #[derive(Default, Deref, DerefMut, Debug)]
 pub struct SelectedEntities(bevy_inspector::hierarchy::SelectedEntities);
-
-#[derive(Default, Deref, DerefMut, Component, Clone, Copy, Hash, PartialEq, Eq, Reflect, From)]
-pub struct PersistentId(#[reflect(ignore)] pub Uuid);
 
 /// Component that stores all ui components as children for organization
 #[derive(Component)]

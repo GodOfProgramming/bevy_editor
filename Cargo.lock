@@ -800,14 +800,18 @@ dependencies = [
  "bevy",
  "bevy-inspector-egui",
  "bevy_egui",
+ "const-str",
+ "const_format",
  "derive-new",
  "derive_more",
  "egui-file-dialog",
  "egui_dock",
  "itertools 0.14.0",
  "leafwing-input-manager",
+ "macros",
  "nucleo",
  "parking_lot",
+ "persistent-id",
  "platform-dirs",
  "profiling",
  "ron",
@@ -1914,6 +1918,32 @@ name = "const-fnv1a-hash"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32b13ea120a812beba79e34316b3942a857c86ec1593cb34f27bb28272ce2cca"
+
+[[package]]
+name = "const-str"
+version = "0.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9e991226a70654b49d34de5ed064885f0bef0348a8e70018b8ff1ac80aa984a2"
+
+[[package]]
+name = "const_format"
+version = "0.2.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "126f97965c8ad46d6d9163268ff28432e8f6a1196a55578867832e3049df63dd"
+dependencies = [
+ "const_format_proc_macros",
+]
+
+[[package]]
+name = "const_format_proc_macros"
+version = "0.2.34"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d57c2eccfb16dbac1f4e61e206105db5820c9d26c3c472bc17c774259ef7744"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-xid",
+]
 
 [[package]]
 name = "const_panic"
@@ -3580,6 +3610,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "malloc_buf"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4313,6 +4352,15 @@ name = "percent-encoding"
 version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
+
+[[package]]
+name = "persistent-id"
+version = "0.1.0"
+dependencies = [
+ "bevy",
+ "derive_more",
+ "uuid",
+]
 
 [[package]]
 name = "petgraph"
@@ -5163,9 +5211,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.100"
+version = "2.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b09a44accad81e1ba1cd74a32461ba89dee89095ba17b32f5d03683b1b1fc2a0"
+checksum = "8ce2b7fc941b3a24138a0a7cf8e858bfc6a992e7978a068a5c760deb0ed43caf"
 dependencies = [
  "proc-macro2",
  "quote",

@@ -1,5 +1,5 @@
 use super::{
-  InspectorSelection, LayoutState, PersistentId, RawUi, TabViewer, VTable, components,
+  InspectorSelection, LayoutState, RawUi, TabViewer, VTable, components,
   events::SaveLayoutEvent,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
   prebuilt::{
@@ -19,6 +19,7 @@ use bevy::{
 };
 use bevy_egui::egui::{self, TextBuffer};
 use egui_dock::{DockArea, DockState, NodeIndex, Surface, SurfaceIndex};
+use persistent_id::PersistentId;
 use std::{any::TypeId, cell::RefCell, collections::BTreeMap};
 use uuid::Uuid;
 

@@ -9,9 +9,10 @@ mod view;
 
 pub use bevy_egui;
 pub use bevy_egui::egui;
+use persistent_id::Identifiable;
 use registry::components::{ComponentRegistry, RegistrableComponent};
 pub use serde;
-pub use ui::{RawUi, Ui};
+pub use ui::{RawUi, Ui, misc};
 use util::{LogInfo, LogLevel, LoggingSettings};
 pub use uuid;
 
@@ -132,7 +133,7 @@ impl Editor {
 
   pub fn add_game_camera<C>(&mut self) -> &mut Self
   where
-    C: Component + Reflect + TypePath,
+    C: Component + Reflect + TypePath + Identifiable,
   {
     view::add_game_camera::<C>(&mut self.app);
     self.register_ui::<GameView<C>>()

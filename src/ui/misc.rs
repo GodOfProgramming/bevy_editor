@@ -1,4 +1,4 @@
-use super::{PersistentId, RawUi, Ui, VTable};
+use super::{RawUi, Ui, VTable};
 use bevy::{
   ecs::{
     component::Mutable,
@@ -10,6 +10,7 @@ use bevy::{
 use bevy_egui::egui::{self, text::LayoutJob};
 use derive_more::derive::Deref;
 use egui_dock::DockState;
+use persistent_id::PersistentId;
 use uuid::{Uuid, uuid};
 
 #[derive(SystemParam)]
@@ -55,9 +56,9 @@ pub unsafe trait UiExtensions: Ui {
   ) -> T {
     let mut q = world.query::<(&Self, &mut UiParams<Self>)>();
     let world_cell = world.as_unsafe_world_cell();
-    let (this, mut params) = q
-      .get_mut(unsafe { world_cell.world_mut() }, entity)
-      .unwrap();
+    let Ok((this, mut params)) = q.get_mut(unsafe { world_cell.world_mut() }, entity) else {
+      panic!("Failed to query {}", <Self as Ui>::NAME);
+    };
     let params = params.get_mut(unsafe { world_cell.world_mut() });
     f(this, params)
   }
@@ -125,14 +126,11 @@ impl MissingUi {
   }
 }
 
-#[derive(SystemParam)]
-pub struct NoUiParams;
-
 impl Ui for MissingUi {
-  const NAME: &str = "No Ui";
+  const NAME: &str = "Missing Ui";
   const ID: Uuid = uuid!("d0f32ae1-2851-4bcd-a0c9-f83ae030d85f");
 
-  type Params<'w, 's> = NoUiParams;
+  type Params<'w, 's> = NoParams;
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     Self {
@@ -195,12 +193,19 @@ impl DockExtensions for DockState<Entity> {
         .get(&PersistentId(*tab))
         .map(|vtable| (vtable.spawn)(world))
         .unwrap_or_else(|| {
-          let entity_id = world
-            .spawn((MissingUi::new(*tab), PersistentId(<MissingUi as RawUi>::ID)))
-            .id();
-          world.entity_mut(entity_id).insert(Name::new("Missing Ui"));
-          info!("Failed to find ui with uuid: {tab}");
-          entity_id
+          warn!("Failed to find ui with uuid: {tab}");
+
+          let state = SystemState::<<MissingUi as Ui>::Params<'_, '_>>::new(world);
+
+          world
+            .spawn((
+              Name::new(<MissingUi as RawUi>::NAME),
+              MissingUi::new(*tab),
+              PersistentId(<MissingUi as RawUi>::ID),
+              UiInfo::default(),
+              UiComponentState(state),
+            ))
+            .id()
         })
     })
   }

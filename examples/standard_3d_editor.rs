@@ -1,5 +1,6 @@
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_editor::{Editor, assets::StaticPrefab};
+use macros::Identifiable;
 
 fn main() {
   let mut editor = Editor::default();
@@ -17,7 +18,8 @@ fn main() {
 #[derive(Component, Reflect, Default)]
 struct Health(i32);
 
-#[derive(Component, Reflect, Default)]
+#[derive(Component, Reflect, Default, Identifiable)]
+#[id("d0d75fdd-e1b9-4eac-86fc-6eaab8865bad")]
 struct GameCamera;
 
 fn startup(

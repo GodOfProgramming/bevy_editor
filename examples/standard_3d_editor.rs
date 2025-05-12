@@ -1,16 +1,16 @@
+use beditor::{Editor, assets::StaticPrefab};
 use bevy::{ecs::system::SystemParam, prelude::*};
-use bevy_editor::{Editor, assets::StaticPrefab};
 use macros::Identifiable;
 
 fn main() {
   let mut editor = Editor::default();
 
   editor
-    .add_game_camera::<GameCamera>()
+    .register_game_camera::<GameCamera>()
     .register_static_prefab::<Cube>()
     .add_systems(Startup, startup);
 
-  editor.launch();
+  editor.run();
 }
 
 #[derive(Component, Reflect, Default, Identifiable)]

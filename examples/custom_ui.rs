@@ -1,5 +1,5 @@
+use beditor::{Editor, Ui, misc::NoParams};
 use bevy::prelude::*;
-use bevy_editor::{Editor, Ui, misc::NoParams};
 use egui_demo_lib::{View, WidgetGallery};
 use uuid::uuid;
 
@@ -8,7 +8,7 @@ fn main() {
 
   editor.register_ui::<CustomPanel>();
 
-  editor.launch();
+  editor.run();
 }
 
 #[derive(Reflect, Component, Default)]

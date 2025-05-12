@@ -13,10 +13,7 @@ use crate::{
   util::WorldExtensions,
   view::{self, ActiveEditorCamera, EditorCamera},
 };
-use bevy::{
-  platform::collections::{HashMap, hash_map},
-  prelude::*,
-};
+use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_egui::egui::{self, TextBuffer};
 use egui_dock::{DockArea, DockState, NodeIndex, Surface, SurfaceIndex};
 use persistent_id::PersistentId;
@@ -34,8 +31,8 @@ pub(crate) struct UiManager {
   id: egui::Id,
 }
 
-impl Default for UiManager {
-  fn default() -> Self {
+impl UiManager {
+  pub fn new(app: &mut App) -> Self {
     let mut this = Self {
       state: DockState::new(Vec::new()),
       vtables: default(),
@@ -43,21 +40,19 @@ impl Default for UiManager {
       layout_manager: default(),
     };
 
-    this.register::<MissingUi>();
-    this.register::<EditorView>();
-    this.register::<Hierarchy>();
-    this.register::<DebugMenu>();
-    this.register::<Inspector>();
-    this.register::<Prefabs>();
-    this.register::<Resources>();
-    this.register::<Assets>();
-    this.register::<Components>();
+    this.register::<MissingUi>(app);
+    this.register::<EditorView>(app);
+    this.register::<Hierarchy>(app);
+    this.register::<DebugMenu>(app);
+    this.register::<Inspector>(app);
+    this.register::<Prefabs>(app);
+    this.register::<Resources>(app);
+    this.register::<Assets>(app);
+    this.register::<Components>(app);
 
     this
   }
-}
 
-impl UiManager {
   pub fn restore_or_init(&mut self, world: &mut World) {
     let (state, layouts) = world
       .resource_scope(|world, cache: Mut<Cache>| {
@@ -74,7 +69,8 @@ impl UiManager {
     self.layout_manager.layouts = layouts;
   }
 
-  pub fn register<T: RawUi>(&mut self) {
+  pub fn register<T: RawUi>(&mut self, app: &mut App) {
+    T::init(app);
     self.vtables.insert(PersistentId(T::ID), T::VTABLE);
   }
 
@@ -113,7 +109,7 @@ impl UiManager {
       });
   }
 
-  pub(super) fn vtables(&self) -> hash_map::Values<'_, PersistentId, VTable> {
+  pub(super) fn vtables(&self) -> impl Iterator<Item = &VTable> {
     self.vtables.values()
   }
 
@@ -143,7 +139,7 @@ impl UiManager {
     self.get_vtable_by_id(id)
   }
 
-  pub fn get_vtable_by_id(&self, id: &PersistentId) -> &VTable {
+  pub(super) fn get_vtable_by_id(&self, id: &PersistentId) -> &VTable {
     &self.vtables[id]
   }
 

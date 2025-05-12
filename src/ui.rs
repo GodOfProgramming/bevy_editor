@@ -22,25 +22,20 @@ use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
 use itertools::{Either, Itertools};
 use managers::UiManager;
 use misc::{MissingUi, UiExtensions, UiInfo};
-use parking_lot::Mutex;
 use persistent_id::PersistentId;
 use prebuilt::{
   assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
   hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
 };
 use serde::{Deserialize, Serialize};
-use std::{any::TypeId, borrow::BorrowMut, cell::RefCell, collections::BTreeMap};
+use std::{any::TypeId, cell::RefCell, collections::BTreeMap};
 use uuid::Uuid;
 
-pub(crate) struct UiPlugin(pub Mutex<RefCell<Option<UiManager>>>);
+pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
     debug!("Building UI Plugin");
-
-    let mut layout = self.0.lock();
-    let layout = layout.borrow_mut();
-    let ui_manager = layout.take().unwrap();
 
     app
       .register_type::<MissingUi>()
@@ -78,12 +73,6 @@ impl Plugin for UiPlugin {
           .run_if(|editor_settings: Res<EditorSettings>| editor_settings.render_ui),
       )
       .add_systems(FixedUpdate, SaveLayoutEvent::on_event);
-
-    for vtable in ui_manager.vtables() {
-      (vtable.init)(app);
-    }
-
-    app.insert_resource(ui_manager);
   }
 }
 
@@ -384,7 +373,6 @@ where
 #[derive(Clone)]
 struct VTable {
   name: &'static str,
-  init: fn(&mut App),
   spawn: fn(&mut World) -> Entity,
   despawn: fn(Entity, &mut World),
   title: fn(Entity, &mut World) -> egui::WidgetText,
@@ -409,7 +397,6 @@ impl VTable {
   {
     Self {
       name: T::NAME,
-      init: T::init,
       spawn: Self::spawn::<T>,
       despawn: Self::despawn::<T>,
       title: T::title,

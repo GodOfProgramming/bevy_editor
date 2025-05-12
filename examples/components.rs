@@ -1,5 +1,5 @@
+use beditor::Editor;
 use bevy::prelude::*;
-use bevy_editor::Editor;
 
 fn main() {
   let mut editor = Editor::default();
@@ -23,7 +23,7 @@ fn main() {
     .add_systems(Startup, startup)
     .add_systems(Update, (spin, grow));
 
-  editor.launch();
+  editor.run();
 }
 
 fn startup(

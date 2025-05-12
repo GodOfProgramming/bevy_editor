@@ -1,5 +1,5 @@
 [package]
-name = "bevy_editor"
+name = "beditor"
 version = "0.15.1"
 edition = "2024"
 rust-version = "1.86.0"

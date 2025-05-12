@@ -32,9 +32,7 @@ use bevy_egui::EguiContext;
 use bevy_inspector_egui::DefaultInspectorConfigPlugin;
 use cache::Cache;
 use input::InputPlugin;
-use parking_lot::Mutex;
 use scenes::{LoadEvent, SaveEvent, SceneTypeRegistry};
-use std::cell::RefCell;
 use ui::{UiPlugin, managers::UiManager, prebuilt::game_view::GameView};
 use view::EditorViewPlugin;
 
@@ -63,45 +61,19 @@ impl Default for Editor {
 }
 
 impl Editor {
-  pub fn new(app: App) -> Self {
-    Self::new_with_defaults(app, DefaultPlugins)
-  }
+  pub fn new(mut app: App) -> Self {
+    Self::init_app(&mut app);
 
-  pub fn new_with_defaults(mut app: App, plugins: impl PluginGroup) -> Self {
-    let defaults = plugins.build();
-
-    app.add_plugins(
-      defaults
-        .set(WindowPlugin {
-          primary_window: Some(Window {
-            title: String::from("Bevy Editor"),
-            mode: WindowMode::Windowed,
-            visible: false,
-            ..default()
-          }),
-          close_when_requested: false,
-          ..default()
-        })
-        .set(LogPlugin {
-          level: LogLevel::Trace.into(),
-          filter: DEFAULT_FILTER.to_string(),
-          custom_layer: util::dynamic_log_layer,
-        }),
-    );
+    let ui_manager = UiManager::new(&mut app);
 
     Self {
       app,
       cache: Cache::load_or_default(),
       scene_type_registry: default(),
       prefab_registrar: default(),
-      ui_manager: default(),
       component_registry: default(),
+      ui_manager,
     }
-  }
-
-  pub fn register_ui<U: RawUi>(&mut self) -> &mut Self {
-    self.ui_manager.register::<U>();
-    self
   }
 
   pub fn register_component<T: RegisterableComponent>(&mut self) -> &mut Self {
@@ -113,6 +85,20 @@ impl Editor {
   pub fn register_components<T: RegisterableComponents>(&mut self) -> &mut Self {
     T::register_components(self.app.world_mut(), &mut self.component_registry);
     T::register_types(self);
+    self
+  }
+
+  pub fn register_game_camera<C>(&mut self) -> &mut Self
+  where
+    C: Component + Reflect + TypePath + Identifiable,
+  {
+    view::add_game_camera::<C>(&mut self.app);
+    self.register_ui::<GameView<C>>()
+  }
+
+  pub fn register_ui<U: RawUi>(&mut self) -> &mut Self {
+    self.ui_manager.register::<U>(&mut self.app);
+    self.register_type::<U>();
     self
   }
 
@@ -136,20 +122,31 @@ impl Editor {
     self
   }
 
-  pub fn add_game_camera<C>(&mut self) -> &mut Self
-  where
-    C: Component + Reflect + TypePath + Identifiable,
-  {
-    view::add_game_camera::<C>(&mut self.app);
-    self.register_ui::<GameView<C>>()
-  }
-
   fn register_type<T>(&mut self)
   where
     T: GetTypeRegistration,
   {
     self.scene_type_registry.write().register::<T>();
     self.app.register_type::<T>();
+  }
+
+  pub fn run(self) -> AppExit {
+    let Self {
+      mut app,
+      scene_type_registry,
+      prefab_registrar,
+      ui_manager,
+      cache,
+      component_registry,
+    } = self;
+
+    app
+      .insert_resource(cache)
+      .insert_resource(scene_type_registry)
+      .insert_resource(prefab_registrar)
+      .insert_resource(component_registry)
+      .insert_resource(ui_manager)
+      .run()
   }
 
   // systems
@@ -260,31 +257,34 @@ impl Editor {
     app_exit.write(AppExit::Success);
   }
 
-  pub fn launch(self) -> AppExit {
-    let Self {
-      mut app,
-      scene_type_registry,
-      prefab_registrar,
-      ui_manager,
-      cache,
-      component_registry,
-    } = self;
-
+  fn init_app(app: &mut App) {
     app
       .add_plugins((
+        DefaultPlugins
+          .set(WindowPlugin {
+            primary_window: Some(Window {
+              title: String::from("Beditor"),
+              mode: WindowMode::Windowed,
+              visible: false,
+              ..default()
+            }),
+            close_when_requested: false,
+            ..default()
+          })
+          .set(LogPlugin {
+            level: LogLevel::Trace.into(),
+            filter: DEFAULT_FILTER.to_string(),
+            custom_layer: util::dynamic_log_layer,
+          }),
         EditorViewPlugin,
         MeshPickingPlugin,
         DefaultInspectorConfigPlugin,
         InputPlugin,
-        UiPlugin(Mutex::new(RefCell::new(Some(ui_manager)))),
+        UiPlugin,
         FrameTimeDiagnosticsPlugin::default(),
         EntityCountDiagnosticsPlugin,
         SystemInformationDiagnosticsPlugin,
       ))
-      .insert_resource(cache)
-      .insert_resource(scene_type_registry)
-      .insert_resource(prefab_registrar)
-      .insert_resource(component_registry)
       .init_resource::<EditorSettings>()
       .insert_state(EditorState::Editing)
       .add_event::<SaveEvent>()
@@ -339,8 +339,7 @@ impl Editor {
         )
           .chain()
           .in_set(EditorGlobal),
-      )
-      .run()
+      );
   }
 }
 

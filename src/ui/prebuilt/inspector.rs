@@ -24,9 +24,11 @@ impl Inspector {
   ) where
     F: FnOnce(&mut World, &mut egui::Ui),
   {
+    // makes the whole pane droppable
     let frame = egui::Frame::default();
     let available_rect = ui.available_rect_before_wrap();
 
+    // fixes weird highlighting on background
     let bg_fill = ui.style().visuals.window_fill();
     ui.style_mut().visuals.widgets.inactive.bg_fill = bg_fill;
 

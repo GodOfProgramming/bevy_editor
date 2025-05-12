@@ -59,7 +59,7 @@ impl Plugin for UiPlugin {
       .add_plugins(EguiPlugin {
         enable_multipass_for_primary_context: false,
       })
-      .add_systems(Startup, Self::init_resources)
+      .add_systems(Startup, (Self::init_resources, Self::setup_ctx))
       .add_systems(
         Update,
         (
@@ -93,6 +93,16 @@ impl UiPlugin {
     world.resource_scope(|world, mut layout: Mut<UiManager>| {
       layout.restore_or_init(world);
     });
+  }
+
+  fn setup_ctx(mut q_ctx: Query<&mut bevy_egui::EguiContext>) {
+    let mut fonts = egui::FontDefinitions::default();
+    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+
+    for mut ctx in &mut q_ctx {
+      let ctx = ctx.get_mut();
+      ctx.set_fonts(fonts.clone());
+    }
   }
 
   pub fn reset_ui_info(mut q_ui_infos: Query<&mut UiInfo>) {
@@ -201,6 +211,11 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
     true
   }
 
+  #[allow(unused_variables)]
+  fn scroll_bars(entity: Entity, world: &mut World) -> [bool; 2] {
+    [true, true]
+  }
+
   fn unique() -> bool {
     false
   }
@@ -268,6 +283,11 @@ pub trait Ui: RawUi {
   #[allow(unused_variables)]
   fn can_clear(&self, params: Self::Params<'_, '_>) -> bool {
     true
+  }
+
+  #[allow(unused_variables)]
+  fn scroll_bars(&self, params: Self::Params<'_, '_>) -> [bool; 2] {
+    [true, true]
   }
 
   fn unique() -> bool {
@@ -347,6 +367,11 @@ where
     Self::get_entity(entity, world, Ui::can_clear)
   }
 
+  #[allow(unused_variables)]
+  fn scroll_bars(entity: Entity, world: &mut World) -> [bool; 2] {
+    Self::get_entity(entity, world, Ui::scroll_bars)
+  }
+
   fn unique() -> bool {
     <Self as Ui>::unique()
   }
@@ -371,6 +396,7 @@ struct VTable {
   closeable: fn(Entity, &mut World) -> bool,
   hidden: fn() -> bool,
   can_clear: fn(Entity, &mut World) -> bool,
+  scroll_bars: fn(Entity, &mut World) -> [bool; 2],
   unique: fn() -> bool,
   popout: fn() -> bool,
   count: fn(&mut World) -> usize,
@@ -395,6 +421,7 @@ impl VTable {
       closeable: T::closeable,
       hidden: T::hidden,
       can_clear: T::can_clear,
+      scroll_bars: T::scroll_bars,
       unique: T::unique,
       popout: T::popout,
       count: Self::count::<T>,
@@ -557,6 +584,11 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 
   fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
     egui::Id::new(tab)
+  }
+
+  fn scroll_bars(&self, tab: &Self::Tab) -> [bool; 2] {
+    let vtable = self.vtable_of(*tab);
+    (vtable.scroll_bars)(*tab, &mut self.world.borrow_mut())
   }
 }
 

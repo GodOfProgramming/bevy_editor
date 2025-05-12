@@ -6,6 +6,20 @@ fn main() {
 
   editor
     .register_components::<(SpinComponent, GrowthComponent)>()
+    .register_components::<(
+      ExampleComponent<i8>,
+      ExampleComponent<i16>,
+      ExampleComponent<i32>,
+      ExampleComponent<i64>,
+    )>()
+    .register_components::<(
+      ExampleComponent<u8>,
+      ExampleComponent<u16>,
+      ExampleComponent<u32>,
+      ExampleComponent<u64>,
+    )>()
+    .register_components::<(ExampleComponent<f32>, ExampleComponent<f64>)>()
+    .register_components::<(ExampleComponent<isize>, ExampleComponent<usize>)>()
     .add_systems(Startup, startup)
     .add_systems(Update, (spin, grow));
 
@@ -69,3 +83,8 @@ struct GrowthComponent {
   rate: f32,
   dims: Vec3,
 }
+
+#[derive(Component, Reflect, Default)]
+struct ExampleComponent<T>(T)
+where
+  T: Reflect;

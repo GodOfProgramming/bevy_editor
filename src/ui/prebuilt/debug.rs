@@ -3,12 +3,14 @@ use std::marker::PhantomData;
 use crate::ui::Ui;
 use crate::util::LoggingSettings;
 use bevy::{diagnostic::DiagnosticsStore, ecs::system::SystemParam, prelude::*};
-use bevy_egui::egui;
+use bevy_egui::{EguiContext, egui};
 use bevy_inspector_egui::reflect_inspector::ui_for_value;
 use uuid::uuid;
 
 #[derive(Default, Component, Reflect)]
-pub struct DebugMenu;
+pub struct DebugMenu {
+  ui_debug_on_hover: bool,
+}
 
 impl DebugMenu {
   fn log_level_selector(&self, ui: &mut egui::Ui, params: &mut Params) {
@@ -38,6 +40,18 @@ impl DebugMenu {
       }
     });
   }
+
+  fn handle_ui_debug(
+    mut events: EventReader<DebugUiEvent>,
+    mut q_egui_ctx: Query<&mut EguiContext>,
+  ) {
+    for event in events.read() {
+      for mut ctx in &mut q_egui_ctx {
+        let ctx = ctx.get_mut();
+        ctx.set_debug_on_hover(event.0);
+      }
+    }
+  }
 }
 
 #[derive(SystemParam)]
@@ -45,6 +59,7 @@ pub struct Params<'w, 's> {
   type_registry: Res<'w, AppTypeRegistry>,
   logging: ResMut<'w, LoggingSettings>,
   diagnostics: Res<'w, DiagnosticsStore>,
+  debug_ui_event_writer: EventWriter<'w, DebugUiEvent>,
 
   _pd: PhantomData<&'s ()>,
 }
@@ -54,6 +69,12 @@ impl Ui for DebugMenu {
   const ID: uuid::Uuid = uuid!("9473f6e1-a595-41e2-8e29-a4f041580fa6");
 
   type Params<'w, 's> = Params<'w, 's>;
+
+  fn init(app: &mut App) {
+    app
+      .add_event::<DebugUiEvent>()
+      .add_systems(Update, Self::handle_ui_debug);
+  }
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
     default()
@@ -67,5 +88,17 @@ impl Ui for DebugMenu {
     self.diagnostics(ui, &params);
     ui.separator();
     self.log_level_selector(ui, &mut params);
+    ui.separator();
+    if ui
+      .checkbox(&mut self.ui_debug_on_hover, "Debug UI")
+      .clicked()
+    {
+      params
+        .debug_ui_event_writer
+        .write(DebugUiEvent(self.ui_debug_on_hover));
+    }
   }
 }
+
+#[derive(Event)]
+struct DebugUiEvent(bool);

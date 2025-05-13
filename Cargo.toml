@@ -6,7 +6,7 @@ rust-version = "1.86.0"
 publish = false
 
 [workspace]
-members = [".", "crates/macros", "crates/persistent-id"]
+members = [".", "crates/bui", "crates/macros", "crates/persistent-id"]
 
 [workspace.dependencies]
 async-std = "1.13.0"

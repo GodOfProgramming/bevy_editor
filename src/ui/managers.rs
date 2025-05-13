@@ -1,10 +1,10 @@
 use super::{
-  InspectorSelection, LayoutState, PersistentId, RawUi, TabViewer, VTable,
+  InspectorSelection, LayoutInfo, LayoutState, RawUi, TabViewer, VTable, components,
   events::SaveLayoutEvent,
   misc::{DockExtensions, MissingUi, UiComponentExtensions},
   prebuilt::{
-    assets::Assets, components, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
-    inspector::Inspector, prefabs::Prefabs, resources::Resources,
+    assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
+    hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
   },
 };
 use crate::{
@@ -13,12 +13,10 @@ use crate::{
   util::WorldExtensions,
   view::{self, ActiveEditorCamera, EditorCamera},
 };
-use bevy::{
-  platform::collections::{HashMap, hash_map},
-  prelude::*,
-};
+use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_egui::egui::{self, TextBuffer};
 use egui_dock::{DockArea, DockState, NodeIndex, Surface, SurfaceIndex};
+use persistent_id::PersistentId;
 use std::{any::TypeId, cell::RefCell, collections::BTreeMap};
 use uuid::Uuid;
 
@@ -33,8 +31,8 @@ pub(crate) struct UiManager {
   id: egui::Id,
 }
 
-impl Default for UiManager {
-  fn default() -> Self {
+impl UiManager {
+  pub fn new(app: &mut App) -> Self {
     let mut this = Self {
       state: DockState::new(Vec::new()),
       vtables: default(),
@@ -42,20 +40,19 @@ impl Default for UiManager {
       layout_manager: default(),
     };
 
-    this.register::<MissingUi>();
-    this.register::<EditorView>();
-    this.register::<Hierarchy>();
-    this.register::<DebugMenu>();
-    this.register::<Inspector>();
-    this.register::<Prefabs>();
-    this.register::<Resources>();
-    this.register::<Assets>();
+    this.register::<MissingUi>(app);
+    this.register::<EditorView>(app);
+    this.register::<Hierarchy>(app);
+    this.register::<DebugMenu>(app);
+    this.register::<Inspector>(app);
+    this.register::<Prefabs>(app);
+    this.register::<Resources>(app);
+    this.register::<Assets>(app);
+    this.register::<Components>(app);
 
     this
   }
-}
 
-impl UiManager {
   pub fn restore_or_init(&mut self, world: &mut World) {
     let (state, layouts) = world
       .resource_scope(|world, cache: Mut<Cache>| {
@@ -72,15 +69,16 @@ impl UiManager {
     self.layout_manager.layouts = layouts;
   }
 
-  pub fn register<T: RawUi>(&mut self) {
+  pub fn register<T: RawUi>(&mut self, app: &mut App) {
+    T::init(app);
     self.vtables.insert(PersistentId(T::ID), T::VTABLE);
   }
 
   pub fn render(&mut self, world: &mut World) {
     let Ok(ctx) = world
       .query::<&mut bevy_egui::EguiContext>()
-      .single(world)
-      .map(|ctx| ctx.get().clone())
+      .single_mut(world)
+      .map(|mut ctx| ctx.get_mut().clone())
     else {
       return;
     };
@@ -111,7 +109,7 @@ impl UiManager {
       });
   }
 
-  pub(super) fn vtables(&self) -> hash_map::Values<'_, PersistentId, VTable> {
+  pub(super) fn vtables(&self) -> impl Iterator<Item = &VTable> {
     self.vtables.values()
   }
 
@@ -119,15 +117,15 @@ impl UiManager {
     &self,
     q_uuids: &Query<&PersistentId, Without<MissingUi>>,
     q_missing: &Query<&MissingUi>,
-  ) -> DockState<Uuid> {
-    self.state.decouple(q_uuids, q_missing)
+  ) -> DockState<LayoutInfo> {
+    self.state.decouple(self, q_uuids, q_missing)
   }
 
-  pub fn save_layout(&mut self, name: impl Into<String>, dock: DockState<Uuid>) {
+  pub fn save_layout(&mut self, name: impl Into<String>, dock: DockState<LayoutInfo>) {
     self.layout_manager.layouts.insert(name.into(), dock);
   }
 
-  pub fn saved_layouts(&self) -> &BTreeMap<String, DockState<Uuid>> {
+  pub fn saved_layouts(&self) -> &BTreeMap<String, DockState<LayoutInfo>> {
     &self.layout_manager.layouts
   }
 
@@ -138,6 +136,10 @@ impl UiManager {
   pub(super) fn vtable_of(&self, entity: Entity, world: &mut World) -> &VTable {
     let mut q_ids = world.query::<&PersistentId>();
     let id = q_ids.get(world, entity).unwrap();
+    self.get_vtable_by_id(id)
+  }
+
+  pub(super) fn get_vtable_by_id(&self, id: &PersistentId) -> &VTable {
     &self.vtables[id]
   }
 
@@ -167,6 +169,7 @@ impl UiManager {
 
     let tabs = vec![
       self.spawn_type::<Prefabs>(world),
+      self.spawn_type::<Components>(world),
       self.spawn_type::<Resources>(world),
       self.spawn_type::<Assets>(world),
     ];
@@ -416,5 +419,5 @@ struct LayoutManager {
   save_name_text: String,
   show_save_layout_modal: bool,
   show_confirm_reset_modal: bool,
-  layouts: BTreeMap<String, DockState<Uuid>>,
+  layouts: BTreeMap<String, DockState<LayoutInfo>>,
 }

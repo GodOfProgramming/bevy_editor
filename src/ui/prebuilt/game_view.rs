@@ -1,8 +1,8 @@
 use crate::ui::{Ui, misc::UiInfo};
 use bevy::{ecs::system::SystemParam, prelude::*, render::camera::Viewport, window::PrimaryWindow};
 use bevy_egui::egui;
+use persistent_id::Identifiable;
 use std::marker::PhantomData;
-use uuid::uuid;
 
 #[derive(Component, Reflect)]
 pub struct GameView<C>
@@ -89,16 +89,21 @@ where
 #[derive(SystemParam)]
 pub struct Params<'w, 's, C: Component> {
   q_cameras: Query<'w, 's, &'static mut Camera, With<C>>,
+  title: Local<'s, String>,
 }
 
 impl<C> Ui for GameView<C>
 where
-  C: Component + Reflect + TypePath,
+  C: Component + Reflect + TypePath + Identifiable,
 {
-  const NAME: &str = "Game View";
-  const ID: uuid::Uuid = uuid!("f26513f6-86fa-48e2-9f6f-e094ad9dcbfb");
+  const NAME: &str = <C as Identifiable>::TYPE_NAME;
+  const ID: uuid::Uuid = <C as Identifiable>::ID;
 
   type Params<'w, 's> = Params<'w, 's, C>;
+
+  fn title(&mut self, params: Self::Params<'_, '_>) -> egui::WidgetText {
+    params.title.as_str().into()
+  }
 
   fn init(app: &mut App) {
     app
@@ -106,7 +111,9 @@ where
       .add_systems(PostUpdate, Self::set_viewport);
   }
 
-  fn spawn(_params: Self::Params<'_, '_>) -> Self {
+  fn spawn(mut params: Self::Params<'_, '_>) -> Self {
+    let type_path = C::type_path();
+    *params.title = format!("Game View of {type_path}");
     default()
   }
 

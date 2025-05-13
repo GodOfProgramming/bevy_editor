@@ -1,17 +1,19 @@
+use beditor::Editor;
 use bevy::{color::palettes::css::PURPLE, prelude::*};
-use bevy_editor::Editor;
+use macros::Identifiable;
 
 fn main() {
   let mut editor = Editor::default();
 
   editor
-    .add_game_camera::<GameCamera>()
+    .register_game_camera::<GameCamera>()
     .add_systems(Startup, startup);
 
-  editor.launch();
+  editor.run();
 }
 
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Identifiable)]
+#[id("9d8c1906-62f7-4aab-ab26-cb7f7e8828c6")]
 struct GameCamera;
 
 fn startup(

@@ -1,9 +1,13 @@
+pub mod components;
 pub mod events;
 pub mod managers;
 pub mod misc;
 pub mod prebuilt;
 
-use crate::cache::{Cache, Saveable};
+use crate::{
+  EditorSettings,
+  cache::{Cache, Saveable},
+};
 use bevy::{
   asset::UntypedAssetId,
   ecs::{component::Mutable, system::SystemParam},
@@ -11,35 +15,27 @@ use bevy::{
   prelude::*,
   reflect::GetTypeRegistration,
 };
-use bevy_egui::{
-  EguiPlugin,
-  egui::{self},
-};
+use bevy_egui::{EguiPlugin, egui};
 use bevy_inspector_egui::bevy_inspector;
-use derive_more::derive::From;
 use egui_dock::{DockState, NodeIndex, SurfaceIndex};
 use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
 use itertools::{Either, Itertools};
 use managers::UiManager;
 use misc::{MissingUi, UiExtensions, UiInfo};
-use parking_lot::Mutex;
+use persistent_id::PersistentId;
 use prebuilt::{
-  assets::Assets, debug::DebugMenu, editor_view::EditorView, hierarchy::Hierarchy,
-  inspector::Inspector, prefabs::Prefabs, resources::Resources,
+  assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
+  hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
 };
 use serde::{Deserialize, Serialize};
-use std::{any::TypeId, borrow::BorrowMut, cell::RefCell, collections::BTreeMap};
+use std::{any::TypeId, cell::RefCell, collections::BTreeMap};
 use uuid::Uuid;
 
-pub(crate) struct UiPlugin(pub Mutex<RefCell<Option<UiManager>>>);
+pub(crate) struct UiPlugin;
 
 impl Plugin for UiPlugin {
   fn build(&self, app: &mut App) {
     debug!("Building UI Plugin");
-
-    let mut layout = self.0.lock();
-    let layout = layout.borrow_mut();
-    let ui_manager = layout.take().unwrap();
 
     app
       .register_type::<MissingUi>()
@@ -50,6 +46,7 @@ impl Plugin for UiPlugin {
       .register_type::<Prefabs>()
       .register_type::<Resources>()
       .register_type::<Assets>()
+      .register_type::<Components>()
       .add_event::<AddUiEvent>()
       .add_event::<RemoveUiEvent>()
       .add_event::<SaveLayoutEvent>()
@@ -57,7 +54,7 @@ impl Plugin for UiPlugin {
       .add_plugins(EguiPlugin {
         enable_multipass_for_primary_context: false,
       })
-      .add_systems(Startup, Self::init_resources)
+      .add_systems(Startup, (Self::init_resources, Self::setup_ctx))
       .add_systems(
         Update,
         (
@@ -72,15 +69,10 @@ impl Plugin for UiPlugin {
             AddUiEvent::on_event,
           ),
         )
-          .chain(),
+          .chain()
+          .run_if(|editor_settings: Res<EditorSettings>| editor_settings.render_ui),
       )
       .add_systems(FixedUpdate, SaveLayoutEvent::on_event);
-
-    for vtable in ui_manager.vtables() {
-      (vtable.init)(app);
-    }
-
-    app.insert_resource(ui_manager);
   }
 }
 
@@ -90,6 +82,16 @@ impl UiPlugin {
     world.resource_scope(|world, mut layout: Mut<UiManager>| {
       layout.restore_or_init(world);
     });
+  }
+
+  fn setup_ctx(mut q_ctx: Query<&mut bevy_egui::EguiContext>) {
+    let mut fonts = egui::FontDefinitions::default();
+    egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+
+    for mut ctx in &mut q_ctx {
+      let ctx = ctx.get_mut();
+      ctx.set_fonts(fonts.clone());
+    }
   }
 
   pub fn reset_ui_info(mut q_ui_infos: Query<&mut UiInfo>) {
@@ -198,6 +200,11 @@ pub trait RawUi: Component + GetTypeRegistration + Send + Sync + Sized {
     true
   }
 
+  #[allow(unused_variables)]
+  fn scroll_bars(entity: Entity, world: &mut World) -> [bool; 2] {
+    [true, true]
+  }
+
   fn unique() -> bool {
     false
   }
@@ -265,6 +272,11 @@ pub trait Ui: RawUi {
   #[allow(unused_variables)]
   fn can_clear(&self, params: Self::Params<'_, '_>) -> bool {
     true
+  }
+
+  #[allow(unused_variables)]
+  fn scroll_bars(&self, params: Self::Params<'_, '_>) -> [bool; 2] {
+    [true, true]
   }
 
   fn unique() -> bool {
@@ -344,6 +356,11 @@ where
     Self::get_entity(entity, world, Ui::can_clear)
   }
 
+  #[allow(unused_variables)]
+  fn scroll_bars(entity: Entity, world: &mut World) -> [bool; 2] {
+    Self::get_entity(entity, world, Ui::scroll_bars)
+  }
+
   fn unique() -> bool {
     <Self as Ui>::unique()
   }
@@ -355,8 +372,7 @@ where
 
 #[derive(Clone)]
 struct VTable {
-  name: fn() -> &'static str,
-  init: fn(&mut App),
+  name: &'static str,
   spawn: fn(&mut World) -> Entity,
   despawn: fn(Entity, &mut World),
   title: fn(Entity, &mut World) -> egui::WidgetText,
@@ -368,6 +384,7 @@ struct VTable {
   closeable: fn(Entity, &mut World) -> bool,
   hidden: fn() -> bool,
   can_clear: fn(Entity, &mut World) -> bool,
+  scroll_bars: fn(Entity, &mut World) -> [bool; 2],
   unique: fn() -> bool,
   popout: fn() -> bool,
   count: fn(&mut World) -> usize,
@@ -379,8 +396,7 @@ impl VTable {
     T: RawUi,
   {
     Self {
-      name: || T::NAME,
-      init: T::init,
+      name: T::NAME,
       spawn: Self::spawn::<T>,
       despawn: Self::despawn::<T>,
       title: T::title,
@@ -392,6 +408,7 @@ impl VTable {
       closeable: T::closeable,
       hidden: T::hidden,
       can_clear: T::can_clear,
+      scroll_bars: T::scroll_bars,
       unique: T::unique,
       popout: T::popout,
       count: Self::count::<T>,
@@ -476,7 +493,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       .vtables
       .iter()
       .filter(|(_, vtable)| (vtable.unique)() && !(vtable.hidden)())
-      .map(|(id, vtable)| (id, (vtable.name)()))
+      .map(|(id, vtable)| (id, vtable.name))
       .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
     for (id, name) in unique_tabs {
@@ -499,7 +516,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
       .vtables
       .iter()
       .filter(|(_, vtable)| !(vtable.unique)())
-      .map(|(id, vtable)| (id, (vtable.name)()))
+      .map(|(id, vtable)| (id, vtable.name))
       .sorted_by(|(_, a), (_, b)| a.cmp(b));
 
     if spawnable_tables.len() > 0 {
@@ -555,16 +572,27 @@ impl egui_dock::TabViewer for TabViewer<'_> {
   fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
     egui::Id::new(tab)
   }
+
+  fn scroll_bars(&self, tab: &Self::Tab) -> [bool; 2] {
+    let vtable = self.vtable_of(*tab);
+    (vtable.scroll_bars)(*tab, &mut self.world.borrow_mut())
+  }
 }
 
 #[derive(Serialize, Deserialize)]
 struct LayoutState {
-  dock: DockState<Uuid>,
-  layouts: BTreeMap<String, DockState<Uuid>>,
+  dock: DockState<LayoutInfo>,
+  layouts: BTreeMap<String, DockState<LayoutInfo>>,
 }
 
 impl Saveable for LayoutState {
   const KEY: &str = "Layout";
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct LayoutInfo {
+  id: PersistentId,
+  name: String,
 }
 
 #[derive(Resource)]
@@ -594,9 +622,6 @@ impl InspectorSelection {
 
 #[derive(Default, Deref, DerefMut, Debug)]
 pub struct SelectedEntities(bevy_inspector::hierarchy::SelectedEntities);
-
-#[derive(Default, Deref, DerefMut, Component, Clone, Copy, Hash, PartialEq, Eq, Reflect, From)]
-pub struct PersistentId(#[reflect(ignore)] pub Uuid);
 
 /// Component that stores all ui components as children for organization
 #[derive(Component)]

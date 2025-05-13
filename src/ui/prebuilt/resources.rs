@@ -39,13 +39,16 @@ impl Ui for Resources {
       .filter(|registration| registration.data::<ReflectResource>().is_some())
       .filter_map(|registration| {
         let name = registration.type_info().type_path_table().short_path();
-        (params.filter.is_empty() || name.to_lowercase().contains(params.filter.as_str()))
-          .then(|| (name, registration.type_id()))
+        (params.filter.is_empty()
+          || name
+            .to_lowercase()
+            .contains(params.filter.to_lowercase().as_str()))
+        .then(|| (name, registration.type_id()))
       })
       .collect();
     resources.sort_by(|(name_a, _), (name_b, _)| name_a.cmp(name_b));
 
-    ui.text_edit_singleline(&mut *params.filter).changed();
+    ui.text_edit_singleline(&mut *params.filter);
 
     for (resource_name, type_id) in resources {
       let selected = match *params.selection {

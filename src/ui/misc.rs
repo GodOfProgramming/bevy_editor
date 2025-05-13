@@ -1,4 +1,6 @@
-use super::{PersistentId, RawUi, Ui, VTable};
+use crate::UiManager;
+
+use super::{LayoutInfo, RawUi, Ui, VTable};
 use bevy::{
   ecs::{
     component::Mutable,
@@ -10,6 +12,7 @@ use bevy::{
 use bevy_egui::egui::{self, text::LayoutJob};
 use derive_more::derive::Deref;
 use egui_dock::DockState;
+use persistent_id::PersistentId;
 use uuid::{Uuid, uuid};
 
 #[derive(SystemParam)]
@@ -55,9 +58,9 @@ pub unsafe trait UiExtensions: Ui {
   ) -> T {
     let mut q = world.query::<(&Self, &mut UiParams<Self>)>();
     let world_cell = world.as_unsafe_world_cell();
-    let (this, mut params) = q
-      .get_mut(unsafe { world_cell.world_mut() }, entity)
-      .unwrap();
+    let Ok((this, mut params)) = q.get_mut(unsafe { world_cell.world_mut() }, entity) else {
+      panic!("Failed to query {}", <Self as Ui>::NAME);
+    };
     let params = params.get_mut(unsafe { world_cell.world_mut() });
     f(this, params)
   }
@@ -106,39 +109,36 @@ struct UiComponentState<P>(SystemState<P>)
 where
   P: SystemParam + 'static;
 
-#[derive(Component, Reflect)]
+#[derive(Component, Reflect, Default)]
 pub struct MissingUi {
   message: String,
-  uuid: Uuid,
+  id: PersistentId,
+  name: String,
 }
 
 impl MissingUi {
-  pub fn new(id: impl Into<PersistentId>) -> Self {
+  pub fn new(name: impl Into<String>, id: impl Into<PersistentId>) -> Self {
     let id = id.into();
+    let name = name.into();
     Self {
-      message: format!("Failed to find ui component with uuid: {}", *id),
-      uuid: *id,
+      message: format!("Failed to find ui component {name} with uuid: {}", *id),
+      id,
+      name,
     }
   }
-  pub fn id(&self) -> &Uuid {
-    &self.uuid
+  pub fn id(&self) -> &PersistentId {
+    &self.id
   }
 }
 
-#[derive(SystemParam)]
-pub struct NoUiParams;
-
 impl Ui for MissingUi {
-  const NAME: &str = "No Ui";
+  const NAME: &str = "Missing Ui";
   const ID: Uuid = uuid!("d0f32ae1-2851-4bcd-a0c9-f83ae030d85f");
 
-  type Params<'w, 's> = NoUiParams;
+  type Params<'w, 's> = NoParams;
 
   fn spawn(_params: Self::Params<'_, '_>) -> Self {
-    Self {
-      message: default(),
-      uuid: default(),
-    }
+    default()
   }
 
   fn hidden() -> bool {
@@ -159,12 +159,13 @@ impl Ui for MissingUi {
 pub(super) trait DockExtensions {
   fn decouple(
     &self,
+    ui_manager: &UiManager,
     q_uuids: &Query<&PersistentId, Without<MissingUi>>,
     q_missing: &Query<&MissingUi>,
-  ) -> DockState<Uuid>;
+  ) -> DockState<LayoutInfo>;
 
   fn restore(
-    dock: &DockState<Uuid>,
+    dock: &DockState<LayoutInfo>,
     vtables: &HashMap<PersistentId, VTable>,
     world: &mut World,
   ) -> Self;
@@ -173,34 +174,53 @@ pub(super) trait DockExtensions {
 impl DockExtensions for DockState<Entity> {
   fn decouple(
     &self,
-    q_uuids: &Query<&PersistentId, Without<MissingUi>>,
+    ui_manager: &UiManager,
+    q_persistent_ids: &Query<&PersistentId, Without<MissingUi>>,
     q_missing: &Query<&MissingUi>,
-  ) -> DockState<Uuid> {
+  ) -> DockState<LayoutInfo> {
     self.map_tabs(|tab| {
+      let id;
+      let name;
       if let Ok(missing_uuid) = q_missing.get(*tab) {
-        *missing_uuid.id()
+        id = *missing_uuid.id();
+        name = missing_uuid.name.clone();
       } else {
-        **q_uuids.get(*tab).unwrap()
+        id = *q_persistent_ids.get(*tab).unwrap();
+        let vtable = ui_manager.get_vtable_by_id(&id);
+        name = vtable.name.into();
       }
+
+      LayoutInfo { id, name }
     })
   }
 
   fn restore(
-    dock: &DockState<Uuid>,
+    dock: &DockState<LayoutInfo>,
     vtables: &HashMap<PersistentId, VTable>,
     world: &mut World,
   ) -> Self {
-    dock.map_tabs(|tab| {
+    dock.map_tabs(|layout_info| {
       vtables
-        .get(&PersistentId(*tab))
+        .get(&layout_info.id)
         .map(|vtable| (vtable.spawn)(world))
         .unwrap_or_else(|| {
-          let entity_id = world
-            .spawn((MissingUi::new(*tab), PersistentId(<MissingUi as RawUi>::ID)))
-            .id();
-          world.entity_mut(entity_id).insert(Name::new("Missing Ui"));
-          info!("Failed to find ui with uuid: {tab}");
-          entity_id
+          let name = &layout_info.name;
+          let state = SystemState::<<MissingUi as Ui>::Params<'_, '_>>::new(world);
+
+          warn!(
+            "Failed to find ui component {name} with uuid {}",
+            *layout_info.id
+          );
+
+          world
+            .spawn((
+              Name::new(<MissingUi as RawUi>::NAME),
+              MissingUi::new(name, layout_info.id),
+              PersistentId(<MissingUi as RawUi>::ID),
+              UiInfo::default(),
+              UiComponentState(state),
+            ))
+            .id()
         })
     })
   }

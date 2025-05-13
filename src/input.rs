@@ -1,7 +1,7 @@
-use crate::EditorState;
+use crate::{EditorSettings, EditorState};
 use bevy::prelude::*;
 use leafwing_input_manager::{
-  Actionlike, InputManagerBundle,
+  Actionlike,
   plugin::InputManagerPlugin,
   prelude::{ActionState, InputMap, MouseScrollAxis},
 };
@@ -17,6 +17,7 @@ pub enum EditorActions {
   MoveSouth,
   MoveWest,
   MoveEast,
+  ToggleUi,
 }
 
 pub struct InputPlugin;
@@ -31,12 +32,10 @@ impl InputPlugin {
       .with(EditorActions::MoveNorth, KeyCode::KeyW)
       .with(EditorActions::MoveSouth, KeyCode::KeyS)
       .with(EditorActions::MoveWest, KeyCode::KeyA)
-      .with(EditorActions::MoveEast, KeyCode::KeyD);
+      .with(EditorActions::MoveEast, KeyCode::KeyD)
+      .with(EditorActions::ToggleUi, KeyCode::F11);
 
-    commands.spawn((
-      Name::new("Editor Input"),
-      InputManagerBundle::with_map(inputs),
-    ));
+    commands.spawn((Name::new("Editor Input"), inputs));
   }
 }
 
@@ -52,6 +51,7 @@ pub fn global_input_actions(
   q_action_states: Query<&ActionState<EditorActions>>,
   current_state: Res<State<EditorState>>,
   mut next_editor_state: ResMut<NextState<EditorState>>,
+  mut editor_settings: ResMut<EditorSettings>,
 ) {
   for action_state in &q_action_states {
     if action_state.just_pressed(&EditorActions::Play) {
@@ -60,6 +60,10 @@ pub fn global_input_actions(
       } else {
         next_editor_state.set(EditorState::Editing);
       }
+    }
+
+    if action_state.just_pressed(&EditorActions::ToggleUi) {
+      editor_settings.render_ui = !editor_settings.render_ui;
     }
   }
 }

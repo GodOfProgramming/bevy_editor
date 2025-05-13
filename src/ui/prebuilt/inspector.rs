@@ -1,4 +1,9 @@
-use crate::ui::{InspectorSelection, RawUi};
+use std::any::TypeId;
+
+use crate::{
+  registry::components::ComponentRegistry,
+  ui::{InspectorSelection, RawUi},
+};
 use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::{
@@ -9,6 +14,53 @@ use uuid::{Uuid, uuid};
 
 #[derive(Default, Component, Reflect)]
 pub struct Inspector;
+
+impl Inspector {
+  fn dnd_drop_ui<F>(
+    entities: impl AsRef<[Entity]>,
+    world: &mut World,
+    ui: &mut egui::Ui,
+    render_fn: F,
+  ) where
+    F: FnOnce(&mut World, &mut egui::Ui),
+  {
+    // makes the whole pane droppable
+    let frame = egui::Frame::default();
+    let available_rect = ui.available_rect_before_wrap();
+
+    // fixes weird highlighting on background
+    let bg_fill = ui.style().visuals.window_fill();
+    ui.style_mut().visuals.widgets.inactive.bg_fill = bg_fill;
+
+    let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(frame, |ui| {
+      ui.set_min_size(available_rect.size());
+      render_fn(world, ui);
+    });
+
+    if let Some(component_id) = component_id {
+      Self::spawn_components_on(&component_id, entities.as_ref(), world);
+    }
+  }
+
+  fn spawn_components_on(component_id: &TypeId, entities: &[Entity], world: &mut World) {
+    let Some(component) = world.resource_scope(
+      |_: &mut World, component_registry: Mut<ComponentRegistry>| {
+        component_registry.get(component_id).cloned()
+      },
+    ) else {
+      warn!("Failed to lookup component");
+      return;
+    };
+
+    let component_id = component.id();
+
+    for entity in entities {
+      if world.get_by_id(*entity, component_id).is_none() {
+        component.spawn(*entity, world);
+      }
+    }
+  }
+}
 
 impl RawUi for Inspector {
   const NAME: &str = stringify!(Inspector);
@@ -29,8 +81,16 @@ impl RawUi for Inspector {
     world.resource_scope(
       |world, selection: Mut<InspectorSelection>| match selection.as_ref() {
         InspectorSelection::Entities(selected_entities) => match selected_entities.as_slice() {
-          &[entity] => ui_for_entity_with_children(world, entity, ui),
-          entities => ui_for_entities_shared_components(world, entities, ui),
+          &[entity] => {
+            Self::dnd_drop_ui([entity], world, ui, |world, ui| {
+              ui_for_entity_with_children(world, entity, ui);
+            });
+          }
+          entities => {
+            Self::dnd_drop_ui(entities, world, ui, |world, ui| {
+              ui_for_entities_shared_components(world, entities, ui);
+            });
+          }
         },
         InspectorSelection::Resource(type_id, name) => {
           ui.label(name);

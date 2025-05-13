@@ -48,6 +48,10 @@ impl ComponentRegistry {
     self.mapping.get(type_id)
   }
 
+  pub fn len(&self) -> usize {
+    self.mapping.len()
+  }
+
   pub fn iter(&self) -> impl Iterator<Item = (&TypeId, &RegisteredComponent)> {
     self.mapping.iter()
   }

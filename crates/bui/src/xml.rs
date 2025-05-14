@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, io::BufReader};
+use std::{collections::BTreeMap, io::BufReader, ops::Index};
 use thiserror::Error;
 use xml::{EventReader, reader::XmlEvent};
 
@@ -22,12 +22,24 @@ pub enum XmlNode {
 
 #[derive(Default, Debug)]
 pub struct Tag {
-  name: String,
-  attrs: BTreeMap<String, String>,
-  children: Vec<XmlNode>,
+  pub name: String,
+  pub attrs: BTreeMap<String, String>,
+  pub children: Vec<XmlNode>,
 }
 
-impl Tag {}
+impl Index<usize> for Tag {
+  type Output = XmlNode;
+  fn index(&self, index: usize) -> &Self::Output {
+    &self.children[index]
+  }
+}
+
+impl Index<&str> for Tag {
+  type Output = str;
+  fn index(&self, index: &str) -> &Self::Output {
+    &self.attrs[index]
+  }
+}
 
 pub fn parse(data: &str) -> Result<Vec<XmlNode>, XmlParseError> {
   let reader = BufReader::new(data.as_bytes());
@@ -97,13 +109,13 @@ pub fn parse(data: &str) -> Result<Vec<XmlNode>, XmlParseError> {
 
 #[cfg(test)]
 mod tests {
-  use super::{Tag, XmlNode};
+  use super::XmlNode;
   use speculoos::prelude::*;
-
-  const DUMMY_DATA: &str = include_str!("../test/dummy_data.xml");
 
   #[test]
   fn parse_dummy_data() {
+    const DUMMY_DATA: &str = include_str!("../test/dummy_data.xml");
+
     let nodes = super::parse(DUMMY_DATA).unwrap();
 
     assert_that(&nodes.len()).is_equal_to(1);
@@ -114,12 +126,9 @@ mod tests {
 
     assert_that(&pane.name.as_str()).is_equal_to("Pane");
 
-    let (XmlNode::Text(text1), XmlNode::Tag(button), XmlNode::Tag(rich_text), XmlNode::Text(text2)) = (
-      &pane.children[0],
-      &pane.children[1],
-      &pane.children[2],
-      &pane.children[3],
-    ) else {
+    let (XmlNode::Text(text1), XmlNode::Tag(button), XmlNode::Tag(rich_text), XmlNode::Text(text2)) =
+      (&pane[0], &pane[1], &pane[2], &pane[3])
+    else {
       panic!(
         "Unexpected number of child elements: {}",
         pane.children.len()
@@ -128,15 +137,15 @@ mod tests {
 
     assert_that(&text1.as_str()).is_equal_to("Example Text 1");
 
-    let button_on_click = &button.attrs["OnClick"];
-    let XmlNode::Text(button_text) = &button.children[0] else {
+    let button_on_click = &button["OnClick"];
+    let XmlNode::Text(button_text) = &button[0] else {
       panic!("Expected button text");
     };
     assert_that(&button.name.as_str()).is_equal_to("Button");
-    assert_that(&button_on_click.as_str()).is_equal_to("SomeEvent");
+    assert_that(&button_on_click).is_equal_to("SomeEvent");
     assert_that(&button_text.as_str()).is_equal_to("Button Example");
 
-    let XmlNode::Text(rich_text_text) = &rich_text.children[0] else {
+    let XmlNode::Text(rich_text_text) = &rich_text[0] else {
       panic!("Expected nested text");
     };
     assert_that(&rich_text.name.as_str()).is_equal_to("RichText");

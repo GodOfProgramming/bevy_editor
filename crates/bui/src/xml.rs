@@ -3,7 +3,7 @@ use thiserror::Error;
 use xml::{EventReader, reader::XmlEvent};
 
 #[derive(Debug, Error)]
-pub enum XmlParseError {
+pub enum ParseError {
   #[error("Expected tag to exist")]
   ExpectedTag,
 
@@ -15,7 +15,7 @@ pub enum XmlParseError {
 }
 
 #[derive(Debug)]
-pub enum XmlNode {
+pub enum Node {
   Tag(Tag),
   Text(String),
 }
@@ -24,11 +24,11 @@ pub enum XmlNode {
 pub struct Tag {
   pub name: String,
   pub attrs: BTreeMap<String, String>,
-  pub children: Vec<XmlNode>,
+  pub children: Vec<Node>,
 }
 
 impl Index<usize> for Tag {
-  type Output = XmlNode;
+  type Output = Node;
   fn index(&self, index: usize) -> &Self::Output {
     &self.children[index]
   }
@@ -41,7 +41,7 @@ impl Index<&str> for Tag {
   }
 }
 
-pub fn parse(data: &str) -> Result<Vec<XmlNode>, XmlParseError> {
+pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
   let reader = BufReader::new(data.as_bytes());
   let parser = EventReader::new(reader);
 
@@ -67,39 +67,39 @@ pub fn parse(data: &str) -> Result<Vec<XmlNode>, XmlParseError> {
           children: Vec::new(),
         };
 
-        stack.push(XmlNode::Tag(tag));
+        stack.push(Node::Tag(tag));
       }
       Ok(XmlEvent::EndElement { .. }) => {
         if stack.is_empty() {
-          return Err(XmlParseError::ExpectedTag);
+          return Err(ParseError::ExpectedTag);
         }
 
         if stack.len() == 1 {
           let Some(node) = stack.pop() else {
-            return Err(XmlParseError::ExpectedTag);
+            return Err(ParseError::ExpectedTag);
           };
 
           root_nodes.push(node);
         } else {
           let Some(node) = stack.pop() else {
-            return Err(XmlParseError::ExpectedTag);
+            return Err(ParseError::ExpectedTag);
           };
 
-          let Some(XmlNode::Tag(tag)) = stack.last_mut() else {
-            return Err(XmlParseError::ExpectedTag);
+          let Some(Node::Tag(tag)) = stack.last_mut() else {
+            return Err(ParseError::ExpectedTag);
           };
 
           tag.children.push(node);
         }
       }
       Ok(XmlEvent::Characters(text) | XmlEvent::CData(text)) => {
-        let Some(XmlNode::Tag(tag)) = stack.last_mut() else {
-          return Err(XmlParseError::ExpectedTag);
+        let Some(Node::Tag(tag)) = stack.last_mut() else {
+          return Err(ParseError::ExpectedTag);
         };
 
-        tag.children.push(XmlNode::Text(text.trim().to_string()));
+        tag.children.push(Node::Text(text.trim().to_string()));
       }
-      Err(e) => return Err(XmlParseError::General(e)),
+      Err(e) => return Err(ParseError::General(e)),
       _ => (),
     }
   }
@@ -109,7 +109,7 @@ pub fn parse(data: &str) -> Result<Vec<XmlNode>, XmlParseError> {
 
 #[cfg(test)]
 mod tests {
-  use super::XmlNode;
+  use super::Node;
   use speculoos::prelude::*;
 
   #[test]
@@ -120,13 +120,13 @@ mod tests {
 
     assert_that(&nodes.len()).is_equal_to(1);
 
-    let XmlNode::Tag(pane) = nodes.first().unwrap() else {
+    let Node::Tag(pane) = nodes.first().unwrap() else {
       panic!("Expected pane tag to be first")
     };
 
     assert_that(&pane.name.as_str()).is_equal_to("Pane");
 
-    let (XmlNode::Text(text1), XmlNode::Tag(button), XmlNode::Tag(rich_text), XmlNode::Text(text2)) =
+    let (Node::Text(text1), Node::Tag(button), Node::Tag(rich_text), Node::Text(text2)) =
       (&pane[0], &pane[1], &pane[2], &pane[3])
     else {
       panic!(
@@ -138,14 +138,14 @@ mod tests {
     assert_that(&text1.as_str()).is_equal_to("Example Text 1");
 
     let button_on_click = &button["OnClick"];
-    let XmlNode::Text(button_text) = &button[0] else {
+    let Node::Text(button_text) = &button[0] else {
       panic!("Expected button text");
     };
     assert_that(&button.name.as_str()).is_equal_to("Button");
     assert_that(&button_on_click).is_equal_to("SomeEvent");
     assert_that(&button_text.as_str()).is_equal_to("Button Example");
 
-    let XmlNode::Text(rich_text_text) = &rich_text[0] else {
+    let Node::Text(rich_text_text) = &rich_text[0] else {
       panic!("Expected nested text");
     };
     assert_that(&rich_text.name.as_str()).is_equal_to("RichText");

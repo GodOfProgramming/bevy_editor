@@ -51,7 +51,9 @@ fn create_entity_from_node(
 
   let struct_ref = reflect_val.reflect_mut().as_struct().unwrap();
 
-  apply_map_to_struct(&tag.attrs, struct_ref);
+  let fields_filter = char_filter(&tag.attrs, char::is_ascii_lowercase);
+
+  apply_map_to_struct(fields_filter, struct_ref);
 
   let mut entity = world.spawn_empty();
   reflect_component.insert(&mut entity, &*reflect_val, type_registry);
@@ -111,6 +113,22 @@ where
   T: Reflect + FromStr,
 {
   Some(Box::new(value.parse::<T>().ok()?) as Box<dyn Reflect>)
+}
+
+fn char_filter<I, K, V>(iter: I, filter_fn: fn(&char) -> bool) -> impl Iterator<Item = (K, V)>
+where
+  K: AsRef<str>,
+  V: AsRef<str>,
+  I: IntoIterator<Item = (K, V)>,
+{
+  iter.into_iter().filter(move |(k, _)| {
+    k.as_ref()
+      .chars()
+      .next()
+      .as_ref()
+      .map(filter_fn)
+      .unwrap_or(false)
+  })
 }
 
 #[cfg(test)]

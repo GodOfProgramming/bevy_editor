@@ -119,17 +119,19 @@ impl Ui {
     xml::parse(ui_xml).map(|nodes| nodes.into_iter().map(|node| Ui { node }).collect())
   }
 
-  pub fn create(&self, world: &mut World) -> Result<Entity> {
-    let entity = match &self.node {
+  pub fn spawn(&self, world: &mut World) -> Result<Entity> {
+    Self::spawn_node(world, &self.node)
+  }
+
+  fn spawn_node(world: &mut World, node: &xml::Node) -> Result<Entity> {
+    match node {
       xml::Node::Tag(tag) => {
         let type_registry = world.resource::<AppTypeRegistry>().clone();
         let type_registry = type_registry.read();
-        create_entity_from_node(tag, world, &type_registry)?
+        create_entity_from_node(tag, world, &type_registry)
       }
-      xml::Node::Text(text) => create_entity_from_text(text, world),
-    };
-
-    Ok(entity)
+      xml::Node::Text(text) => Ok(create_entity_from_text(text, world)),
+    }
   }
 }
 
@@ -138,8 +140,11 @@ fn create_entity_from_node(
   world: &mut World,
   type_registry: &TypeRegistry,
 ) -> Result<Entity> {
+  let name = tag.name.replace(".", "::");
+
   let registration = type_registry
-    .get_with_short_type_path(&tag.name)
+    .get_with_short_type_path(&name)
+    .or_else(|| type_registry.get_with_type_path(&name))
     .ok_or_else(|| format!("Type {} not registered", tag.name))?;
 
   let reflect_component = registration
@@ -155,8 +160,17 @@ fn create_entity_from_node(
 
   apply_map_to_struct(&tag.attrs, struct_ref);
 
+  let mut children = Vec::with_capacity(tag.children.len());
+
+  for child in &tag.children {
+    let child = Ui::spawn_node(world, child)?;
+    children.push(child);
+  }
+
   let mut entity = world.spawn_empty();
   reflect_component.insert(&mut entity, &*reflect_val, type_registry);
+
+  entity.add_children(&children);
 
   Ok(entity.id())
 }
@@ -250,7 +264,7 @@ mod tests {
     let uis = Ui::parse_all(EXAMPLE_UI).unwrap();
     let ui = uis.first().unwrap();
 
-    let entity = ui.create(&mut world).unwrap();
+    let entity = ui.spawn(&mut world).unwrap();
 
     let example_component = world.get::<Example>(entity).unwrap();
 

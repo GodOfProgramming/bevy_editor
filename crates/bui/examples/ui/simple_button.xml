@@ -1,1 +1,1 @@
-<Button event.OnClick="ButtonEvent" Text="Click Me"></Button>
+<Button>Ui Button</Button>

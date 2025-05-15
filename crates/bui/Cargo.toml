@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bevy = { workspace = true }
+ron = { workspace = true }
+serde = { workspace = true }
 thiserror = { workspace = true }
 xml-rs = { workspace = true }
-bevy = { workspace = true }
 
 [dev-dependencies]
 speculoos = { workspace = true }

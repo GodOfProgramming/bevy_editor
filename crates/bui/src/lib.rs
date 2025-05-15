@@ -1,10 +1,13 @@
-mod xml;
+pub mod ui;
+pub mod xml;
 
 use bevy::{
+  ecs::system::SystemId,
   prelude::*,
-  reflect::{TypeInfo, TypeRegistry},
+  reflect::{GetTypeRegistration, TypeInfo, TypeRegistry},
+  utils::TypeIdMap,
 };
-use std::str::FromStr;
+use std::{any::TypeId, str::FromStr};
 
 macro_rules! get_parser {
     ($value:ident, $($ty:ident),+) => {
@@ -19,6 +22,94 @@ macro_rules! get_parser {
 
 type ParserFn = fn(&str) -> Option<Box<dyn Reflect>>;
 
+#[derive(Default)]
+pub struct BuiPlugin {
+  event_map: TypeIdMap<EventInfo>,
+}
+
+impl BuiPlugin {
+  pub fn add_ui_event<E: UiEvent>(mut self) -> Self {
+    self.event_map.insert(
+      TypeId::of::<E>(),
+      EventInfo {
+        registration_fn: |app, events| {
+          app.add_event::<E>();
+
+          let world = app.world_mut();
+          let sys_id =
+            world.register_system(|data: In<String>, mut writer: EventWriter<E>| -> Result {
+              let input = E::In::from_attr(&data).ok_or_else(|| {
+                let registration = E::In::get_type_registration();
+                let tp = registration.type_info().type_path();
+                format!("Could not parse {tp} from {}", *data)
+              })?;
+
+              let event = E::new(input);
+
+              writer.write(event);
+
+              Ok(())
+            });
+
+          events.add::<E>(sys_id);
+        },
+      },
+    );
+    self
+  }
+}
+
+impl Plugin for BuiPlugin {
+  fn build(&self, app: &mut App) {
+    let mut events = UiEvents::default();
+
+    for (_, info) in &self.event_map {
+      (info.registration_fn)(app, &mut events);
+    }
+  }
+}
+
+pub trait UiEvent: Event {
+  type In: GetTypeRegistration + FromAttr;
+
+  fn new(input: Self::In) -> Self;
+}
+
+pub trait FromAttr
+where
+  Self: Sized,
+{
+  fn from_attr(data: &str) -> Option<Self>;
+}
+
+pub trait FromStrFromAttr: FromStr {}
+
+impl<T> FromStrFromAttr for T where T: FromStr {}
+
+impl<T> FromAttr for T
+where
+  T: FromStrFromAttr,
+{
+  fn from_attr(data: &str) -> Option<Self> {
+    data.parse().ok()
+  }
+}
+
+struct EventInfo {
+  registration_fn: fn(&mut App, &mut UiEvents),
+}
+
+#[derive(Default)]
+struct UiEvents {
+  inner: TypeIdMap<SystemId<In<String>, Result>>,
+}
+
+impl UiEvents {
+  fn add<E: UiEvent>(&mut self, id: SystemId<In<String>, Result>) {
+    self.inner.insert(TypeId::of::<E>(), id);
+  }
+}
+
 pub struct Ui {
   node: xml::Node,
 }
@@ -28,15 +119,17 @@ impl Ui {
     xml::parse(ui_xml).map(|nodes| nodes.into_iter().map(|node| Ui { node }).collect())
   }
 
-  pub fn create(&self, world: &mut World) -> Entity {
-    match &self.node {
+  pub fn create(&self, world: &mut World) -> Result<Entity> {
+    let entity = match &self.node {
       xml::Node::Tag(tag) => {
         let type_registry = world.resource::<AppTypeRegistry>().clone();
         let type_registry = type_registry.read();
-        create_entity_from_node(tag, world, &type_registry)
+        create_entity_from_node(tag, world, &type_registry)?
       }
       xml::Node::Text(text) => create_entity_from_text(text, world),
-    }
+    };
+
+    Ok(entity)
   }
 }
 
@@ -44,18 +137,28 @@ fn create_entity_from_node(
   tag: &xml::Tag,
   world: &mut World,
   type_registry: &TypeRegistry,
-) -> Entity {
-  let registration = type_registry.get_with_short_type_path(&tag.name).unwrap();
-  let reflect_component = registration.data::<ReflectComponent>().unwrap();
-  let mut reflect_val = registration.data::<ReflectDefault>().unwrap().default();
+) -> Result<Entity> {
+  let registration = type_registry
+    .get_with_short_type_path(&tag.name)
+    .ok_or_else(|| format!("Type {} not registered", tag.name))?;
 
-  let struct_ref = reflect_val.reflect_mut().as_struct().unwrap();
+  let reflect_component = registration
+    .data::<ReflectComponent>()
+    .ok_or_else(|| format!("Type {} does not have ReflectComponent", tag.name))?;
+
+  let mut reflect_val = registration
+    .data::<ReflectDefault>()
+    .ok_or_else(|| format!("Type {} does not have ReflectDefault", tag.name))?
+    .default();
+
+  let struct_ref = reflect_val.reflect_mut().as_struct()?;
 
   apply_map_to_struct(&tag.attrs, struct_ref);
 
   let mut entity = world.spawn_empty();
   reflect_component.insert(&mut entity, &*reflect_val, type_registry);
-  entity.id()
+
+  Ok(entity.id())
 }
 
 fn create_entity_from_text(text: &str, world: &mut World) -> Entity {
@@ -116,7 +219,10 @@ where
 #[cfg(test)]
 mod tests {
   use crate::Ui;
-  use bevy::prelude::*;
+  use bevy::{
+    prelude::*,
+    reflect::{TypeRegistry, serde::ReflectSerializer},
+  };
   use speculoos::prelude::*;
 
   #[test]
@@ -144,7 +250,7 @@ mod tests {
     let uis = Ui::parse_all(EXAMPLE_UI).unwrap();
     let ui = uis.first().unwrap();
 
-    let entity = ui.create(&mut world);
+    let entity = ui.create(&mut world).unwrap();
 
     let example_component = world.get::<Example>(entity).unwrap();
 

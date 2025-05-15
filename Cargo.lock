@@ -1731,6 +1731,8 @@ name = "bui"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "ron",
+ "serde",
  "speculoos",
  "thiserror 2.0.12",
  "xml-rs",

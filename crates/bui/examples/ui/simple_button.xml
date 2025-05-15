@@ -1,1 +1,3 @@
-<Button>Ui Button</Button>
+<CenteredArea>
+  <Button Node="( width: Px(150.0), height: Px(65.0) )">Ui Button</Button>
+</CenteredArea>

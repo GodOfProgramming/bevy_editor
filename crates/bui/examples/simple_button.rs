@@ -9,21 +9,21 @@ fn main() {
       DefaultPlugins,
       BuiPlugin::default().add_ui_event::<ButtonEvent>(),
     ))
+    .register_type::<CenteredArea>()
     .add_systems(Startup, startup)
     .add_systems(Update, (button_system, button_event_system))
     .run();
 }
 
 fn startup(world: &mut World) {
+  world.spawn(Camera2d);
+
   let nodes = bui::Ui::parse_all(UI).unwrap();
   let node = nodes.first().unwrap();
 
   if let Err(err) = node.spawn(world) {
     error!("failed to create ui: {err}");
   }
-
-  world.spawn(Camera2d);
-  world.spawn(screen());
 }
 
 #[derive(Event)]
@@ -47,20 +47,27 @@ const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 
+#[derive(Default, Component, Reflect)]
+#[require(Node = screen_node())]
+#[reflect(Default)]
+#[reflect(Component)]
+pub struct CenteredArea;
+
 #[derive(Component)]
 struct ButtonText(&'static str);
 
 fn screen() -> impl Bundle {
-  (
-    Node {
-      width: Val::Percent(100.0),
-      height: Val::Percent(100.0),
-      align_items: AlignItems::Center,
-      justify_content: JustifyContent::Center,
-      ..default()
-    },
-    children![simple_button(), advanced_button()],
-  )
+  (screen_node(), children![simple_button(), advanced_button()])
+}
+
+fn screen_node() -> Node {
+  Node {
+    width: Val::Percent(100.0),
+    height: Val::Percent(100.0),
+    align_items: AlignItems::Center,
+    justify_content: JustifyContent::Center,
+    ..default()
+  }
 }
 
 fn simple_button() -> impl Bundle {

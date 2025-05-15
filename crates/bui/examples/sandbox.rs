@@ -1,13 +1,17 @@
 use std::fmt::Display;
 
-use bevy::reflect::{
-  Reflect, TypePath, TypeRegistry,
-  serde::{ReflectDeserializer, ReflectSerializer},
+use bevy::{
+  prelude::*,
+  reflect::{
+    GetTypeRegistration, Reflect, Reflectable, TypePath, TypeRegistry,
+    serde::{ReflectDeserializer, ReflectSerializer},
+  },
 };
 use serde::de::DeserializeSeed;
+use std::fmt::Debug;
 
 fn main() {
-  write_xml();
+  reflect_test();
 }
 
 fn write_xml() {
@@ -31,24 +35,39 @@ fn write_xml() {
 }
 
 fn reflect_test() {
-  let mut registry = TypeRegistry::default();
+  // let input = Node {
+  //   width: Val::Px(150.0),
+  //   height: Val::Px(150.0),
+  //   ..default()
+  // };
 
-  registry.register::<i32>();
+  let input = BackgroundColor(Color::linear_rgb(1.0, 0.0, 0.0));
 
-  let input: String = String::from("foobar");
-
-  let ser = ReflectSerializer::new(&input, &registry);
-  let out = ron::to_string(&ser).unwrap();
-  println!("{out}");
-
-  print_val::<String>(&out, &registry);
+  make_reflect(input);
 }
 
-fn print_val<T: Reflect + TypePath + Display>(r: &str, registry: &TypeRegistry) {
+fn make_reflect<T: Reflectable + Debug>(value: T) {
+  let mut registry = TypeRegistry::default();
+  registry.register::<T>();
+
+  let ser = ReflectSerializer::new(&value, &registry);
+  let out = ron::to_string(&ser).unwrap();
+
+  println!("{out}");
+
+  print_val::<T>(&out, &registry);
+}
+
+fn print_val<T: Reflectable + Debug>(ron_str: &str, registry: &TypeRegistry) {
   let de = ReflectDeserializer::new(registry);
-  let mut rd = ron::Deserializer::from_str(r).unwrap();
+  let mut rd = ron::Deserializer::from_str(ron_str).unwrap();
+
   let out = de.deserialize(&mut rd).unwrap();
-  println!("is i32 => {}", out.represents::<T>());
-  let output = out.try_downcast::<T>().unwrap();
-  println!("val => {output}");
+  println!("partial ref is type => {}", out.represents::<T>());
+
+  let out = out.try_as_reflect().unwrap();
+  println!("full ref is type => {}", out.is::<T>());
+
+  let out = out.downcast_ref::<T>().unwrap();
+  println!("val => {out:?}");
 }

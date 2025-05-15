@@ -4,9 +4,12 @@ pub mod xml;
 use bevy::{
   ecs::system::SystemId,
   prelude::*,
-  reflect::{GetTypeRegistration, TypeInfo, TypeRegistry},
+  reflect::{
+    GetTypeRegistration, TypeInfo, TypeRegistration, TypeRegistry, serde::ReflectDeserializer,
+  },
   utils::TypeIdMap,
 };
+use serde::de::DeserializeSeed;
 use std::{any::TypeId, str::FromStr};
 
 macro_rules! get_parser {
@@ -142,23 +145,18 @@ fn create_entity_from_node(
 ) -> Result<Entity> {
   let name = tag.name.replace(".", "::");
 
-  let registration = type_registry
-    .get_with_short_type_path(&name)
-    .or_else(|| type_registry.get_with_type_path(&name))
-    .ok_or_else(|| format!("Type {} not registered", tag.name))?;
-
-  let reflect_component = registration
-    .data::<ReflectComponent>()
-    .ok_or_else(|| format!("Type {} does not have ReflectComponent", tag.name))?;
-
+  let registration = get_type_registration(&name, type_registry)?;
+  let reflect_component = get_reflect_component(&name, registration)?;
   let mut reflect_val = registration
     .data::<ReflectDefault>()
-    .ok_or_else(|| format!("Type {} does not have ReflectDefault", tag.name))?
+    .ok_or_else(|| format!("Type {name} does not have ReflectDefault"))?
     .default();
-
   let struct_ref = reflect_val.reflect_mut().as_struct()?;
 
-  apply_map_to_struct(&tag.attrs, struct_ref);
+  let (fields, components): (Vec<_>, Vec<_>) =
+    tag.attrs.iter().partition(|(k, _)| k.starts_with("self."));
+
+  apply_map_to_struct(fields, struct_ref);
 
   let mut children = Vec::with_capacity(tag.children.len());
 
@@ -168,11 +166,63 @@ fn create_entity_from_node(
   }
 
   let mut entity = world.spawn_empty();
+
   reflect_component.insert(&mut entity, &*reflect_val, type_registry);
+  for (name, value) in components {
+    println!("creating extra component: {name}");
+    let reg = get_type_registration(name, type_registry)?;
+    println!("have registration");
+    let ref_comp = get_reflect_component(name, reg)?;
+    println!("have ref comp");
+    let full_name = reg.type_info().type_path();
+    let ref_ron = format!("{{ \"{full_name}\": {value} }}");
+    println!("ref ron made");
+    let value = deserialize_reflect(ref_ron, type_registry)?;
+    println!("deserialized partial");
+    let value = value
+      .try_as_reflect()
+      .ok_or_else(|| format!("Type {name} does not implement Reflect"))?;
+    println!("deserialized full");
+    ref_comp.insert(&mut entity, value, type_registry);
+  }
 
   entity.add_children(&children);
 
   Ok(entity.id())
+}
+
+fn get_type_registration<'t>(
+  name: &str,
+  type_registry: &'t TypeRegistry,
+) -> Result<&'t TypeRegistration> {
+  let registration = type_registry
+    .get_with_short_type_path(name)
+    .or_else(|| type_registry.get_with_type_path(name))
+    .ok_or_else(|| format!("Type {name} not registered"))?;
+
+  Ok(registration)
+}
+
+fn get_reflect_component<'t>(
+  name: &str,
+  registration: &'t TypeRegistration,
+) -> Result<&'t ReflectComponent> {
+  let reflect_component = registration
+    .data::<ReflectComponent>()
+    .ok_or_else(|| format!("Type {name} does not have ReflectComponent"))?;
+
+  Ok(reflect_component)
+}
+
+fn deserialize_reflect(
+  ron: impl AsRef<str>,
+  registry: &TypeRegistry,
+) -> Result<Box<dyn PartialReflect>> {
+  let de = ReflectDeserializer::new(registry);
+  let mut rd = ron::Deserializer::from_str(ron.as_ref())?;
+  let value = de.deserialize(&mut rd)?;
+
+  Ok(value)
 }
 
 fn create_entity_from_text(text: &str, world: &mut World) -> Entity {
@@ -233,10 +283,7 @@ where
 #[cfg(test)]
 mod tests {
   use crate::Ui;
-  use bevy::{
-    prelude::*,
-    reflect::{TypeRegistry, serde::ReflectSerializer},
-  };
+  use bevy::prelude::*;
   use speculoos::prelude::*;
 
   #[test]

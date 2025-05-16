@@ -5,12 +5,15 @@ use bevy::{
   ecs::system::SystemId,
   prelude::*,
   reflect::{
-    GetTypeRegistration, TypeInfo, TypeRegistration, TypeRegistry, serde::ReflectDeserializer,
+    GetTypeRegistration, ReflectMut, ReflectRef, TypeInfo, TypeRegistration, TypeRegistry,
+    serde::ReflectDeserializer,
   },
   utils::TypeIdMap,
 };
+use itertools::{Either, Itertools};
 use serde::de::DeserializeSeed;
 use std::{any::TypeId, str::FromStr};
+use ui::{Attribute, Element, attrs::Style, elements::UiButton};
 
 macro_rules! get_parser {
     ($value:ident, $($ty:ident),+) => {
@@ -25,17 +28,59 @@ macro_rules! get_parser {
 
 type ParserFn = fn(&str) -> Option<Box<dyn Reflect>>;
 
-#[derive(Default)]
 pub struct BuiPlugin {
-  event_map: TypeIdMap<EventInfo>,
+  vtables: UiVTables,
+}
+
+impl Default for BuiPlugin {
+  fn default() -> Self {
+    Self { vtables: default() }
+      .register_element::<UiButton>()
+      .register_attr::<Style>()
+  }
 }
 
 impl BuiPlugin {
-  pub fn add_ui_event<E: UiEvent>(mut self) -> Self {
-    self.event_map.insert(
+  pub fn register_element<E: Element>(mut self) -> Self {
+    self.vtables.elements.insert(
       TypeId::of::<E>(),
-      EventInfo {
-        registration_fn: |app, events| {
+      ElementVTable {
+        register: |app| {
+          app.register_type::<E>();
+        },
+      },
+    );
+
+    self
+  }
+
+  pub fn register_attr<A: Attribute>(mut self) -> Self {
+    self.vtables.attrs.insert(
+      TypeId::of::<A>(),
+      AttrVTable {
+        register: |app| {
+          app.register_type::<A>();
+        },
+        create: |world, entity, value| {
+          let Some(value) = value.downcast_ref::<A>() else {
+            return;
+          };
+
+          let entity = world.entity_mut(entity);
+
+          value.insert_into(entity);
+        },
+      },
+    );
+
+    self
+  }
+
+  pub fn register_event<E: UiEvent>(mut self) -> Self {
+    self.vtables.events.insert(
+      TypeId::of::<E>(),
+      EventVTable {
+        register: |app, events| {
           app.add_event::<E>();
 
           let world = app.world_mut();
@@ -66,10 +111,41 @@ impl Plugin for BuiPlugin {
   fn build(&self, app: &mut App) {
     let mut events = UiEvents::default();
 
-    for (_, info) in &self.event_map {
-      (info.registration_fn)(app, &mut events);
+    for vtable in self.vtables.elements.values() {
+      (vtable.register)(app);
+    }
+
+    for vtable in self.vtables.attrs.values() {
+      (vtable.register)(app);
+    }
+
+    for vtable in self.vtables.events.values() {
+      (vtable.register)(app, &mut events);
     }
   }
+}
+
+#[derive(Default, Resource, Clone)]
+struct UiVTables {
+  elements: TypeIdMap<ElementVTable>,
+  attrs: TypeIdMap<AttrVTable>,
+  events: TypeIdMap<EventVTable>,
+}
+
+#[derive(Clone)]
+struct ElementVTable {
+  register: fn(&mut App),
+}
+
+#[derive(Clone)]
+struct AttrVTable {
+  register: fn(&mut App),
+  create: fn(world: &mut World, entity: Entity, value: &dyn Reflect),
+}
+
+#[derive(Clone)]
+struct EventVTable {
+  register: fn(&mut App, &mut UiEvents),
 }
 
 pub trait UiEvent: Event {
@@ -96,10 +172,6 @@ where
   fn from_attr(data: &str) -> Option<Self> {
     data.parse().ok()
   }
-}
-
-struct EventInfo {
-  registration_fn: fn(&mut App, &mut UiEvents),
 }
 
 #[derive(Default)]
@@ -143,52 +215,60 @@ fn create_entity_from_node(
   world: &mut World,
   type_registry: &TypeRegistry,
 ) -> Result<Entity> {
+  // replace . with :: so full path lookup works
   let name = tag.name.replace(".", "::");
 
   let registration = get_type_registration(&name, type_registry)?;
-  let reflect_component = get_reflect_component(&name, registration)?;
+  let reflect_component = registration
+    .data::<ReflectComponent>()
+    .ok_or_else(|| format!("Type {name} does not have ReflectComponent"))?;
   let mut reflect_val = registration
     .data::<ReflectDefault>()
     .ok_or_else(|| format!("Type {name} does not have ReflectDefault"))?
     .default();
+
   let struct_ref = reflect_val.reflect_mut().as_struct()?;
+  let (fields, components): (Vec<_>, Vec<_>) = tag.attrs.iter().partition_map(|(k, v)| {
+    k.strip_prefix("self.")
+      .map(|n| Either::Left((n, v)))
+      .unwrap_or(itertools::Either::Right((k, v)))
+  });
+  patch_struct_with_map(fields, struct_ref);
 
-  let (fields, components): (Vec<_>, Vec<_>) =
-    tag.attrs.iter().partition(|(k, _)| k.starts_with("self."));
+  // create children first, as they need the world
+  let children = create_child_entities(&tag.children, world)?;
 
-  apply_map_to_struct(fields, struct_ref);
+  // then the actual entity for this element
+  let mut entity = world.spawn_empty();
 
-  let mut children = Vec::with_capacity(tag.children.len());
+  // add the reflected value to this entity
+  reflect_component.insert(&mut entity, &*reflect_val, type_registry);
 
-  for child in &tag.children {
+  // then add all children
+  entity.add_children(&children);
+
+  let entity = entity.id();
+
+  // the world is free again and now the attributes can be created
+  for (name, value) in components {
+    insert_attribute(name, value, world, entity, type_registry)?;
+  }
+
+  Ok(entity)
+}
+
+fn create_child_entities<'c>(
+  child_elements: impl IntoIterator<Item = &'c xml::Node>,
+  world: &mut World,
+) -> Result<Vec<Entity>> {
+  let mut children = Vec::new();
+
+  for child in child_elements {
     let child = Ui::spawn_node(world, child)?;
     children.push(child);
   }
 
-  let mut entity = world.spawn_empty();
-
-  reflect_component.insert(&mut entity, &*reflect_val, type_registry);
-  for (name, value) in components {
-    println!("creating extra component: {name}");
-    let reg = get_type_registration(name, type_registry)?;
-    println!("have registration");
-    let ref_comp = get_reflect_component(name, reg)?;
-    println!("have ref comp");
-    let full_name = reg.type_info().type_path();
-    let ref_ron = format!("{{ \"{full_name}\": {value} }}");
-    println!("ref ron made");
-    let value = deserialize_reflect(ref_ron, type_registry)?;
-    println!("deserialized partial");
-    let value = value
-      .try_as_reflect()
-      .ok_or_else(|| format!("Type {name} does not implement Reflect"))?;
-    println!("deserialized full");
-    ref_comp.insert(&mut entity, value, type_registry);
-  }
-
-  entity.add_children(&children);
-
-  Ok(entity.id())
+  Ok(children)
 }
 
 fn get_type_registration<'t>(
@@ -203,15 +283,33 @@ fn get_type_registration<'t>(
   Ok(registration)
 }
 
-fn get_reflect_component<'t>(
+fn insert_attribute(
   name: &str,
-  registration: &'t TypeRegistration,
-) -> Result<&'t ReflectComponent> {
-  let reflect_component = registration
-    .data::<ReflectComponent>()
-    .ok_or_else(|| format!("Type {name} does not have ReflectComponent"))?;
+  value: &str,
+  world: &mut World,
+  entity: Entity,
+  type_registry: &TypeRegistry,
+) -> Result {
+  let reg = get_type_registration(name, type_registry)?;
 
-  Ok(reflect_component)
+  let full_name = reg.type_info().type_path();
+  let ref_ron = format!("{{ \"{full_name}\": {value} }}");
+
+  let partial_value = deserialize_reflect(ref_ron, type_registry)?;
+  let ref_value = partial_value
+    .try_as_reflect()
+    .ok_or_else(|| format!("Type {full_name} does not implement Reflect"))?;
+
+  world.resource_scope(|world, vtables: Mut<UiVTables>| {
+    let Some(fns) = vtables.attrs.get(&reg.type_id()) else {
+      error!("Type {name} was not registered as an attribute");
+      return;
+    };
+
+    (fns.create)(world, entity, ref_value);
+  });
+
+  Ok(())
 }
 
 fn deserialize_reflect(
@@ -229,7 +327,7 @@ fn create_entity_from_text(text: &str, world: &mut World) -> Entity {
   world.spawn(Text::new(text.to_string())).id()
 }
 
-fn apply_map_to_struct<I, K, V>(iter: I, dyn_struct: &mut dyn Struct)
+fn patch_struct_with_map<I, K, V>(iter: I, dyn_struct: &mut dyn Struct)
 where
   K: AsRef<str>,
   V: AsRef<str>,
@@ -255,6 +353,23 @@ where
 
     if let Some(new_val) = new_val {
       field.apply(&*new_val);
+    }
+  }
+}
+
+fn patch_reflect<A: Reflect, B: Reflect>(patch: &A, target: &mut B) {
+  if let (ReflectRef::Struct(patch_struct), ReflectMut::Struct(target_struct)) =
+    (patch.reflect_ref(), target.reflect_mut())
+  {
+    for i in 0..patch_struct.field_len() {
+      let field_name = patch_struct.name_at(i).unwrap();
+      let patch_field = patch_struct.field_at(i).unwrap();
+
+      if let Some(inner) = patch_field.try_as_reflect() {
+        if let Some(target_field) = target_struct.field_mut(field_name) {
+          target_field.apply(inner);
+        }
+      }
     }
   }
 }

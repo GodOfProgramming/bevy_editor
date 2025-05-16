@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 bevy = { workspace = true, features = ["serialize"] }
+itertools = { workspace = true }
+macros = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }

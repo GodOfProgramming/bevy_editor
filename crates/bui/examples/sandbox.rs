@@ -1,17 +1,15 @@
-use std::fmt::Display;
-
 use bevy::{
   prelude::*,
   reflect::{
-    GetTypeRegistration, Reflect, Reflectable, TypePath, TypeRegistry,
+    Reflectable, TypeRegistry,
     serde::{ReflectDeserializer, ReflectSerializer},
   },
 };
 use serde::de::DeserializeSeed;
-use std::fmt::Debug;
+use std::{any::TypeId, fmt::Debug};
 
 fn main() {
-  reflect_test();
+  reflect_trait_test();
 }
 
 fn write_xml() {
@@ -34,13 +32,32 @@ fn write_xml() {
   }
 }
 
-fn reflect_test() {
-  // let input = Node {
-  //   width: Val::Px(150.0),
-  //   height: Val::Px(150.0),
-  //   ..default()
-  // };
+fn reflect_trait_test() {
+  #[reflect_trait]
+  trait Foo {
+    fn foo(&self);
+  }
 
+  impl Foo for Button {
+    fn foo(&self) {
+      println!("BUTTON");
+    }
+  }
+
+  let mut type_registry = TypeRegistry::default();
+  type_registry.register::<Button>();
+
+  let rf = type_registry
+    .get_type_data::<ReflectFoo>(TypeId::of::<Button>())
+    .unwrap();
+
+  let button = Button;
+
+  let button = rf.get(button.as_reflect()).unwrap();
+  button.foo();
+}
+
+fn reflect_test() {
   let input = BackgroundColor(Color::linear_rgb(1.0, 0.0, 0.0));
 
   make_reflect(input);

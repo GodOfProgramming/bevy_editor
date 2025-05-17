@@ -9,5 +9,14 @@
       alpha:1.0))),
     justify_content: Center,
     align_items: Center,
-  )">Ui Button</Button>
+  )">
+    <Text self='"Ui Button"' Style="(
+      color: Some(Srgba((
+        red:0.0,
+        green:0.0,
+        blue:1.0,
+        alpha:1.0
+      ))),
+    )" />
+  </Button>
 </CenteredArea>

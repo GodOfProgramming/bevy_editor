@@ -5,10 +5,8 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub fn register_all(plugin: &mut BuiPlugin) {
-  plugin
-    .register_attr::<Style>()
-    .register_attr::<TextColor>()
-    .register_attr::<BackgroundColor>();
+  super::generated::attrs::register_all(plugin);
+  plugin.register_attr::<Style>();
 }
 
 #[derive(Serialize, Deserialize, Default, Reflect, Clone)]

@@ -1,5 +1,6 @@
 pub mod attrs;
 pub mod elements;
+mod generated;
 
 use bevy::{prelude::*, reflect::Reflectable};
 

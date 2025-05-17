@@ -1,7 +1,12 @@
-use bevy::prelude::*;
+use std::{error::Error, path::PathBuf};
 use syn::{ItemStruct, Visibility};
 
-fn main() -> Result {
+type Result<T> = std::result::Result<T, Box<dyn Error>>;
+
+fn main() -> Result<()> {
+  println!("cargo::rerun-if-changed=build.rs");
+  println!("cargo::rerun-if-changed=Cargo.toml");
+
   let packages = ["bevy_ui", "bevy_text", "bevy_color"];
 
   let metadata = cargo_metadata::MetadataCommand::new().exec()?;
@@ -11,29 +16,41 @@ fn main() -> Result {
     .into_iter()
     .filter(|pkg| packages.contains(&pkg.name.as_str()));
 
-  let mut lines = Vec::new();
+  let mut structs = Vec::new();
   for pkg in packages {
-    let mut structs = type_extractor::extract_structs(&pkg).map_err(|e| e.to_string())?;
-    structs.sort_by(|a, b| a.ident.cmp(&b.ident));
-    for s in structs {
-      if is_valid_struct(&s) {
-        let ident = s.ident;
-        let fn_call = quote::quote! {
-          plugin.register_attr::<#ident>();
-        };
-        lines.push(fn_call);
-      }
+    let extracted = type_extractor::extract_structs(&pkg).map_err(|e| e.to_string())?;
+    structs.extend(extracted);
+  }
+
+  structs.sort_by(|a, b| a.ident.cmp(&b.ident));
+
+  let mut lines = Vec::new();
+
+  for s in structs {
+    if is_valid_struct(&s) {
+      let ident = s.ident;
+      let fn_call = quote::quote! {
+        plugin.register_attr::<#ident>();
+      };
+      lines.push(fn_call);
     }
   }
 
   let attr_registration = quote::quote! {
+    use bevy::{ prelude::*, text::*, ui::{experimental::*, widget::*, *} };
+
     pub fn register_all(plugin: &mut crate::BuiPlugin) {
       #(#lines)*
     }
   }
   .to_string();
 
-  println!("{attr_registration}");
+  let generated_path = PathBuf::from("src")
+    .join("ui")
+    .join("generated")
+    .join("attrs.rs");
+
+  std::fs::write(generated_path, attr_registration)?;
 
   Ok(())
 }
@@ -49,6 +66,7 @@ fn is_valid_struct(item: &ItemStruct) -> bool {
 fn is_reflect_component(item: &ItemStruct) -> bool {
   let mut has_component = false;
   let mut has_reflect = false;
+  let mut has_clone = false;
 
   for attr in &item.attrs {
     if attr.path().is_ident("derive") {
@@ -58,6 +76,7 @@ fn is_reflect_component(item: &ItemStruct) -> bool {
             match i.as_str() {
               "Component" => has_component = true,
               "Reflect" => has_reflect = true,
+              "Clone" => has_clone = true,
               _ => (),
             }
           }
@@ -67,5 +86,5 @@ fn is_reflect_component(item: &ItemStruct) -> bool {
     }
   }
 
-  has_component && has_reflect
+  has_component && has_reflect && has_clone
 }

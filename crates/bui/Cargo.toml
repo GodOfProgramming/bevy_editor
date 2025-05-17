@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { workspace = true, features = ["serialize"] }
+bevy = { workspace = true, features = ["serialize", "ghost_nodes"] }
 itertools = { workspace = true }
 macros = { workspace = true }
 ron = { workspace = true }
@@ -14,3 +14,13 @@ xml-rs = { workspace = true }
 
 [dev-dependencies]
 speculoos = { workspace = true }
+cargo_metadata = { workspace = true }
+type_extractor = { workspace = true }
+syn = { workspace = true }
+quote = { workspace = true }
+
+[build-dependencies]
+cargo_metadata = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }
+type_extractor = { workspace = true }

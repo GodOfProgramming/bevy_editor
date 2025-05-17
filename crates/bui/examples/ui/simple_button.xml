@@ -1,4 +1,13 @@
 <CenteredArea>
-  <!--width: Px(150.0), height: Px(65.0)  -->
-  <UiButton Style="(  )">Ui Button</UiButton>
+  <Button Style="(
+    width: Px(150.0),
+    height: Px(65.0),
+    background_color: Some(LinearRgba((
+      red:1.0,
+      green:0.0,
+      blue:0.0,
+      alpha:1.0))),
+    justify_content: Center,
+    align_items: Center,
+  )">Ui Button</Button>
 </CenteredArea>

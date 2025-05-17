@@ -5,13 +5,14 @@ use bevy::{prelude::*, reflect::Reflectable};
 
 pub trait Element: Reflectable {}
 
-pub trait Attribute: Reflectable {
+#[reflect_trait]
+pub trait Attribute {
   fn insert_into(&self, entity: EntityWorldMut);
 }
 
 impl<T> Attribute for T
 where
-  T: Reflectable + Component + Clone,
+  T: Component + Clone,
 {
   fn insert_into(&self, mut entity: EntityWorldMut) {
     entity.insert(self.clone());

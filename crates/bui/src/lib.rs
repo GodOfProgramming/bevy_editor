@@ -5,15 +5,20 @@ use bevy::{
   ecs::system::SystemId,
   prelude::*,
   reflect::{
-    GetTypeRegistration, ReflectMut, ReflectRef, TypeInfo, TypeRegistration, TypeRegistry,
-    serde::ReflectDeserializer,
+    GetTypeRegistration, ReflectMut, ReflectRef, Reflectable, TypeInfo, TypeRegistration,
+    TypeRegistry,
+    serde::{ReflectDeserializer, TypedReflectDeserializer},
   },
   utils::TypeIdMap,
 };
 use itertools::{Either, Itertools};
 use serde::de::DeserializeSeed;
 use std::{any::TypeId, str::FromStr};
-use ui::{Attribute, Element, attrs::Style, elements::UiButton};
+use ui::{
+  Attribute, Element, ReflectAttribute,
+  attrs::{self},
+  elements,
+};
 
 macro_rules! get_parser {
     ($value:ident, $($ty:ident),+) => {
@@ -32,16 +37,19 @@ pub struct BuiPlugin {
   vtables: UiVTables,
 }
 
-impl Default for BuiPlugin {
-  fn default() -> Self {
-    Self { vtables: default() }
-      .register_element::<UiButton>()
-      .register_attr::<Style>()
-  }
-}
-
 impl BuiPlugin {
-  pub fn register_element<E: Element>(mut self) -> Self {
+  pub fn builder() -> BuiPluginBuilder {
+    BuiPluginBuilder { inner: Self::new() }
+  }
+
+  fn new() -> Self {
+    let mut this = Self { vtables: default() };
+    elements::register_all(&mut this);
+    attrs::register_all(&mut this);
+    this
+  }
+
+  pub fn register_element<E: Reflectable>(&mut self) -> &mut Self {
     self.vtables.elements.insert(
       TypeId::of::<E>(),
       ElementVTable {
@@ -54,21 +62,24 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_attr<A: Attribute>(mut self) -> Self {
+  pub fn register_attr<A: Attribute + Reflectable>(&mut self) -> &mut Self {
     self.vtables.attrs.insert(
       TypeId::of::<A>(),
       AttrVTable {
         register: |app| {
           app.register_type::<A>();
         },
-        create: |world, entity, value| {
-          let Some(value) = value.downcast_ref::<A>() else {
-            return;
-          };
+        insert: |world, entity, value| {
+          let value = value.downcast_ref::<A>().ok_or_else(|| {
+            let tp = A::get_type_registration().type_info().type_path();
+            format!("Could not downcast {tp} to an Attribute")
+          })?;
 
           let entity = world.entity_mut(entity);
 
           value.insert_into(entity);
+
+          Ok(())
         },
       },
     );
@@ -76,7 +87,7 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_event<E: UiEvent>(mut self) -> Self {
+  pub fn register_event<E: UiEvent>(&mut self) -> &mut Self {
     self.vtables.events.insert(
       TypeId::of::<E>(),
       EventVTable {
@@ -122,6 +133,33 @@ impl Plugin for BuiPlugin {
     for vtable in self.vtables.events.values() {
       (vtable.register)(app, &mut events);
     }
+
+    app.insert_resource(self.vtables.clone());
+  }
+}
+
+pub struct BuiPluginBuilder {
+  inner: BuiPlugin,
+}
+
+impl BuiPluginBuilder {
+  pub fn register_element<E: Reflectable>(mut self) -> Self {
+    self.inner.register_element::<E>();
+    self
+  }
+
+  pub fn register_attr<A: Attribute + Reflectable>(mut self) -> Self {
+    self.inner.register_attr::<A>();
+    self
+  }
+
+  pub fn register_event<E: UiEvent>(mut self) -> Self {
+    self.inner.register_event::<E>();
+    self
+  }
+
+  pub fn build(self) -> BuiPlugin {
+    self.inner
   }
 }
 
@@ -140,7 +178,7 @@ struct ElementVTable {
 #[derive(Clone)]
 struct AttrVTable {
   register: fn(&mut App),
-  create: fn(world: &mut World, entity: Entity, value: &dyn Reflect),
+  insert: fn(world: &mut World, entity: Entity, value: &dyn Reflect) -> Result,
 }
 
 #[derive(Clone)]
@@ -195,26 +233,22 @@ impl Ui {
   }
 
   pub fn spawn(&self, world: &mut World) -> Result<Entity> {
-    Self::spawn_node(world, &self.node)
-  }
-
-  fn spawn_node(world: &mut World, node: &xml::Node) -> Result<Entity> {
-    match node {
-      xml::Node::Tag(tag) => {
-        let type_registry = world.resource::<AppTypeRegistry>().clone();
-        let type_registry = type_registry.read();
-        create_entity_from_node(tag, world, &type_registry)
-      }
-      xml::Node::Text(text) => Ok(create_entity_from_text(text, world)),
-    }
+    spawn_node(&self.node, world)
   }
 }
 
-fn create_entity_from_node(
-  tag: &xml::Tag,
-  world: &mut World,
-  type_registry: &TypeRegistry,
-) -> Result<Entity> {
+fn spawn_node(node: &xml::Node, world: &mut World) -> Result<Entity> {
+  match node {
+    xml::Node::Tag(tag) => {
+      let type_registry = world.resource::<AppTypeRegistry>().clone();
+      let type_registry = type_registry.read();
+      spawn_tag(tag, world, &type_registry)
+    }
+    xml::Node::Text(text) => Ok(spawn_text(text, world)),
+  }
+}
+
+fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) -> Result<Entity> {
   // replace . with :: so full path lookup works
   let name = tag.name.replace(".", "::");
 
@@ -222,18 +256,17 @@ fn create_entity_from_node(
   let reflect_component = registration
     .data::<ReflectComponent>()
     .ok_or_else(|| format!("Type {name} does not have ReflectComponent"))?;
-  let mut reflect_val = registration
+  let mut reflect = registration
     .data::<ReflectDefault>()
     .ok_or_else(|| format!("Type {name} does not have ReflectDefault"))?
     .default();
 
-  let struct_ref = reflect_val.reflect_mut().as_struct()?;
   let (fields, components): (Vec<_>, Vec<_>) = tag.attrs.iter().partition_map(|(k, v)| {
     k.strip_prefix("self.")
       .map(|n| Either::Left((n, v)))
-      .unwrap_or(itertools::Either::Right((k, v)))
+      .unwrap_or(Either::Right((k, v)))
   });
-  patch_struct_with_map(fields, struct_ref);
+  patch_struct_with_map(fields, &mut *reflect)?;
 
   // create children first, as they need the world
   let children = create_child_entities(&tag.children, world)?;
@@ -242,7 +275,7 @@ fn create_entity_from_node(
   let mut entity = world.spawn_empty();
 
   // add the reflected value to this entity
-  reflect_component.insert(&mut entity, &*reflect_val, type_registry);
+  reflect_component.insert(&mut entity, &*reflect, type_registry);
 
   // then add all children
   entity.add_children(&children);
@@ -251,10 +284,17 @@ fn create_entity_from_node(
 
   // the world is free again and now the attributes can be created
   for (name, value) in components {
-    insert_attribute(name, value, world, entity, type_registry)?;
+    if let Err(err) = insert_attribute(name, value, world, entity, type_registry) {
+      world.despawn(entity);
+      return Err(err);
+    }
   }
 
   Ok(entity)
+}
+
+fn spawn_text(text: &str, world: &mut World) -> Entity {
+  world.spawn(Text::new(text.to_string())).id()
 }
 
 fn create_child_entities<'c>(
@@ -264,8 +304,15 @@ fn create_child_entities<'c>(
   let mut children = Vec::new();
 
   for child in child_elements {
-    let child = Ui::spawn_node(world, child)?;
-    children.push(child);
+    match spawn_node(child, world) {
+      Ok(child) => children.push(child),
+      Err(err) => {
+        for child in children {
+          world.despawn(child);
+        }
+        return Err(err);
+      }
+    };
   }
 
   Ok(children)
@@ -291,48 +338,45 @@ fn insert_attribute(
   type_registry: &TypeRegistry,
 ) -> Result {
   let reg = get_type_registration(name, type_registry)?;
-
-  let full_name = reg.type_info().type_path();
-  let ref_ron = format!("{{ \"{full_name}\": {value} }}");
-
-  let partial_value = deserialize_reflect(ref_ron, type_registry)?;
-  let ref_value = partial_value
+  let partial_reflect = deserialize_partial_reflect(type_registry, reg, value)?;
+  let reflect = partial_reflect
     .try_as_reflect()
-    .ok_or_else(|| format!("Type {full_name} does not implement Reflect"))?;
+    .ok_or_else(|| format!("Type {name} does not implement Reflect correctly. Missing #[reflect(Serialize, Deserialize)]?"))?;
 
-  world.resource_scope(|world, vtables: Mut<UiVTables>| {
-    let Some(fns) = vtables.attrs.get(&reg.type_id()) else {
-      error!("Type {name} was not registered as an attribute");
-      return;
-    };
+  world.resource_scope(|world, vtables: Mut<UiVTables>| -> Result {
+    match vtables.attrs.get(&reg.type_id()) {
+      Some(fns) => {
+        (fns.insert)(world, entity, reflect)?;
+      }
+      None => {
+        Err(format!("Type {name} was not registered as an attribute"))?;
+      }
+    }
 
-    (fns.create)(world, entity, ref_value);
-  });
-
-  Ok(())
+    Ok(())
+  })
 }
 
-fn deserialize_reflect(
-  ron: impl AsRef<str>,
+fn deserialize_partial_reflect(
   registry: &TypeRegistry,
+  registration: &TypeRegistration,
+  ron: impl AsRef<str>,
 ) -> Result<Box<dyn PartialReflect>> {
-  let de = ReflectDeserializer::new(registry);
+  let de = TypedReflectDeserializer::new(registration, registry);
   let mut rd = ron::Deserializer::from_str(ron.as_ref())?;
   let value = de.deserialize(&mut rd)?;
 
   Ok(value)
 }
 
-fn create_entity_from_text(text: &str, world: &mut World) -> Entity {
-  world.spawn(Text::new(text.to_string())).id()
-}
-
-fn patch_struct_with_map<I, K, V>(iter: I, dyn_struct: &mut dyn Struct)
+fn patch_struct_with_map<I, K, V>(iter: I, reflect: &mut dyn Reflect) -> Result
 where
   K: AsRef<str>,
   V: AsRef<str>,
   I: IntoIterator<Item = (K, V)>,
 {
+  let dyn_struct = reflect.reflect_mut().as_struct()?;
+
   for (key, value_str) in iter {
     let key = key.as_ref();
     let value_str = value_str.as_ref();
@@ -355,6 +399,8 @@ where
       field.apply(&*new_val);
     }
   }
+
+  Ok(())
 }
 
 fn patch_reflect<A: Reflect, B: Reflect>(patch: &A, target: &mut B) {
@@ -393,22 +439,6 @@ where
   T: Reflect + FromStr,
 {
   Some(Box::new(value.parse::<T>().ok()?) as Box<dyn Reflect>)
-}
-
-fn char_filter<I, K, V>(iter: I, filter_fn: fn(&char) -> bool) -> impl Iterator<Item = (K, V)>
-where
-  K: AsRef<str>,
-  V: AsRef<str>,
-  I: IntoIterator<Item = (K, V)>,
-{
-  iter.into_iter().filter(move |(k, _)| {
-    k.as_ref()
-      .chars()
-      .next()
-      .as_ref()
-      .map(filter_fn)
-      .unwrap_or(false)
-  })
 }
 
 #[cfg(test)]

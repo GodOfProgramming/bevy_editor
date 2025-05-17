@@ -7,9 +7,11 @@ fn main() {
   App::new()
     .add_plugins((
       DefaultPlugins,
-      BuiPlugin::default().register_event::<ButtonEvent>(),
+      BuiPlugin::builder()
+        .register_element::<CenteredArea>()
+        .register_event::<ButtonEvent>()
+        .build(),
     ))
-    .register_type::<CenteredArea>()
     .add_systems(Startup, startup)
     .add_systems(Update, (button_system, button_event_system))
     .run();

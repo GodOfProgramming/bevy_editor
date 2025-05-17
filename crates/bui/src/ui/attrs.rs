@@ -1,10 +1,15 @@
-use crate::patch_reflect;
+use crate::{BuiPlugin, patch_reflect};
 
 use super::Attribute;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+pub fn register_all(plugin: &mut BuiPlugin) {
+  plugin.register_attr::<Style>();
+}
+
 #[derive(Serialize, Deserialize, Default, Reflect, Clone)]
+#[reflect(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Style {
   pub display: Display,
@@ -62,40 +67,50 @@ impl Attribute for Style {
   }
 }
 
+#[derive(Default, Reflect, Serialize, Deserialize)]
+#[reflect(Serialize, Deserialize)]
+struct Foo {}
+
 #[cfg(test)]
 mod tests {
-  use std::any::Any;
-
   use super::Style;
-  use bevy::reflect::{GetTypeRegistration, Reflect, TypeRegistry, serde::ReflectDeserializer};
+  use crate::ui::attrs::Foo;
+  use bevy::reflect::{GetTypeRegistration, TypeRegistry, serde::TypedReflectDeserializer};
   use serde::de::DeserializeSeed;
 
   #[test]
   fn style_impls_reflect() {
-    let tp = Style::get_type_registration().type_info().type_path();
-    let ron = format!("{{ \"{tp}\": ( width: Px(150.0) ) }}");
-
     let mut tr = TypeRegistry::new();
     tr.register::<Style>();
+    tr.register::<Foo>();
 
-    let de = ReflectDeserializer::new(&tr);
-    let mut rd = ron::Deserializer::from_str(&ron).unwrap();
-    let value = de.deserialize(&mut rd).unwrap();
+    fn check_foo(tr: &TypeRegistry) {
+      let reg = Foo::get_type_registration();
+      let ron = "( )";
 
-    let style = Style::default();
-    let style = style.as_reflect();
-    let style = style.as_partial_reflect();
-    let style = style.try_as_reflect();
+      let de = TypedReflectDeserializer::new(&reg, tr);
+      let mut rd = ron::Deserializer::from_str(ron).unwrap();
+      let value = de.deserialize(&mut rd).unwrap();
 
-    let sanity = style.is_some();
-    assert!(sanity);
+      let foo = value.try_as_reflect();
 
-    let style = style.unwrap();
-    let tid = style.get_represented_type_info().unwrap().type_id();
-    let ti = tr.get_type_info(tid).unwrap();
+      assert!(foo.is_some());
+    }
 
-    panic!("actual path => {}, first path => {}", ti.type_path(), tp);
+    fn check_style(tr: &TypeRegistry) {
+      let reg = Style::get_type_registration();
+      let ron = "( width: Px(150.0) )";
 
-    // assert!(value.try_into_reflect().is_ok());
+      let de = TypedReflectDeserializer::new(&reg, tr);
+      let mut rd = ron::Deserializer::from_str(ron).unwrap();
+      let value = de.deserialize(&mut rd).unwrap();
+
+      let style = value.try_as_reflect();
+
+      assert!(style.is_some());
+    }
+
+    check_foo(&tr);
+    check_style(&tr);
   }
 }

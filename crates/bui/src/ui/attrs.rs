@@ -59,8 +59,10 @@ pub struct Style {
 impl Attribute for Style {
   fn insert_into(&self, mut entity: EntityWorldMut) {
     let mut node = Node::default();
-    reflection::patch_reflect(self, &mut node);
-    entity.insert(node);
+    let patches = reflection::patch_reflect(self, &mut node);
+    if patches > 0 {
+      entity.insert(node);
+    }
 
     if let Some(fg) = self.color {
       entity.insert(TextColor(fg));

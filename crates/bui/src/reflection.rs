@@ -131,21 +131,39 @@ fn patch_field(field: &mut dyn PartialReflect, value: impl AsRef<str>) -> Result
   Ok(())
 }
 
-pub fn patch_reflect<A: Reflect, B: Reflect>(patch: &A, target: &mut B) {
-  if let (ReflectRef::Struct(patch_struct), ReflectMut::Struct(target_struct)) =
-    (patch.reflect_ref(), target.reflect_mut())
-  {
-    for i in 0..patch_struct.field_len() {
-      let field_name = patch_struct.name_at(i).unwrap();
-      let patch_field = patch_struct.field_at(i).unwrap();
+pub fn patch_reflect<A: Reflect, B: Reflect>(patch: &A, target: &mut B) -> usize {
+  let mut patches = 0;
 
-      if let Some(inner) = patch_field.try_as_reflect() {
-        if let Some(target_field) = target_struct.field_mut(field_name) {
-          target_field.apply(inner);
+  match (patch.reflect_ref(), target.reflect_mut()) {
+    (ReflectRef::Struct(patch_struct), ReflectMut::Struct(target_struct)) => {
+      for i in 0..patch_struct.field_len() {
+        let field_name = patch_struct.name_at(i).unwrap();
+        let patch_field = patch_struct.field_at(i).unwrap();
+
+        if let Some(inner) = patch_field.try_as_reflect() {
+          if let Some(target_field) = target_struct.field_mut(field_name) {
+            target_field.apply(inner);
+            patches += 1;
+          }
         }
       }
     }
+    (ReflectRef::TupleStruct(patch_struct), ReflectMut::TupleStruct(target_struct)) => {
+      for i in 0..patch_struct.field_len() {
+        let patch_field = patch_struct.field(i).unwrap();
+
+        if let Some(inner) = patch_field.try_as_reflect() {
+          if let Some(target_field) = target_struct.field_mut(i) {
+            target_field.apply(inner);
+            patches += 1;
+          }
+        }
+      }
+    }
+    _ => {}
   }
+
+  patches
 }
 
 fn parse_to_reflect<T>(value: &str) -> Option<Box<dyn Reflect>>

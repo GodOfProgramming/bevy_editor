@@ -5,7 +5,10 @@ use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 pub fn register_all(plugin: &mut BuiPlugin) {
-  plugin.register_attr::<Style>();
+  plugin
+    .register_attr::<Style>()
+    .register_attr::<TextColor>()
+    .register_attr::<BackgroundColor>();
 }
 
 #[derive(Serialize, Deserialize, Default, Reflect, Clone)]

@@ -28,7 +28,7 @@ fn startup(world: &mut World) {
   }
 }
 
-#[derive(Event)]
+#[derive(Reflect, Event)]
 struct ButtonEvent;
 
 impl UiEvent for ButtonEvent {

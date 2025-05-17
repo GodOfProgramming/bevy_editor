@@ -32,7 +32,7 @@ impl BuiPlugin {
     this
   }
 
-  pub fn register_element<E: Reflectable>(&mut self) -> &mut Self {
+  pub fn register_element<E: Reflectable + FromReflect>(&mut self) -> &mut Self {
     self.vtables.elements.insert(
       TypeId::of::<E>(),
       ElementVTable {
@@ -45,7 +45,7 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_attr<A: Attribute + Reflectable>(&mut self) -> &mut Self {
+  pub fn register_attr<A: Attribute + Reflectable + FromReflect>(&mut self) -> &mut Self {
     self.vtables.attrs.insert(
       TypeId::of::<A>(),
       AttrVTable {
@@ -69,7 +69,7 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_event<E: UiEvent>(&mut self) -> &mut Self {
+  pub fn register_event<E: UiEvent + FromReflect>(&mut self) -> &mut Self {
     self.vtables.events.insert(
       TypeId::of::<E>(),
       EventVTable {
@@ -99,7 +99,7 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_reflect<T: Reflectable + FromReflect>(&mut self) {
+  pub fn register_reflect<T: FromReflect>(&mut self) {
     self.vtables.reflection.insert(
       TypeId::of::<T>(),
       ReflectionVTable {
@@ -134,17 +134,17 @@ pub struct BuiPluginBuilder {
 }
 
 impl BuiPluginBuilder {
-  pub fn register_element<E: Reflectable>(mut self) -> Self {
+  pub fn register_element<E: Reflectable + FromReflect>(mut self) -> Self {
     self.inner.register_element::<E>();
     self
   }
 
-  pub fn register_attr<A: Attribute + Reflectable>(mut self) -> Self {
+  pub fn register_attr<A: Attribute + Reflectable + FromReflect>(mut self) -> Self {
     self.inner.register_attr::<A>();
     self
   }
 
-  pub fn register_event<E: UiEvent>(mut self) -> Self {
+  pub fn register_event<E: UiEvent + FromReflect>(mut self) -> Self {
     self.inner.register_event::<E>();
     self
   }
@@ -308,7 +308,12 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
 
   // the world is free again and now the attributes can be created
   for (name, value) in components {
-    if let Err(err) = insert_attribute(name, value, world, entity, type_registry) {
+    let value = if value.starts_with('(') {
+      Cow::Borrowed(value)
+    } else {
+      Cow::Owned(format!("({value})"))
+    };
+    if let Err(err) = insert_attribute(name, &value, world, entity, type_registry) {
       world.despawn(entity);
       return Err(err);
     }

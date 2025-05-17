@@ -1,22 +1,19 @@
 <CenteredArea>
   <Button Style="(
-    width: Px(150.0),
-    height: Px(65.0),
-    background_color: Some(LinearRgba((
+      width: Px(150.0),
+      height: Px(65.0),
+      justify_content: Center,
+      align_items: Center,
+    )" BackgroundColor="LinearRgba((
       red:1.0,
       green:0.0,
       blue:0.0,
-      alpha:1.0))),
-    justify_content: Center,
-    align_items: Center,
-  )">
-    <Text self='"Ui Button"' Style="(
-      color: Some(Srgba((
-        red:0.0,
-        green:0.0,
-        blue:1.0,
-        alpha:1.0
-      ))),
-    )" />
+      alpha:1.0))">
+    <Text self='"Ui Button"' TextColor="Srgba((
+      red:0.0,
+      green:0.0,
+      blue:1.0,
+      alpha:1.0
+    ))" />
   </Button>
 </CenteredArea>

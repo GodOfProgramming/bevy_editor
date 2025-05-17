@@ -3,7 +3,6 @@ pub mod ui;
 pub mod xml;
 
 use bevy::{
-  ecs::system::RunSystemOnce,
   prelude::*,
   reflect::{Reflectable, TypeRegistry},
   utils::TypeIdMap,
@@ -14,7 +13,7 @@ use ui::{
   Attribute,
   attrs::{self},
   elements,
-  events::{ClickEventType, HoverEventType, Interactable, LeaveEventType, UiEvents},
+  events::{ClickEventType, HoverEventType, Interactable, LeaveEventType, UiEvent, UiEvents},
 };
 
 pub struct BuiPlugin {
@@ -72,29 +71,30 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_event<E: Event + Reflectable + FromReflect + FromWorld>(&mut self) -> &mut Self {
+  pub fn register_event<E: Reflectable + FromReflect + FromWorld>(&mut self) -> &mut Self {
     self.register_reflect::<E>();
     self.vtables.events.insert(
       TypeId::of::<E>(),
       EventVTable {
         register: |app, events| {
           app.register_type::<E>();
-          app.add_event::<E>();
+          app.add_event::<UiEvent<E>>();
 
           let world = app.world_mut();
           let sys_id = world.register_system(
-            |data: In<Box<dyn Reflect>>, mut writer: EventWriter<E>| -> Result {
-              let event = E::from_reflect(&**data).ok_or_else(|| {
+            |data: In<(Entity, Box<dyn Reflect>)>, mut writer: EventWriter<UiEvent<E>>| -> Result {
+              let (entity, reflect) = &*data;
+              let event = E::from_reflect(&**reflect).ok_or_else(|| {
                 let registration = E::get_type_registration();
                 let tp = registration.type_info().type_path();
-                if let Some(ti) = data.get_represented_type_info() {
+                if let Some(ti) = reflect.get_represented_type_info() {
                   format!("Could not make {tp} from {}", ti.type_path())
                 } else {
                   format!("Could not make {tp} from Reflect")
                 }
               })?;
 
-              writer.write(event);
+              writer.write(UiEvent::new(*entity, event));
 
               Ok(())
             },
@@ -122,6 +122,7 @@ impl BuiPlugin {
     ui_events: Res<UiEvents>,
     q_interactions: Query<
       (
+        Entity,
         &Interaction,
         Option<&ClickEventType>,
         Option<&HoverEventType>,
@@ -130,35 +131,41 @@ impl BuiPlugin {
       (Changed<Interaction>, With<Interactable>),
     >,
   ) {
-    for (interaction, maybe_click, maybe_hover, maybe_leave) in &q_interactions {
+    for (entity, interaction, maybe_click, maybe_hover, maybe_leave) in &q_interactions {
       match interaction {
         Interaction::Pressed => {
           if let Some(click_type) = maybe_click {
-            Self::fire_untyped_event(&mut commands, **click_type, &ui_events);
+            Self::fire_untyped_event(&mut commands, entity, **click_type, &ui_events);
           }
         }
         Interaction::Hovered => {
           if let Some(hover_type) = maybe_hover {
-            Self::fire_untyped_event(&mut commands, **hover_type, &ui_events);
+            Self::fire_untyped_event(&mut commands, entity, **hover_type, &ui_events);
           }
         }
         Interaction::None => {
           if let Some(leave_type) = maybe_leave {
-            Self::fire_untyped_event(&mut commands, **leave_type, &ui_events);
+            Self::fire_untyped_event(&mut commands, entity, **leave_type, &ui_events);
           }
         }
       }
     }
   }
 
-  fn fire_untyped_event(commands: &mut Commands, event_type: TypeId, ui_events: &UiEvents) {
+  fn fire_untyped_event(
+    commands: &mut Commands,
+    entity: Entity,
+    event_type: TypeId,
+    ui_events: &UiEvents,
+  ) {
     if let Some(sys) = ui_events.get(&event_type.clone()).cloned() {
-      commands.queue(move |world: &mut World| {
+      commands.queue(move |world: &mut World| -> Result {
         world.resource_scope(|world, vtables: Mut<UiVTables>| {
           if let Some(vtable) = vtables.events.get(&event_type) {
             let event = (vtable.create)(world);
-            world.run_system_with(sys, event);
+            world.run_system_with(sys, (entity, event))??;
           }
+          Ok(())
         })
       });
     }
@@ -203,7 +210,7 @@ impl BuiPluginBuilder {
     self
   }
 
-  pub fn register_event<E: Event + Reflectable + FromReflect + FromWorld>(mut self) -> Self {
+  pub fn register_event<E: Reflectable + FromReflect + FromWorld>(mut self) -> Self {
     self.inner.register_event::<E>();
     self
   }

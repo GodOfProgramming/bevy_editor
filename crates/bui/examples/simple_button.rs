@@ -1,5 +1,5 @@
 use bevy::{color::palettes::css::RED, prelude::*};
-use bui::BuiPlugin;
+use bui::{BuiPlugin, ui::events::UiEvent};
 
 const UI: &str = include_str!("./ui/simple_button.xml");
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
@@ -12,7 +12,9 @@ fn main() {
       DefaultPlugins,
       BuiPlugin::builder()
         .register_element::<Zone>()
-        .register_event::<ButtonEvent>()
+        .register_event::<ClickEvent>()
+        .register_event::<HoverEvent>()
+        .register_event::<LeaveEvent>()
         .build(),
     ))
     .add_systems(Startup, startup)
@@ -31,12 +33,46 @@ fn startup(world: &mut World) {
   }
 }
 
-#[derive(Reflect, Event, Default)]
-struct ButtonEvent;
+#[derive(Reflect, Default)]
+struct ClickEvent;
 
-fn button_event_system(mut reader: EventReader<ButtonEvent>) {
-  for event in reader.read() {
-    println!("Got event");
+#[derive(Reflect, Default)]
+struct HoverEvent;
+
+#[derive(Reflect, Default)]
+struct LeaveEvent;
+
+fn button_event_system(
+  mut click_reader: EventReader<UiEvent<ClickEvent>>,
+  mut hover_reader: EventReader<UiEvent<HoverEvent>>,
+  mut leave_reader: EventReader<UiEvent<LeaveEvent>>,
+  mut q_bg_colors: Query<&mut BackgroundColor>,
+) {
+  for event in click_reader.read() {
+    let entity = event.entity();
+    let Ok(mut bg) = q_bg_colors.get_mut(entity) else {
+      continue;
+    };
+
+    *bg = BackgroundColor(PRESSED_BUTTON);
+  }
+
+  for event in hover_reader.read() {
+    let entity = event.entity();
+    let Ok(mut bg) = q_bg_colors.get_mut(entity) else {
+      continue;
+    };
+
+    *bg = BackgroundColor(HOVERED_BUTTON);
+  }
+
+  for event in leave_reader.read() {
+    let entity = event.entity();
+    let Ok(mut bg) = q_bg_colors.get_mut(entity) else {
+      continue;
+    };
+
+    *bg = BackgroundColor(NORMAL_BUTTON);
   }
 }
 

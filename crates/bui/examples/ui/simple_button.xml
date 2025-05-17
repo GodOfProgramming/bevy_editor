@@ -1,5 +1,10 @@
-<CenteredArea>
-  <Button Style="(
+<Zone Style="(
+    width: Percent(100.0),
+    height: Percent(100.0),
+    align_items: Center,
+    justify_content: Center,
+  )">
+  <Button event.onclick="ButtonEvent" Style="(
       width: Px(150.0),
       height: Px(65.0),
       justify_content: Center,
@@ -16,4 +21,4 @@
       alpha:1.0
     ))" />
   </Button>
-</CenteredArea>
+</Zone>

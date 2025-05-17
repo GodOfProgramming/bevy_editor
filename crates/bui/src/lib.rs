@@ -3,17 +3,18 @@ pub mod ui;
 pub mod xml;
 
 use bevy::{
-  ecs::system::SystemId,
+  ecs::system::RunSystemOnce,
   prelude::*,
-  reflect::{GetTypeRegistration, Reflectable, TypeRegistry},
+  reflect::{Reflectable, TypeRegistry},
   utils::TypeIdMap,
 };
 use itertools::{Either, Itertools};
-use std::{any::TypeId, borrow::Cow, str::FromStr};
+use std::{any::TypeId, borrow::Cow};
 use ui::{
   Attribute,
   attrs::{self},
   elements,
+  events::{ClickEventType, HoverEventType, Interactable, LeaveEventType, UiEvents},
 };
 
 pub struct BuiPlugin {
@@ -33,6 +34,7 @@ impl BuiPlugin {
   }
 
   pub fn register_element<E: Reflectable + FromReflect>(&mut self) -> &mut Self {
+    self.register_reflect::<E>();
     self.vtables.elements.insert(
       TypeId::of::<E>(),
       ElementVTable {
@@ -46,6 +48,7 @@ impl BuiPlugin {
   }
 
   pub fn register_attr<A: Attribute + Reflectable + FromReflect>(&mut self) -> &mut Self {
+    self.register_reflect::<A>();
     self.vtables.attrs.insert(
       TypeId::of::<A>(),
       AttrVTable {
@@ -69,31 +72,37 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_event<E: UiEvent + FromReflect>(&mut self) -> &mut Self {
+  pub fn register_event<E: Event + Reflectable + FromReflect + FromWorld>(&mut self) -> &mut Self {
+    self.register_reflect::<E>();
     self.vtables.events.insert(
       TypeId::of::<E>(),
       EventVTable {
         register: |app, events| {
+          app.register_type::<E>();
           app.add_event::<E>();
 
           let world = app.world_mut();
-          let sys_id =
-            world.register_system(|data: In<String>, mut writer: EventWriter<E>| -> Result {
-              let input = E::In::from_attr(&data).ok_or_else(|| {
-                let registration = E::In::get_type_registration();
+          let sys_id = world.register_system(
+            |data: In<Box<dyn Reflect>>, mut writer: EventWriter<E>| -> Result {
+              let event = E::from_reflect(&**data).ok_or_else(|| {
+                let registration = E::get_type_registration();
                 let tp = registration.type_info().type_path();
-                format!("Could not parse {tp} from {}", *data)
+                if let Some(ti) = data.get_represented_type_info() {
+                  format!("Could not make {tp} from {}", ti.type_path())
+                } else {
+                  format!("Could not make {tp} from Reflect")
+                }
               })?;
-
-              let event = E::new(input);
 
               writer.write(event);
 
               Ok(())
-            });
+            },
+          );
 
           events.add::<E>(sys_id);
         },
+        create: |world| Box::new(E::from_world(world)) as Box<dyn Reflect>,
       },
     );
     self
@@ -106,6 +115,53 @@ impl BuiPlugin {
         from_reflect: |partial| T::from_reflect(partial).map(|t| Box::new(t) as Box<dyn Reflect>),
       },
     );
+  }
+
+  fn interaction_system(
+    mut commands: Commands,
+    ui_events: Res<UiEvents>,
+    q_interactions: Query<
+      (
+        &Interaction,
+        Option<&ClickEventType>,
+        Option<&HoverEventType>,
+        Option<&LeaveEventType>,
+      ),
+      (Changed<Interaction>, With<Interactable>),
+    >,
+  ) {
+    for (interaction, maybe_click, maybe_hover, maybe_leave) in &q_interactions {
+      match interaction {
+        Interaction::Pressed => {
+          if let Some(click_type) = maybe_click {
+            Self::fire_untyped_event(&mut commands, **click_type, &ui_events);
+          }
+        }
+        Interaction::Hovered => {
+          if let Some(hover_type) = maybe_hover {
+            Self::fire_untyped_event(&mut commands, **hover_type, &ui_events);
+          }
+        }
+        Interaction::None => {
+          if let Some(leave_type) = maybe_leave {
+            Self::fire_untyped_event(&mut commands, **leave_type, &ui_events);
+          }
+        }
+      }
+    }
+  }
+
+  fn fire_untyped_event(commands: &mut Commands, event_type: TypeId, ui_events: &UiEvents) {
+    if let Some(sys) = ui_events.get(&event_type.clone()).cloned() {
+      commands.queue(move |world: &mut World| {
+        world.resource_scope(|world, vtables: Mut<UiVTables>| {
+          if let Some(vtable) = vtables.events.get(&event_type) {
+            let event = (vtable.create)(world);
+            world.run_system_with(sys, event);
+          }
+        })
+      });
+    }
   }
 }
 
@@ -126,6 +182,9 @@ impl Plugin for BuiPlugin {
     }
 
     app.insert_resource(self.vtables.clone());
+    app.insert_resource(events);
+
+    app.add_systems(Update, Self::interaction_system);
   }
 }
 
@@ -144,7 +203,7 @@ impl BuiPluginBuilder {
     self
   }
 
-  pub fn register_event<E: UiEvent + FromReflect>(mut self) -> Self {
+  pub fn register_event<E: Event + Reflectable + FromReflect + FromWorld>(mut self) -> Self {
     self.inner.register_event::<E>();
     self
   }
@@ -176,48 +235,12 @@ struct AttrVTable {
 #[derive(Clone)]
 struct EventVTable {
   register: fn(&mut App, &mut UiEvents),
+  create: fn(&mut World) -> Box<dyn Reflect>,
 }
 
 #[derive(Clone)]
 struct ReflectionVTable {
   from_reflect: fn(&dyn PartialReflect) -> Option<Box<dyn Reflect>>,
-}
-
-pub trait UiEvent: Event {
-  type In: GetTypeRegistration + FromAttr;
-
-  fn new(input: Self::In) -> Self;
-}
-
-pub trait FromAttr
-where
-  Self: Sized,
-{
-  fn from_attr(data: &str) -> Option<Self>;
-}
-
-pub trait FromStrFromAttr: FromStr {}
-
-impl<T> FromStrFromAttr for T where T: FromStr {}
-
-impl<T> FromAttr for T
-where
-  T: FromStrFromAttr,
-{
-  fn from_attr(data: &str) -> Option<Self> {
-    data.parse().ok()
-  }
-}
-
-#[derive(Default)]
-struct UiEvents {
-  inner: TypeIdMap<SystemId<In<String>, Result>>,
-}
-
-impl UiEvents {
-  fn add<E: UiEvent>(&mut self, id: SystemId<In<String>, Result>) {
-    self.inner.insert(TypeId::of::<E>(), id);
-  }
 }
 
 pub struct Ui {
@@ -246,8 +269,7 @@ fn spawn_node(node: &xml::Node, world: &mut World) -> Result<Entity> {
 }
 
 fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) -> Result<Entity> {
-  // replace . with :: so full path lookup works
-  let name = tag.name.replace(".", "::");
+  let name = template_to_mod_path(&tag.name);
 
   let registration = reflection::get_type_registration(&name, type_registry)?;
   let reflect_component = registration
@@ -281,7 +303,7 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
   )?;
 
   // after creation, any attrs that use self. are set on the new struct
-  let (fields, components): (Vec<_>, Vec<_>) = tag
+  let (fields, rest): (Vec<_>, Vec<_>) = tag
     .attrs
     .iter()
     .filter(|(k, _)| *k != "self")
@@ -291,6 +313,12 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
         .unwrap_or(Either::Right((k, v)))
     });
   reflection::patch_struct_with_map(fields, &mut *reflect)?;
+
+  let (events, components): (Vec<_>, Vec<_>) = rest.into_iter().partition_map(|(k, v)| {
+    k.strip_prefix("event.")
+      .map(|e| Either::Left((e, v)))
+      .unwrap_or(Either::Right((k, v)))
+  });
 
   // create children first, as they need the world
   let children = create_child_entities(&tag.children, world)?;
@@ -303,6 +331,13 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
 
   // then add all children
   entity.add_children(&children);
+
+  // add all events
+  if let Err(err) = bind_events(events, &mut entity, type_registry) {
+    let id = entity.id();
+    world.despawn(id);
+    return Err(err);
+  }
 
   let entity = entity.id();
 
@@ -369,6 +404,44 @@ fn insert_attribute(
 
     Ok(())
   })
+}
+
+fn bind_events<K, V>(
+  events: impl IntoIterator<Item = (K, V)>,
+  entity: &mut EntityWorldMut,
+  type_registry: &TypeRegistry,
+) -> Result
+where
+  K: AsRef<str>,
+  V: AsRef<str>,
+{
+  for (k, v) in events {
+    let event_name = k.as_ref();
+    let event_type = template_to_mod_path(v);
+
+    match event_name {
+      "onclick" => {
+        let t = reflection::get_type_registration(&event_type, type_registry)?;
+        entity.insert((Interactable, ClickEventType::new(t.type_id())));
+      }
+      "onhover" => {
+        let t = reflection::get_type_registration(&event_type, type_registry)?;
+        entity.insert((Interactable, HoverEventType::new(t.type_id())));
+      }
+      "onleave" => {
+        let t = reflection::get_type_registration(&event_type, type_registry)?;
+        entity.insert((Interactable, LeaveEventType::new(t.type_id())));
+      }
+      evt => return Err(format!("Invalid event type {evt}"))?,
+    }
+  }
+
+  Ok(())
+}
+
+fn template_to_mod_path(s: impl AsRef<str>) -> String {
+  // replace . with :: so full path lookup works
+  s.as_ref().replace(".", "::")
 }
 
 #[cfg(test)]

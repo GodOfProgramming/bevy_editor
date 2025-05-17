@@ -1732,6 +1732,8 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "cargo_metadata",
+ "derive-new",
+ "derive_more",
  "itertools 0.14.0",
  "macros",
  "quote",

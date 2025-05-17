@@ -1,19 +1,22 @@
 use bevy::{color::palettes::css::RED, prelude::*};
-use bui::{BuiPlugin, UiEvent};
+use bui::BuiPlugin;
 
 const UI: &str = include_str!("./ui/simple_button.xml");
+const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
+const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
+const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
 
 fn main() {
   App::new()
     .add_plugins((
       DefaultPlugins,
       BuiPlugin::builder()
-        .register_element::<CenteredArea>()
+        .register_element::<Zone>()
         .register_event::<ButtonEvent>()
         .build(),
     ))
     .add_systems(Startup, startup)
-    .add_systems(Update, (button_system, button_event_system))
+    .add_systems(Update, button_event_system)
     .run();
 }
 
@@ -28,16 +31,8 @@ fn startup(world: &mut World) {
   }
 }
 
-#[derive(Reflect, Event)]
+#[derive(Reflect, Event, Default)]
 struct ButtonEvent;
-
-impl UiEvent for ButtonEvent {
-  type In = String;
-
-  fn new(input: Self::In) -> Self {
-    Self
-  }
-}
 
 fn button_event_system(mut reader: EventReader<ButtonEvent>) {
   for event in reader.read() {
@@ -45,18 +40,11 @@ fn button_event_system(mut reader: EventReader<ButtonEvent>) {
   }
 }
 
-const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
-const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
-const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
-
 #[derive(Default, Component, Reflect)]
-#[require(Node = screen_node())]
+#[require(Node)]
 #[reflect(Default)]
 #[reflect(Component)]
-pub struct CenteredArea;
-
-#[derive(Component)]
-struct ButtonText(&'static str);
+pub struct Zone;
 
 fn screen() -> impl Bundle {
   (screen_node(), children![simple_button(), advanced_button()])
@@ -73,17 +61,12 @@ fn screen_node() -> Node {
 }
 
 fn simple_button() -> impl Bundle {
-  (
-    Button,
-    ButtonText("Sim. Button"),
-    children![(Text::new("Sim. Button"),)],
-  )
+  (Button, children![(Text::new("Sim. Button"),)])
 }
 
 fn advanced_button() -> impl Bundle {
   (
     Button,
-    ButtonText("Adv. Button"),
     Node {
       width: Val::Px(150.0),
       height: Val::Px(65.0),
@@ -107,41 +90,4 @@ fn advanced_button() -> impl Bundle {
       TextShadow::default(),
     )],
   )
-}
-
-fn button_system(
-  mut interaction_query: Query<
-    (
-      &ButtonText,
-      &Interaction,
-      &mut BackgroundColor,
-      &mut BorderColor,
-      &Children,
-    ),
-    (Changed<Interaction>, With<Button>),
-  >,
-  mut text_query: Query<&mut Text>,
-  mut event_writer: EventWriter<ButtonEvent>,
-) {
-  for (bt, interaction, mut color, mut border_color, children) in &mut interaction_query {
-    let mut text = text_query.get_mut(children[0]).unwrap();
-    match *interaction {
-      Interaction::Pressed => {
-        **text = "Press".to_string();
-        *color = PRESSED_BUTTON.into();
-        border_color.0 = RED.into();
-        event_writer.write(ButtonEvent);
-      }
-      Interaction::Hovered => {
-        **text = "Hover".to_string();
-        *color = HOVERED_BUTTON.into();
-        border_color.0 = Color::WHITE;
-      }
-      Interaction::None => {
-        **text = bt.0.to_string();
-        *color = NORMAL_BUTTON.into();
-        border_color.0 = Color::BLACK;
-      }
-    }
-  }
 }

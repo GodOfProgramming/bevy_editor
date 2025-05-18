@@ -15,6 +15,10 @@ use ui::{
   elements,
   events::{ClickEventType, HoverEventType, Interactable, LeaveEventType, UiEvent, UiEvents},
 };
+use xml::Attr;
+
+const EVENT_PREFIX: &str = "event";
+const SELF_PREFIX: &str = "self";
 
 pub struct BuiPlugin {
   vtables: UiVTables,
@@ -276,14 +280,14 @@ fn spawn_node(node: &xml::Node, world: &mut World) -> Result<Entity> {
 }
 
 fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) -> Result<Entity> {
-  let name = template_to_mod_path(&tag.name);
+  let name = template_to_mod_path(tag.name());
 
   let registration = reflection::get_type_registration(&name, type_registry)?;
   let reflect_component = registration
     .data::<ReflectComponent>()
     .ok_or_else(|| format!("Type {name} does not have ReflectComponent"))?;
 
-  let mut reflect = tag.attrs.get("self").map_or_else(
+  let mut reflect = tag.attr(Attr::named("self")).map_or_else(
     || -> Result<Box<dyn Reflect>> {
       // use reflect default if there is no self attrib
       let reflect = registration
@@ -293,7 +297,7 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
 
       Ok(reflect)
     },
-    |data: &String| -> Result<Box<dyn Reflect>> {
+    |data: &str| -> Result<Box<dyn Reflect>> {
       // else then use its ron value for component creation
       let data = if data.starts_with('(') {
         Cow::Borrowed(data)
@@ -311,24 +315,23 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
 
   // after creation, any attrs that use self. are set on the new struct
   let (fields, rest): (Vec<_>, Vec<_>) = tag
-    .attrs
-    .iter()
-    .filter(|(k, _)| *k != "self")
+    .attr_iter()
+    .filter(|(k, _)| k.to_string() != SELF_PREFIX)
     .partition_map(|(k, v)| {
-      k.strip_prefix("self.")
-        .map(|n| Either::Left((n, v)))
+      k.prefix()
+        .and_then(|prefix| (prefix == SELF_PREFIX).then_some(Either::Left((k.name(), v))))
         .unwrap_or(Either::Right((k, v)))
     });
   reflection::patch_struct_with_map(fields, &mut *reflect)?;
 
   let (events, components): (Vec<_>, Vec<_>) = rest.into_iter().partition_map(|(k, v)| {
-    k.strip_prefix("event.")
-      .map(|e| Either::Left((e, v)))
+    k.prefix()
+      .and_then(|prefix| (prefix == EVENT_PREFIX).then_some(Either::Left((k.name(), v))))
       .unwrap_or(Either::Right((k, v)))
   });
 
   // create children first, as they need the world
-  let children = create_child_entities(&tag.children, world)?;
+  let children = create_child_entities(tag.children(), world)?;
 
   // then the actual entity for this element
   let mut entity = world.spawn_empty();
@@ -349,13 +352,13 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
   let entity = entity.id();
 
   // the world is free again and now the attributes can be created
-  for (name, value) in components {
+  for (attr, value) in components {
     let value = if value.starts_with('(') {
       Cow::Borrowed(value)
     } else {
       Cow::Owned(format!("({value})"))
     };
-    if let Err(err) = insert_attribute(name, &value, world, entity, type_registry) {
+    if let Err(err) = insert_attribute(attr, &value, world, entity, type_registry) {
       world.despawn(entity);
       return Err(err);
     }
@@ -390,14 +393,15 @@ fn create_child_entities<'c>(
 }
 
 fn insert_attribute(
-  name: &str,
+  attr: &xml::Attr,
   value: &str,
   world: &mut World,
   entity: Entity,
   type_registry: &TypeRegistry,
 ) -> Result {
   world.resource_scope(|world, vtables: Mut<UiVTables>| -> Result {
-    let reg = reflection::get_type_registration(name, type_registry)?;
+    let name = attr.to_string();
+    let reg = reflection::get_type_registration(&name, type_registry)?;
     let reflect = reflection::deserialize_reflect(type_registry, reg, value, &vtables)?;
 
     match vtables.attrs.get(&reg.type_id()) {
@@ -405,7 +409,7 @@ fn insert_attribute(
         (fns.insert)(world, entity, &*reflect)?;
       }
       None => {
-        Err(format!("Type {name} was not registered as an attribute"))?;
+        Err(format!("Type {attr} was not registered as an attribute"))?;
       }
     }
 

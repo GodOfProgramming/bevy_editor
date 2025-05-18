@@ -1,5 +1,8 @@
+use crate::{EVENT_PREFIX, SELF_PREFIX};
 use bevy::prelude::{Deref, DerefMut};
-use std::{borrow::Cow, collections::BTreeMap, io::BufReader, iter, ops::Index};
+use std::{
+  borrow::Cow, collections::BTreeMap, fmt::Display, hash::Hash, io::BufReader, iter, ops::Index,
+};
 use thiserror::Error;
 use xml::{
   EventReader,
@@ -19,7 +22,13 @@ pub enum ParseError {
   ExpectedNode,
 
   #[error("{0}")]
-  General(xml::reader::Error),
+  General(Box<dyn std::error::Error>),
+}
+
+impl From<Box<dyn std::error::Error>> for ParseError {
+  fn from(value: Box<dyn std::error::Error>) -> Self {
+    Self::General(value)
+  }
 }
 
 #[derive(Deref, DerefMut)]
@@ -71,9 +80,9 @@ impl From<String> for Node {
 
 #[derive(Default, Debug)]
 pub struct Tag {
-  pub name: String,
-  pub attrs: BTreeMap<String, String>,
-  pub children: Vec<Node>,
+  name: String,
+  attrs: BTreeMap<Attr, String>,
+  children: Vec<Node>,
 }
 
 impl Tag {
@@ -82,10 +91,34 @@ impl Tag {
       name: name.to_string(),
       attrs: attrs
         .into_iter()
-        .map(|attr| (attr.name.to_string(), attr.value))
+        .map(|attr| {
+          (
+            Attr {
+              prefix: attr.name.prefix,
+              name: attr.name.local_name,
+            },
+            attr.value,
+          )
+        })
         .collect(),
       children: Vec::new(),
     }
+  }
+
+  pub fn name(&self) -> &str {
+    &self.name
+  }
+
+  pub fn attr(&self, attr: impl Into<Attr>) -> Option<&str> {
+    self.attrs.get(&attr.into()).map(String::as_str)
+  }
+
+  pub fn children(&self) -> &Vec<Node> {
+    &self.children
+  }
+
+  pub fn attr_iter(&self) -> impl Iterator<Item = (&Attr, &str)> {
+    self.attrs.iter().map(|(k, v)| (k, v.as_str()))
   }
 }
 
@@ -94,7 +127,15 @@ impl<'n> From<&'n Tag> for Vec<WXmlEvent<'n>> {
     let attrs = val
       .attrs
       .iter()
-      .map(|(k, v)| Attribute::new(Name::local(k), v))
+      .map(|(k, v)| {
+        Attribute::new(
+          k.prefix
+            .as_ref()
+            .map(|prefix| Name::prefixed(&k.name, prefix))
+            .unwrap_or_else(|| Name::local(&k.name)),
+          v,
+        )
+      })
       .collect::<Vec<Attribute>>();
 
     let attrs = Cow::Owned(attrs);
@@ -131,14 +172,72 @@ impl Index<usize> for Tag {
   }
 }
 
-impl Index<&str> for Tag {
+impl Index<&Attr> for Tag {
   type Output = str;
-  fn index(&self, index: &str) -> &Self::Output {
+  fn index(&self, index: &Attr) -> &Self::Output {
     &self.attrs[index]
   }
 }
 
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub struct Attr {
+  prefix: Option<String>,
+  name: String,
+}
+
+impl Attr {
+  pub fn named(name: impl ToString) -> Self {
+    Self {
+      prefix: None,
+      name: name.to_string(),
+    }
+  }
+
+  pub fn prefixed(prefix: impl ToString, name: impl ToString) -> Self {
+    Self {
+      prefix: Some(prefix.to_string()),
+      name: name.to_string(),
+    }
+  }
+
+  pub fn name(&self) -> &str {
+    &self.name
+  }
+
+  pub fn prefix(&self) -> Option<&str> {
+    self.prefix.as_deref()
+  }
+}
+
+impl Display for Attr {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    if let Some(prefix) = &self.prefix {
+      write!(f, "{}:", prefix)?;
+    }
+    write!(f, "{}", self.name)
+  }
+}
+
+impl Hash for Attr {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.prefix.hash(state);
+    self.name.hash(state);
+  }
+}
+
 pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
+  const NAMESPACE_ELEMENT: &str = "BUI...NAMESPACE";
+
+  // inject namespaces into the overall doc
+  // xml-rs doesn't allow for ignoring namespace decls
+  let data = format!(
+    "<{NAMESPACE_ELEMENT}
+      xmlns:{EVENT_PREFIX}='{EVENT_PREFIX}'
+      xmlns:{SELF_PREFIX}='{SELF_PREFIX}'>
+        {data}
+      </{NAMESPACE_ELEMENT}>"
+  );
+
   let reader = BufReader::new(data.as_bytes());
   let parser = EventReader::new(reader);
 
@@ -150,10 +249,20 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
       Ok(RXmlEvent::StartElement {
         name, attributes, ..
       }) => {
+        // ignore injected namespace
+        if name.local_name == NAMESPACE_ELEMENT {
+          continue;
+        }
+
         let tag = Tag::new(name, attributes);
         stack.push(Node::Tag(tag));
       }
-      Ok(RXmlEvent::EndElement { .. }) => {
+      Ok(RXmlEvent::EndElement { name }) => {
+        // ignore injected namespace
+        if name.local_name == NAMESPACE_ELEMENT {
+          continue;
+        }
+
         if stack.is_empty() {
           return Err(ParseError::ExpectedTag);
         }
@@ -183,7 +292,7 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
 
         tag.children.push(text.trim().into());
       }
-      Err(e) => return Err(ParseError::General(e)),
+      Err(e) => return Err(ParseError::General(Box::new(e))),
       _ => (),
     }
   }
@@ -193,8 +302,31 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
 
 #[cfg(test)]
 mod tests {
-  use super::Node;
+  use std::ops::Index;
+
+  use super::{Attr, Node, Tag};
   use speculoos::prelude::*;
+
+  impl Index<&str> for Tag {
+    type Output = str;
+    fn index(&self, index: &str) -> &Self::Output {
+      let mut split = index.split(':');
+      let prefix_or_name = split.next();
+      let maybe_name = split.next();
+
+      match (prefix_or_name, maybe_name) {
+        (Some(name), None) => {
+          let attr = Attr::named(name);
+          &self[&attr]
+        }
+        (Some(prefix), Some(name)) => {
+          let attr = Attr::prefixed(prefix, name);
+          &self[&attr]
+        }
+        _ => unimplemented!(),
+      }
+    }
+  }
 
   #[test]
   fn parse_dummy_data() {

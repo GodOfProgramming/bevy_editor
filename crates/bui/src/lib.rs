@@ -282,7 +282,7 @@ fn spawn_node(node: &xml::Node, world: &mut World) -> Result<Entity> {
 fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) -> Result<Entity> {
   let name = template_to_mod_path(tag.name());
 
-  let registration = reflection::get_type_registration(&name, type_registry)?;
+  let registration = reflection::get_type_registration_from_name(&name, type_registry)?;
   let reflect_component = registration
     .data::<ReflectComponent>()
     .ok_or_else(|| format!("Type {name} does not have ReflectComponent"))?;
@@ -401,7 +401,7 @@ fn insert_attribute(
 ) -> Result {
   world.resource_scope(|world, vtables: Mut<UiVTables>| -> Result {
     let name = attr.to_string();
-    let reg = reflection::get_type_registration(&name, type_registry)?;
+    let reg = reflection::get_type_registration_from_name(&name, type_registry)?;
     let reflect = reflection::deserialize_reflect(type_registry, reg, value, &vtables)?;
 
     match vtables.attrs.get(&reg.type_id()) {
@@ -432,15 +432,15 @@ where
 
     match event_name {
       "onclick" => {
-        let t = reflection::get_type_registration(&event_type, type_registry)?;
+        let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
         entity.insert((Interactable, ClickEventType::new(t.type_id())));
       }
       "onhover" => {
-        let t = reflection::get_type_registration(&event_type, type_registry)?;
+        let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
         entity.insert((Interactable, HoverEventType::new(t.type_id())));
       }
       "onleave" => {
-        let t = reflection::get_type_registration(&event_type, type_registry)?;
+        let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
         entity.insert((Interactable, LeaveEventType::new(t.type_id())));
       }
       evt => return Err(format!("Invalid event type {evt}"))?,

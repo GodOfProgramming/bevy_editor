@@ -7,9 +7,7 @@ use bevy::{
 };
 use serde::de::DeserializeSeed;
 
-type ParserFn = fn(&str) -> Option<Box<dyn Reflect>>;
-
-pub fn get_type_registration<'t>(
+pub fn get_type_registration_from_name<'t>(
   name: &str,
   type_registry: &'t TypeRegistry,
 ) -> Result<&'t TypeRegistration> {
@@ -116,7 +114,7 @@ fn patch_field(
     return Err("Unable to acquire type info of field")?;
   };
 
-  let de = TypedReflectDeserializer::new(&registration, type_registry);
+  let de = TypedReflectDeserializer::new(registration, type_registry);
   let mut rd = ron::Deserializer::from_str(value.as_ref())?;
   let reflect = de.deserialize(&mut rd)?;
 

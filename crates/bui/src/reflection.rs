@@ -2,23 +2,10 @@ use crate::UiVTables;
 use bevy::{
   prelude::*,
   reflect::{
-    ReflectMut, ReflectRef, TypeInfo, TypeRegistration, TypeRegistry,
-    serde::TypedReflectDeserializer,
+    ReflectMut, ReflectRef, TypeRegistration, TypeRegistry, serde::TypedReflectDeserializer,
   },
 };
 use serde::de::DeserializeSeed;
-use std::str::FromStr;
-
-macro_rules! get_parser {
-    ($value:ident, $($ty:ident),+) => {
-      match $value {
-        $(
-          stringify!($ty) => parse_to_reflect::<$ty>,
-        )*
-        _ => return None,
-      }
-    };
-}
 
 type ParserFn = fn(&str) -> Option<Box<dyn Reflect>>;
 
@@ -71,7 +58,11 @@ pub fn deserialize_reflect(
   Ok(reflect)
 }
 
-pub fn patch_struct_with_map<I, K, V>(iter: I, reflect: &mut dyn Reflect) -> Result
+pub fn patch_struct_with_map<I, K, V>(
+  iter: I,
+  reflect: &mut dyn Reflect,
+  type_registry: &TypeRegistry,
+) -> Result
 where
   K: AsRef<str>,
   V: AsRef<str>,
@@ -90,7 +81,7 @@ where
           return Err(format!("Unknown field name in struct {key}"))?;
         };
 
-        patch_field(field, value)?;
+        patch_field(field, value, type_registry)?;
       }
     }
     bevy::reflect::ReflectKind::TupleStruct => {
@@ -103,7 +94,7 @@ where
           return Err(format!("Unknown field name in struct {key}"))?;
         };
 
-        patch_field(field, value)?;
+        patch_field(field, value, type_registry)?;
       }
     }
     k => Err(format!("Patching unsupported for type {k:?}"))?,
@@ -112,21 +103,24 @@ where
   Ok(())
 }
 
-fn patch_field(field: &mut dyn PartialReflect, value: impl AsRef<str>) -> Result {
+fn patch_field(
+  field: &mut dyn PartialReflect,
+  value: impl AsRef<str>,
+  type_registry: &TypeRegistry,
+) -> Result {
   let Some(type_info) = field.get_represented_type_info() else {
     return Err("Unable to get type info of field")?;
   };
 
-  let Some(parser_fn) = get_parser_fn(type_info) else {
-    let tp = type_info.type_path();
-    return Err(format!("Unsupported field type in struct {tp}"))?;
+  let Some(registration) = type_registry.get(type_info.type_id()) else {
+    return Err("Unable to acquire type info of field")?;
   };
 
-  let new_val = (parser_fn)(value.as_ref());
+  let de = TypedReflectDeserializer::new(&registration, type_registry);
+  let mut rd = ron::Deserializer::from_str(value.as_ref())?;
+  let reflect = de.deserialize(&mut rd)?;
 
-  if let Some(new_val) = new_val {
-    field.apply(&*new_val);
-  }
+  field.apply(&*reflect);
 
   Ok(())
 }
@@ -164,25 +158,4 @@ pub fn patch_reflect<A: Reflect, B: Reflect>(patch: &A, target: &mut B) -> usize
   }
 
   patches
-}
-
-fn parse_to_reflect<T>(value: &str) -> Option<Box<dyn Reflect>>
-where
-  T: Reflect + FromStr,
-{
-  Some(Box::new(value.parse::<T>().ok()?) as Box<dyn Reflect>)
-}
-
-fn get_parser_fn(type_info: &TypeInfo) -> Option<ParserFn> {
-  let ty = type_info.ty();
-  let type_name = ty.ident()?;
-
-  #[rustfmt::skip]
-  let f = get_parser!(type_name,
-    u8, u16, u32, u64, u128, usize,
-    i8, i16, i32, i64, i128, isize,
-    f32, f64, bool, char, String
-  );
-
-  Some(f)
 }

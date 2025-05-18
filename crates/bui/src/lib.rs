@@ -322,7 +322,7 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
         .and_then(|prefix| (prefix == SELF_PREFIX).then_some(Either::Left((k.name(), v))))
         .unwrap_or(Either::Right((k, v)))
     });
-  reflection::patch_struct_with_map(fields, &mut *reflect)?;
+  reflection::patch_struct_with_map(fields, &mut *reflect, type_registry)?;
 
   let (events, components): (Vec<_>, Vec<_>) = rest.into_iter().partition_map(|(k, v)| {
     k.prefix()

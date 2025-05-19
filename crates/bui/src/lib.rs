@@ -7,6 +7,7 @@ use bevy::{
   reflect::{Reflectable, TypeRegistry},
   utils::TypeIdMap,
 };
+use derive_more::derive::From;
 use itertools::{Either, Itertools};
 use std::{any::TypeId, borrow::Cow};
 use ui::{
@@ -259,12 +260,25 @@ pub struct Ui {
 }
 
 impl Ui {
-  pub fn parse_all(ui_xml: &str) -> Result<Vec<Ui>, xml::ParseError> {
-    xml::parse(ui_xml).map(|nodes| nodes.into_iter().map(|node| Ui { node }).collect())
+  pub fn parse_all(ui_xml: &str) -> Result<Vec<Self>, xml::ParseError> {
+    xml::parse(ui_xml).map(|nodes| nodes.into_iter().map(|node| Self { node }).collect())
   }
 
   pub fn spawn(&self, world: &mut World) -> Result<Entity> {
     spawn_node(&self.node, world)
+  }
+}
+
+#[derive(Component, From)]
+struct PrimaryType(TypeId);
+
+impl PrimaryType {
+  fn new<T: 'static>() -> Self {
+    Self(TypeId::of::<T>())
+  }
+
+  fn type_id(&self) -> TypeId {
+    self.0
   }
 }
 
@@ -334,7 +348,7 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
   let children = create_child_entities(tag.children(), world)?;
 
   // then the actual entity for this element
-  let mut entity = world.spawn_empty();
+  let mut entity = world.spawn(PrimaryType::from(registration.type_id()));
 
   // add the reflected value to this entity
   reflect_component.insert(&mut entity, &*reflect, type_registry);
@@ -368,7 +382,9 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
 }
 
 fn spawn_text(text: &str, world: &mut World) -> Entity {
-  world.spawn(Text::new(text.to_string())).id()
+  world
+    .spawn((Text::new(text.to_string()), PrimaryType::new::<Text>()))
+    .id()
 }
 
 fn create_child_entities<'c>(

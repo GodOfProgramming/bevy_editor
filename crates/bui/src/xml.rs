@@ -1,7 +1,12 @@
-use crate::{EVENT_PREFIX, SELF_PREFIX};
-use bevy::prelude::{Deref, DerefMut};
+use crate::{
+  EVENT_PREFIX, PrimaryType, SELF_PREFIX,
+  reflection::{self, TypeRegistryExt},
+};
+use bevy::{prelude::*, reflect::TypeRegistry};
+use itertools::Itertools;
 use std::{
-  borrow::Cow, collections::BTreeMap, fmt::Display, hash::Hash, io::BufReader, iter, ops::Index,
+  any::TypeId, borrow::Cow, collections::BTreeMap, fmt::Display, hash::Hash, io::BufReader, iter,
+  ops::Index,
 };
 use thiserror::Error;
 use xml::{
@@ -46,6 +51,51 @@ impl TryFrom<&str> for Nodes {
 pub enum Node {
   Tag(Tag),
   Text(String),
+}
+
+impl Node {
+  pub fn serialize(entity: Entity, world: &World) -> Result<Self> {
+    let app_type_registry = world
+      .get_resource::<AppTypeRegistry>()
+      .ok_or("AppTypeRegistry not found")?;
+    let type_registry = app_type_registry.read();
+
+    let entity_ref = world.entity(entity);
+
+    let primary_type = entity_ref
+      .get_components::<&PrimaryType>()
+      .ok_or_else(|| format!("Entity {entity:?} does not have a PrimaryType component"))?;
+
+    let primary_type_id = primary_type.type_id();
+
+    let ref_comp = type_registry
+      .get_type_data::<ReflectComponent>(primary_type_id)
+      .ok_or_else(|| {
+        let tr = type_registry.type_name_of(primary_type_id);
+        format!("Type {tr} was not found in the TypeRegistry")
+      })?;
+
+    let reflect = ref_comp.reflect(entity_ref).ok_or_else(|| {
+      let tr = type_registry.type_name_of(primary_type_id);
+      format!("Type {tr} was not reflectable")
+    })?;
+
+    let num_components = entity_ref.archetype().component_count();
+
+    let node = if let Some(text) = reflect.downcast_ref::<Text>() {
+      if num_components == 1 {
+        Node::Text(text.0.clone())
+      } else {
+        let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world)?;
+        Node::Tag(tag)
+      }
+    } else {
+      let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world)?;
+      Node::Tag(tag)
+    };
+
+    Ok(node)
+  }
 }
 
 impl<'n> From<&'n Node> for Vec<WXmlEvent<'n>> {
@@ -103,6 +153,46 @@ impl Tag {
         .collect(),
       children: Vec::new(),
     }
+  }
+
+  pub fn from_entity(
+    base: &dyn Reflect,
+    entity: EntityRef,
+    type_registry: &TypeRegistry,
+    world: &World,
+  ) -> Result<Self> {
+    let base_type_id = base
+      .get_represented_type_info()
+      .map(|ti| ti.type_id())
+      .ok_or_else(|| "Base Component has no TypeInfo")?;
+
+    let base_comp_id = world.components().get_id(base_type_id).ok_or_else(|| {
+      let tp = type_registry.type_name_of(base_type_id);
+      format!("Type {tp} has no component id")
+    })?;
+
+    for component in entity
+      .archetype()
+      .components()
+      .filter(|comp| *comp != base_comp_id)
+    {}
+
+    let children = Self::serialize_children(entity, world).unwrap()?;
+
+    Ok(Self {
+      name: todo!(),
+      attrs: todo!(),
+      children,
+    })
+  }
+
+  pub fn serialize_children(entity: EntityRef, world: &World) -> Option<Result<Vec<Node>>> {
+    entity.get::<Children>().map(|children| {
+      children
+        .iter()
+        .map(|child| Node::serialize(child, world))
+        .collect()
+    })
   }
 
   pub fn name(&self) -> &str {

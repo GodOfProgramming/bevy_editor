@@ -1,3 +1,5 @@
+use std::any::TypeId;
+
 use crate::UiVTables;
 use bevy::{
   prelude::*,
@@ -6,6 +8,19 @@ use bevy::{
   },
 };
 use serde::de::DeserializeSeed;
+
+pub trait TypeRegistryExt {
+  fn type_name_of(&self, type_id: TypeId) -> &'static str;
+}
+
+impl TypeRegistryExt for TypeRegistry {
+  fn type_name_of(&self, type_id: TypeId) -> &'static str {
+    self
+      .get(type_id)
+      .map(|r| r.type_info().type_path())
+      .unwrap_or("<Unknown Type>")
+  }
+}
 
 pub fn get_type_registration_from_name<'t>(
   name: &str,

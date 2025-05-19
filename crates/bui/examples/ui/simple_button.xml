@@ -27,7 +27,7 @@
             top_right: Px(3.4028235e38),
             bottom_left: Px(3.4028235e38),
             bottom_right: Px(3.4028235e38))'>
-    <Text self='"Ui Button"'
+    Hello world <Text self='"Ui Button"'
           TextColor='Srgba((
             red:0.0,
             green:0.0,

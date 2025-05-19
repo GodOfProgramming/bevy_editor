@@ -9,7 +9,9 @@ fn main() -> Result<()> {
 
   let packages = ["bevy_ui", "bevy_text", "bevy_color"];
 
-  let metadata = cargo_metadata::MetadataCommand::new().exec()?;
+  let metadata = cargo_metadata::MetadataCommand::new()
+    .exec()
+    .map_err(|e| format!("Failed to execute metadata command: {e}"))?;
 
   let packages = metadata
     .packages
@@ -18,7 +20,8 @@ fn main() -> Result<()> {
 
   let mut structs = Vec::new();
   for pkg in packages {
-    let extracted = type_extractor::extract_structs(&pkg).map_err(|e| e.to_string())?;
+    let extracted = type_extractor::extract_structs(&pkg)
+      .map_err(|e| format!("Failed to query structs for {}: {e}", pkg.name))?;
     structs.extend(extracted);
   }
 
@@ -45,12 +48,12 @@ fn main() -> Result<()> {
   }
   .to_string();
 
-  let generated_path = PathBuf::from("src")
-    .join("ui")
-    .join("generated")
-    .join("attrs.rs");
+  let generated_path = PathBuf::from("src").join("ui").join("generated");
 
-  std::fs::write(generated_path, attr_registration)?;
+  std::fs::create_dir_all(&generated_path)?;
+
+  std::fs::write(generated_path.join("attrs.rs"), attr_registration)
+    .map_err(|e| format!("Unable to write generated file: {e}"))?;
 
   Ok(())
 }

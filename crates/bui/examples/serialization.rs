@@ -1,11 +1,11 @@
-use bevy::{ecs::component::ComponentId, prelude::*};
-use bui::BuiPrime;
+use bevy::prelude::*;
+use bui::{BuiPlugin, BuiPrime};
 
 fn main() -> Result {
   let mut app = App::new();
 
   app
-    .add_plugins(DefaultPlugins)
+    .add_plugins((DefaultPlugins, BuiPlugin::default()))
     .add_systems(Startup, (setup, serialize).chain());
 
   app.run();
@@ -39,6 +39,8 @@ fn serialize(world: &mut World) -> Result {
   let ui = bui::Bui::serialize(entity, world)?;
 
   let str: String = (&ui).try_into()?;
+
+  world.despawn(entity);
 
   println!("{str}");
 

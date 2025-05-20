@@ -3,15 +3,16 @@ pub mod ui;
 pub mod xml;
 
 use bevy::{
+  platform::collections::HashSet,
   prelude::*,
   reflect::{Reflectable, TypeRegistry},
   utils::TypeIdMap,
 };
 use derive_more::derive::From;
 use itertools::{Either, Itertools};
-use std::{any::TypeId, borrow::Cow, fmt::Display};
+use std::{any::TypeId, borrow::Cow};
 use ui::{
-  Attribute,
+  AttrParams, Attribute, AttributeExtensions,
   attrs::{self},
   elements,
   events::{ClickEventType, HoverEventType, Interactable, LeaveEventType, UiEvent, UiEvents},
@@ -23,6 +24,13 @@ const SELF_PREFIX: &str = "self";
 
 pub struct BuiPlugin {
   vtables: UiVTables,
+  blacklist: SerializationBlacklist,
+}
+
+impl Default for BuiPlugin {
+  fn default() -> Self {
+    Self::new()
+  }
 }
 
 impl BuiPlugin {
@@ -31,7 +39,10 @@ impl BuiPlugin {
   }
 
   fn new() -> Self {
-    let mut this = Self { vtables: default() };
+    let mut this = Self {
+      vtables: default(),
+      blacklist: default(),
+    };
     elements::register_all(&mut this);
     attrs::register_all(&mut this);
     this
@@ -58,6 +69,9 @@ impl BuiPlugin {
       AttrVTable {
         register: |app| {
           app.register_type::<A>();
+
+          let world = app.world_mut();
+          A::register_params(world);
         },
         insert: |world, entity, value| {
           let value = value.downcast_ref::<A>().ok_or_else(|| {
@@ -65,8 +79,11 @@ impl BuiPlugin {
             format!("Could not downcast {tp} to an Attribute")
           })?;
 
-          let entity = world.entity_mut(entity);
-          value.insert_into(entity);
+          world.resource_scope(|world, mut params: Mut<AttrParams<A>>| {
+            let params = params.get_mut(world);
+            let bundle = value.construct(params);
+            world.entity_mut(entity).insert(bundle);
+          });
 
           Ok(())
         },
@@ -113,13 +130,19 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_reflect<T: FromReflect>(&mut self) {
+  pub fn register_reflect<T: FromReflect>(&mut self) -> &mut Self {
     self.vtables.reflection.insert(
       TypeId::of::<T>(),
       ReflectionVTable {
         from_reflect: |partial| T::from_reflect(partial).map(|t| Box::new(t) as Box<dyn Reflect>),
       },
     );
+    self
+  }
+
+  pub fn blacklist<T: 'static>(&mut self) -> &mut Self {
+    self.blacklist.insert(TypeId::of::<T>());
+    self
   }
 
   fn interaction_system(
@@ -195,6 +218,7 @@ impl Plugin for BuiPlugin {
 
     app.insert_resource(self.vtables.clone());
     app.insert_resource(events);
+    app.insert_resource(self.blacklist.clone());
 
     app.add_systems(Update, Self::interaction_system);
   }
@@ -217,6 +241,11 @@ impl BuiPluginBuilder {
 
   pub fn register_event<E: Reflectable + FromReflect + FromWorld>(mut self) -> Self {
     self.inner.register_event::<E>();
+    self
+  }
+
+  pub fn blacklist<T: 'static>(mut self) -> Self {
+    self.inner.blacklist::<T>();
     self
   }
 
@@ -255,6 +284,9 @@ struct ReflectionVTable {
   from_reflect: fn(&dyn PartialReflect) -> Option<Box<dyn Reflect>>,
 }
 
+#[derive(Resource, Default, Deref, DerefMut, Clone)]
+struct SerializationBlacklist(HashSet<TypeId>);
+
 pub struct Bui {
   node: xml::Node,
 }
@@ -269,7 +301,8 @@ impl Bui {
   }
 
   pub fn serialize(entity: Entity, world: &World) -> Result<Self> {
-    xml::Node::serialize(entity, world).map(|node| Self { node })
+    let blacklist = world.get_resource::<SerializationBlacklist>();
+    xml::Node::serialize(entity, world, blacklist.map(|i| &**i)).map(|node| Self { node })
   }
 }
 

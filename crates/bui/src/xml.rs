@@ -4,9 +4,7 @@ use crate::{
   result_string,
 };
 use bevy::{
-  ecs::{component::ComponentId, reflect},
-  prelude::*,
-  reflect::TypeRegistry,
+  ecs::component::ComponentId, platform::collections::HashSet, prelude::*, reflect::TypeRegistry,
 };
 use std::{
   any::TypeId,
@@ -27,14 +25,6 @@ use xml::{
   reader::XmlEvent as RXmlEvent,
   writer::XmlEvent as WXmlEvent,
 };
-
-lazy_static::lazy_static! {
-  static ref COMPONENT_BLACKLIST: [TypeId; 3] = [
-    TypeId::of::<PrimaryType>(),
-    TypeId::of::<ComputedNode>(),
-    TypeId::of::<ComputedNodeTarget>(),
-  ];
-}
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -72,7 +62,11 @@ pub enum Node {
 }
 
 impl Node {
-  pub fn serialize(entity: Entity, world: &World) -> Result<Self> {
+  pub fn serialize(
+    entity: Entity,
+    world: &World,
+    blacklist: Option<&HashSet<TypeId>>,
+  ) -> Result<Self> {
     let app_type_registry = world
       .get_resource::<AppTypeRegistry>()
       .ok_or("AppTypeRegistry not found")?;
@@ -94,11 +88,11 @@ impl Node {
       if num_components == 1 {
         Node::Text(text.0.clone())
       } else {
-        let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world)?;
+        let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world, blacklist)?;
         Node::Tag(tag)
       }
     } else {
-      let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world)?;
+      let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world, blacklist)?;
       Node::Tag(tag)
     };
 
@@ -187,6 +181,7 @@ impl Tag {
     entity: EntityRef,
     type_registry: &TypeRegistry,
     world: &World,
+    blacklist: Option<&HashSet<TypeId>>,
   ) -> Result<Self> {
     let base_type_info = base
       .get_represented_type_info()
@@ -200,13 +195,13 @@ impl Tag {
       format!("Type {tp} has no component id")
     })?;
 
-    let mut attrs = Self::serialize_attrs(&entity, world, type_registry, base_comp_id)?;
+    let mut attrs = Self::serialize_attrs(&entity, world, type_registry, base_comp_id, blacklist)?;
     attrs.insert(
       Attr::named("self"),
       reflection::serialize_reflect(base, type_registry)?,
     );
 
-    let children = Self::serialize_children(&entity, world)
+    let children = Self::serialize_children(&entity, world, blacklist)
       .transpose()?
       .unwrap_or_default();
 
@@ -222,31 +217,26 @@ impl Tag {
     world: &World,
     type_registry: &TypeRegistry,
     base_component_id: ComponentId,
+    blacklist: Option<&HashSet<TypeId>>,
   ) -> Result<BTreeMap<Attr, String>> {
     let components = world.components();
-    let blacklisted = COMPONENT_BLACKLIST
-      .map(|type_id| components.get_id(type_id))
-      .into_iter()
-      .flatten()
-      .collect::<Vec<_>>();
 
     entity
       .archetype()
       .components()
-      .filter(|comp| *comp != base_component_id && !blacklisted.contains(comp))
-      .map(|component| {
-        let component_info = world
-          .components()
-          .get_info(component)
-          .ok_or("Attempted to make Attr from unregistered component")?;
-
-        let component_type_id = component_info.type_id().ok_or_else(|| {
-          format!(
-            "Attempted to make Attr from unregistered Rust type: {}",
-            component_info.name()
-          )
-        })?;
-
+      .filter(|comp| *comp != base_component_id)
+      .filter_map(|comp| {
+        let component_info = components.get_info(comp)?;
+        component_info
+          .type_id()
+          .map(|type_id| (component_info, type_id))
+      })
+      .filter_map(|(component_info, type_id)| {
+        blacklist
+          .map(|blacklist| (!blacklist.contains(&type_id)).then_some((component_info, type_id)))
+          .unwrap_or(Some((component_info, type_id)))
+      })
+      .map(|(component_info, component_type_id)| {
         let attr = Attr::from_type(component_type_id, type_registry)
           .map_err(|err| format!("{err}: {}", component_info.name()))?;
 
@@ -260,11 +250,15 @@ impl Tag {
       .collect()
   }
 
-  fn serialize_children(entity: &EntityRef, world: &World) -> Option<Result<Vec<Node>>> {
+  fn serialize_children(
+    entity: &EntityRef,
+    world: &World,
+    blacklist: Option<&HashSet<TypeId>>,
+  ) -> Option<Result<Vec<Node>>> {
     entity.get::<Children>().map(|children| {
       children
         .iter()
-        .map(|child| Node::serialize(child, world))
+        .map(|child| Node::serialize(child, world, blacklist))
         .collect()
     })
   }

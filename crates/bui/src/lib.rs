@@ -9,7 +9,7 @@ use bevy::{
 };
 use derive_more::derive::From;
 use itertools::{Either, Itertools};
-use std::{any::TypeId, borrow::Cow};
+use std::{any::TypeId, borrow::Cow, fmt::Display};
 use ui::{
   Attribute,
   attrs::{self},
@@ -255,17 +255,61 @@ struct ReflectionVTable {
   from_reflect: fn(&dyn PartialReflect) -> Option<Box<dyn Reflect>>,
 }
 
-pub struct Ui {
+pub struct Bui {
   node: xml::Node,
 }
 
-impl Ui {
+impl Bui {
   pub fn parse_all(ui_xml: &str) -> Result<Vec<Self>, xml::ParseError> {
     xml::parse(ui_xml).map(|nodes| nodes.into_iter().map(|node| Self { node }).collect())
   }
 
   pub fn spawn(&self, world: &mut World) -> Result<Entity> {
     spawn_node(&self.node, world)
+  }
+
+  pub fn serialize(entity: Entity, world: &World) -> Result<Self> {
+    xml::Node::serialize(entity, world).map(|node| Self { node })
+  }
+}
+
+impl TryInto<String> for &Bui {
+  type Error = BevyError;
+  fn try_into(self) -> Result<String> {
+    (&self.node).try_into()
+  }
+}
+
+#[derive(Bundle)]
+pub struct BuiPrime<T>
+where
+  T: Component,
+{
+  inner: T,
+  primary_type: PrimaryType,
+}
+
+impl<T> BuiPrime<T>
+where
+  T: Component,
+{
+  pub fn new(component: T) -> Self {
+    Self {
+      inner: component,
+      primary_type: PrimaryType::new::<T>(),
+    }
+  }
+}
+
+impl<T> Default for BuiPrime<T>
+where
+  T: Component + Default,
+{
+  fn default() -> Self {
+    Self {
+      inner: T::default(),
+      primary_type: PrimaryType::new::<T>(),
+    }
   }
 }
 
@@ -416,7 +460,7 @@ fn insert_attribute(
   type_registry: &TypeRegistry,
 ) -> Result {
   world.resource_scope(|world, vtables: Mut<UiVTables>| -> Result {
-    let name = attr.to_string();
+    let name = template_to_mod_path(attr.to_string());
     let reg = reflection::get_type_registration_from_name(&name, type_registry)?;
     let reflect = reflection::deserialize_reflect(type_registry, reg, value, &vtables)?;
 
@@ -471,9 +515,25 @@ fn template_to_mod_path(s: impl AsRef<str>) -> String {
   s.as_ref().replace(".", "::")
 }
 
+fn mod_path_to_template(s: impl AsRef<str>) -> String {
+  // replace :: with . so it's xml compatible
+  s.as_ref().replace("::", ".")
+}
+
+fn result_string<O, E>(result: &Result<O, E>) -> &str
+where
+  O: AsRef<str>,
+  E: AsRef<str>,
+{
+  match result {
+    Ok(s) => s.as_ref(),
+    Err(s) => s.as_ref(),
+  }
+}
+
 #[cfg(test)]
 mod tests {
-  use crate::Ui;
+  use crate::Bui;
   use bevy::prelude::*;
   use speculoos::prelude::*;
 
@@ -499,7 +559,7 @@ mod tests {
       world.insert_resource(app_type_registry);
     }
 
-    let uis = Ui::parse_all(EXAMPLE_UI).unwrap();
+    let uis = Bui::parse_all(EXAMPLE_UI).unwrap();
     let ui = uis.first().unwrap();
 
     let entity = ui.spawn(&mut world).unwrap();

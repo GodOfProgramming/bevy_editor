@@ -1,24 +1,25 @@
 use std::any::TypeId;
 
-use crate::UiVTables;
+use crate::{UiVTables, result_string};
 use bevy::{
   prelude::*,
   reflect::{
-    ReflectMut, ReflectRef, TypeRegistration, TypeRegistry, serde::TypedReflectDeserializer,
+    ReflectMut, ReflectRef, TypeRegistration, TypeRegistry,
+    serde::{TypedReflectDeserializer, TypedReflectSerializer},
   },
 };
 use serde::de::DeserializeSeed;
 
 pub trait TypeRegistryExt {
-  fn type_name_of(&self, type_id: TypeId) -> &'static str;
+  fn type_name_of(&self, type_id: TypeId) -> Result<&'static str, String>;
 }
 
 impl TypeRegistryExt for TypeRegistry {
-  fn type_name_of(&self, type_id: TypeId) -> &'static str {
+  fn type_name_of(&self, type_id: TypeId) -> Result<&'static str, String> {
     self
       .get(type_id)
       .map(|r| r.type_info().type_path())
-      .unwrap_or("<Unknown Type>")
+      .ok_or_else(|| format!("{type_id:?}"))
   }
 }
 
@@ -32,6 +33,12 @@ pub fn get_type_registration_from_name<'t>(
     .ok_or_else(|| format!("Type {name} not registered"))?;
 
   Ok(registration)
+}
+
+pub fn serialize_reflect(reflect: &dyn PartialReflect, registry: &TypeRegistry) -> Result<String> {
+  let ser = TypedReflectSerializer::new(reflect, registry);
+  let out = ron::to_string(&ser)?;
+  Ok(out)
 }
 
 pub fn deserialize_reflect(
@@ -171,4 +178,26 @@ pub fn patch_reflect<A: Reflect, B: Reflect>(patch: &A, target: &mut B) -> usize
   }
 
   patches
+}
+
+pub fn reflect_component<'r>(
+  entity: &'r EntityRef,
+  type_id: TypeId,
+  type_registry: &TypeRegistry,
+) -> Result<&'r dyn Reflect> {
+  let ref_comp = type_registry
+    .get_type_data::<ReflectComponent>(type_id)
+    .ok_or_else(|| {
+      let tp = type_registry.type_name_of(type_id);
+      let tp = result_string(&tp);
+      format!("Type {tp} does not have ReflectComponent")
+    })?;
+
+  let reflect = ref_comp.reflect(entity).ok_or_else(|| {
+    let tp = type_registry.type_name_of(type_id);
+    let tp = result_string(&tp);
+    format!("Type {tp} was not reflectable")
+  })?;
+
+  Ok(reflect)
 }

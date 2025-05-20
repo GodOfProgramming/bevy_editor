@@ -8,6 +8,7 @@ bevy = { workspace = true, features = ["serialize", "ghost_nodes"] }
 derive-new = { workspace = true }
 derive_more = { workspace = true }
 itertools = { workspace = true }
+lazy_static = { workspace = true }
 macros = { workspace = true }
 ron = { workspace = true }
 serde = { workspace = true }

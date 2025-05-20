@@ -1,11 +1,21 @@
 use crate::{
-  EVENT_PREFIX, PrimaryType, SELF_PREFIX,
+  EVENT_PREFIX, PrimaryType, SELF_PREFIX, mod_path_to_template,
   reflection::{self, TypeRegistryExt},
+  result_string,
 };
-use bevy::{prelude::*, reflect::TypeRegistry};
-use itertools::Itertools;
+use bevy::{
+  ecs::{component::ComponentId, reflect},
+  prelude::*,
+  reflect::TypeRegistry,
+};
 use std::{
-  any::TypeId, borrow::Cow, collections::BTreeMap, fmt::Display, hash::Hash, io::BufReader, iter,
+  any::TypeId,
+  borrow::Cow,
+  collections::BTreeMap,
+  fmt::Display,
+  hash::Hash,
+  io::{BufReader, BufWriter},
+  iter,
   ops::Index,
 };
 use thiserror::Error;
@@ -17,6 +27,14 @@ use xml::{
   reader::XmlEvent as RXmlEvent,
   writer::XmlEvent as WXmlEvent,
 };
+
+lazy_static::lazy_static! {
+  static ref COMPONENT_BLACKLIST: [TypeId; 3] = [
+    TypeId::of::<PrimaryType>(),
+    TypeId::of::<ComputedNode>(),
+    TypeId::of::<ComputedNodeTarget>(),
+  ];
+}
 
 #[derive(Debug, Error)]
 pub enum ParseError {
@@ -68,17 +86,7 @@ impl Node {
 
     let primary_type_id = primary_type.type_id();
 
-    let ref_comp = type_registry
-      .get_type_data::<ReflectComponent>(primary_type_id)
-      .ok_or_else(|| {
-        let tr = type_registry.type_name_of(primary_type_id);
-        format!("Type {tr} was not found in the TypeRegistry")
-      })?;
-
-    let reflect = ref_comp.reflect(entity_ref).ok_or_else(|| {
-      let tr = type_registry.type_name_of(primary_type_id);
-      format!("Type {tr} was not reflectable")
-    })?;
+    let reflect = reflection::reflect_component(&entity_ref, primary_type_id, &type_registry)?;
 
     let num_components = entity_ref.archetype().component_count();
 
@@ -95,6 +103,25 @@ impl Node {
     };
 
     Ok(node)
+  }
+}
+
+impl TryInto<String> for &Node {
+  type Error = BevyError;
+  fn try_into(self) -> Result<String> {
+    let events: Vec<WXmlEvent> = self.into();
+    let writer = BufWriter::new(Vec::new());
+    let mut writer = xml::EventWriter::new(writer);
+
+    for event in events {
+      writer.write(event)?;
+    }
+
+    let inner = writer.into_inner().into_inner()?;
+
+    let out = String::from_utf8(inner)?;
+
+    Ok(out)
   }
 }
 
@@ -161,32 +188,79 @@ impl Tag {
     type_registry: &TypeRegistry,
     world: &World,
   ) -> Result<Self> {
-    let base_type_id = base
+    let base_type_info = base
       .get_represented_type_info()
-      .map(|ti| ti.type_id())
-      .ok_or_else(|| "Base Component has no TypeInfo")?;
+      .ok_or("Base Component has no TypeInfo")?;
+    let base_type_id = base_type_info.type_id();
+    let base_type_name = base_type_info.type_path();
 
     let base_comp_id = world.components().get_id(base_type_id).ok_or_else(|| {
       let tp = type_registry.type_name_of(base_type_id);
+      let tp = result_string(&tp);
       format!("Type {tp} has no component id")
     })?;
 
-    for component in entity
-      .archetype()
-      .components()
-      .filter(|comp| *comp != base_comp_id)
-    {}
+    let mut attrs = Self::serialize_attrs(&entity, world, type_registry, base_comp_id)?;
+    attrs.insert(
+      Attr::named("self"),
+      reflection::serialize_reflect(base, type_registry)?,
+    );
 
-    let children = Self::serialize_children(entity, world).unwrap()?;
+    let children = Self::serialize_children(&entity, world)
+      .transpose()?
+      .unwrap_or_default();
 
     Ok(Self {
-      name: todo!(),
-      attrs: todo!(),
+      name: mod_path_to_template(base_type_name),
+      attrs,
       children,
     })
   }
 
-  pub fn serialize_children(entity: EntityRef, world: &World) -> Option<Result<Vec<Node>>> {
+  fn serialize_attrs(
+    entity: &EntityRef,
+    world: &World,
+    type_registry: &TypeRegistry,
+    base_component_id: ComponentId,
+  ) -> Result<BTreeMap<Attr, String>> {
+    let components = world.components();
+    let blacklisted = COMPONENT_BLACKLIST
+      .map(|type_id| components.get_id(type_id))
+      .into_iter()
+      .flatten()
+      .collect::<Vec<_>>();
+
+    entity
+      .archetype()
+      .components()
+      .filter(|comp| *comp != base_component_id && !blacklisted.contains(comp))
+      .map(|component| {
+        let component_info = world
+          .components()
+          .get_info(component)
+          .ok_or("Attempted to make Attr from unregistered component")?;
+
+        let component_type_id = component_info.type_id().ok_or_else(|| {
+          format!(
+            "Attempted to make Attr from unregistered Rust type: {}",
+            component_info.name()
+          )
+        })?;
+
+        let attr = Attr::from_type(component_type_id, type_registry)
+          .map_err(|err| format!("{err}: {}", component_info.name()))?;
+
+        let reflect = reflection::reflect_component(entity, component_type_id, type_registry)
+          .map_err(|err| format!("{err}: {}", component_info.name()))?;
+
+        let value = reflection::serialize_reflect(reflect, type_registry)?;
+
+        Ok((attr, value))
+      })
+      .collect()
+  }
+
+  fn serialize_children(entity: &EntityRef, world: &World) -> Option<Result<Vec<Node>>> {
     entity.get::<Children>().map(|children| {
       children
         .iter()
@@ -276,6 +350,17 @@ pub struct Attr {
 }
 
 impl Attr {
+  fn from_type(type_id: TypeId, type_registry: &TypeRegistry) -> Result<Self> {
+    let type_info = type_registry
+      .get_type_info(type_id)
+      .ok_or("Attempted to make Attr from unregistered type")?;
+
+    Ok(Self {
+      prefix: None,
+      name: mod_path_to_template(type_info.type_path()),
+    })
+  }
+
   pub fn named(name: impl ToString) -> Self {
     Self {
       prefix: None,

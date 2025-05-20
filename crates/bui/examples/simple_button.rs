@@ -25,7 +25,7 @@ fn main() {
 fn startup(world: &mut World) {
   world.spawn(Camera2d);
 
-  let nodes = bui::Ui::parse_all(UI).unwrap();
+  let nodes = bui::Bui::parse_all(UI).unwrap();
   let node = nodes.first().unwrap();
 
   if let Err(err) = node.spawn(world) {

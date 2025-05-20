@@ -1,7 +1,49 @@
-use bevy::prelude::*;
+use bevy::{ecs::component::ComponentId, prelude::*};
+use bui::BuiPrime;
 
-fn main() {
-  let mut world = World::new();
+fn main() -> Result {
+  let mut app = App::new();
 
-  let entity = world.spawn(());
+  app
+    .add_plugins(DefaultPlugins)
+    .add_systems(Startup, (setup, serialize).chain());
+
+  app.run();
+
+  Ok(())
 }
+
+fn setup(mut commands: Commands) {
+  let entity = commands
+    .spawn((
+      BuiPrime::new(Button),
+      Node {
+        width: Val::Px(150.0),
+        height: Val::Px(100.0),
+        ..default()
+      },
+      children![(
+        BuiPrime::new(Text::new("Hello World")),
+        TextColor(Color::WHITE)
+      )],
+    ))
+    .id();
+
+  commands.spawn(Serialized(entity));
+}
+
+fn serialize(world: &mut World) -> Result {
+  let mut query = world.query::<&Serialized>();
+  let ser = query.single(world)?;
+  let entity = ser.0;
+  let ui = bui::Bui::serialize(entity, world)?;
+
+  let str: String = (&ui).try_into()?;
+
+  println!("{str}");
+
+  Ok(())
+}
+
+#[derive(Component)]
+struct Serialized(Entity);

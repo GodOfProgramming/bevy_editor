@@ -1735,6 +1735,7 @@ dependencies = [
  "derive-new",
  "derive_more",
  "itertools 0.14.0",
+ "lazy_static",
  "macros",
  "quote",
  "ron",

@@ -30,6 +30,7 @@ egui-phosphor = "0.9.0"
 egui_demo_lib = "0.31.1"
 egui_dock = "0.16.0"
 itertools = "0.14.0"
+lazy_static = "1.5.0"
 leafwing-input-manager = "0.17.0"
 macros = { path = "./crates/macros" }
 merge = "0.2.0"

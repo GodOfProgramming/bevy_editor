@@ -2,7 +2,10 @@ use super::{
   Attribute, NoParams, SerializableAttribute,
   events::{ClickEventType, EventProducer, HoverEventType, LeaveEventType},
 };
-use crate::{BuiPlugin, PrimaryType, reflection};
+use crate::{
+  BuiPlugin, EVENT_PREFIX, ON_CLICK_EVENT, ON_HOVER_EVENT, ON_LEAVE_EVENT, PrimaryType,
+  reflection::{self, ReflectionError},
+};
 use bevy::{
   ecs::system::SystemParam,
   prelude::*,
@@ -17,6 +20,7 @@ pub fn register_all(plugin: &mut BuiPlugin) {
   plugin
     .register_attr::<Style>()
     .register_attr::<Font>()
+    .register_attr::<Transform>()
     .register_attr::<ClickEventType>()
     .register_attr::<HoverEventType>()
     .register_attr::<LeaveEventType>()
@@ -179,16 +183,16 @@ impl SerializableAttribute for ClickEventType {
     let type_registry = app_type_registry.read();
     let inner_type = type_registry
       .get(**self)
-      .ok_or("ClickEventType inner type is not registered")?;
+      .ok_or_else(|| ReflectionError::UnregisteredType("ClickEventType".to_string()))?;
     Ok(inner_type.type_info().type_path().to_string())
   }
 
   fn name_override(&self) -> Option<String> {
-    Some(String::from("onclick"))
+    Some(String::from(ON_CLICK_EVENT))
   }
 
   fn prefix_override(&self) -> Option<String> {
-    Some(String::from("event"))
+    Some(String::from(EVENT_PREFIX))
   }
 }
 
@@ -200,16 +204,16 @@ impl SerializableAttribute for HoverEventType {
     let type_registry = app_type_registry.read();
     let inner_type = type_registry
       .get(**self)
-      .ok_or("HoverEventType inner type is not registered")?;
+      .ok_or_else(|| ReflectionError::UnregisteredType("HoverEventType".to_string()))?;
     Ok(inner_type.type_info().type_path().to_string())
   }
 
   fn name_override(&self) -> Option<String> {
-    Some(String::from("onhover"))
+    Some(String::from(ON_HOVER_EVENT))
   }
 
   fn prefix_override(&self) -> Option<String> {
-    Some(String::from("event"))
+    Some(String::from(EVENT_PREFIX))
   }
 }
 
@@ -221,15 +225,15 @@ impl SerializableAttribute for LeaveEventType {
     let type_registry = app_type_registry.read();
     let inner_type = type_registry
       .get(**self)
-      .ok_or("LeaveEventType inner type is not registered")?;
+      .ok_or_else(|| ReflectionError::UnregisteredType("LeaveEventType".to_string()))?;
     Ok(inner_type.type_info().type_path().to_string())
   }
 
   fn name_override(&self) -> Option<String> {
-    Some(String::from("onleave"))
+    Some(String::from(ON_LEAVE_EVENT))
   }
 
   fn prefix_override(&self) -> Option<String> {
-    Some(String::from("event"))
+    Some(String::from(EVENT_PREFIX))
   }
 }

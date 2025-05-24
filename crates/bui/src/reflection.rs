@@ -10,6 +10,12 @@ use bevy::{
 };
 use serde::de::DeserializeSeed;
 
+#[derive(thiserror::Error, Debug)]
+pub enum ReflectionError {
+  #[error("Type {0} was not registered in the TypeRegistry")]
+  UnregisteredType(String),
+}
+
 pub trait TypeRegistryExt {
   fn type_name_of(&self, type_id: TypeId) -> Result<&'static str, String>;
 }
@@ -30,7 +36,7 @@ pub fn get_type_registration_from_name<'t>(
   let registration = type_registry
     .get_with_short_type_path(name)
     .or_else(|| type_registry.get_with_type_path(name))
-    .ok_or_else(|| format!("Type {name} not registered"))?;
+    .ok_or_else(|| ReflectionError::UnregisteredType(name.to_string()))?;
 
   Ok(registration)
 }
@@ -38,16 +44,6 @@ pub fn get_type_registration_from_name<'t>(
 pub fn serialize_reflect(reflect: &dyn PartialReflect, registry: &TypeRegistry) -> Result<String> {
   let ser = TypedReflectSerializer::new(reflect, registry);
   let out = ron::to_string(&ser)?;
-  Ok(out)
-}
-
-pub fn serialize_reflect_with_options(
-  reflect: &dyn PartialReflect,
-  registry: &TypeRegistry,
-  config: impl Into<ron::ser::PrettyConfig>,
-) -> Result<String> {
-  let ser = TypedReflectSerializer::new(reflect, registry);
-  let out = ron::ser::to_string_pretty(&ser, config.into())?;
   Ok(out)
 }
 

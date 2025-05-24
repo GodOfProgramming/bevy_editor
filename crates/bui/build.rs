@@ -67,19 +67,24 @@ fn is_valid_struct(item: &ItemStruct) -> bool {
 }
 
 fn is_reflect_component(item: &ItemStruct) -> bool {
+  const DERIVE: &str = "derive";
+  const COMPONENT: &str = "Component";
+  const REFLECT: &str = "Reflect";
+  const CLONE: &str = "Clone";
+
   let mut has_component = false;
   let mut has_reflect = false;
   let mut has_clone = false;
 
   for attr in &item.attrs {
-    if attr.path().is_ident("derive") {
+    if attr.path().is_ident(DERIVE) {
       attr
         .parse_nested_meta(|meta_list| {
           if let Some(i) = meta_list.path.get_ident().map(|i| i.to_string()) {
             match i.as_str() {
-              "Component" => has_component = true,
-              "Reflect" => has_reflect = true,
-              "Clone" => has_clone = true,
+              COMPONENT => has_component = true,
+              REFLECT => has_reflect = true,
+              CLONE => has_clone = true,
               _ => (),
             }
           }

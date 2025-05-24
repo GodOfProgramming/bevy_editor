@@ -22,6 +22,13 @@ use xml::Attr;
 const EVENT_PREFIX: &str = "event";
 const SELF_PREFIX: &str = "self";
 
+const ON_CLICK_EVENT: &str = "onclick";
+const ON_HOVER_EVENT: &str = "onhover";
+const ON_LEAVE_EVENT: &str = "onleave";
+
+const XML_SCOPE_SEPARATOR: &str = ".";
+const RUST_SCOPE_SEPARATOR: &str = "::";
+
 pub struct BuiPlugin {
   vtables: UiVTables,
   initializers: Vec<fn(&mut App)>,
@@ -161,17 +168,24 @@ impl BuiPlugin {
       TypeId::of::<A>(),
       Overrides {
         el: |input, world| {
-          let attr = input.downcast_ref::<A>().ok_or("")?;
+          let attr = input
+            .downcast_ref::<A>()
+            .ok_or("Failed to downcast to concrete Attribute")?;
 
-          let resources = A::Resources::from_world(world).ok_or("")?;
+          let resources = A::Resources::from_world(world)
+            .ok_or("Could not acquire all Attribute resources from world")?;
           let serialized = A::serialize(attr, resources)?;
 
           Ok(Box::new(serialized))
         },
         attr: |input, world| {
-          let attr = input.downcast_ref::<A>().ok_or("")?;
+          let attr = input
+            .downcast_ref::<A>()
+            .ok_or("Failed to downcast to concrete Attribute")?;
 
-          let resources = A::Resources::from_world(world).ok_or("")?;
+          let resources = A::Resources::from_world(world)
+            .ok_or("Could not acquire all Attribute resources from world")?;
+
           let serialized = A::serialize(attr, resources)?;
 
           let attr = attr
@@ -322,7 +336,7 @@ struct ReflectionVTable {
 #[derive(Resource, Default, Deref, DerefMut, Clone)]
 struct SerializationBlacklist(HashSet<TypeId>);
 
-type ElOverrideFn = fn(&dyn Reflect, &World) -> Result<(Box<dyn Reflect>)>;
+type ElOverrideFn = fn(&dyn Reflect, &World) -> Result<Box<dyn Reflect>>;
 type AttrOverrideFn = fn(&dyn Reflect, &World) -> Result<(Option<Attr>, Box<dyn Reflect>)>;
 
 #[derive(Clone)]
@@ -424,7 +438,7 @@ fn spawn_node(node: &xml::Node, world: &mut World) -> Result<Entity> {
 }
 
 fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) -> Result<Entity> {
-  let name = template_to_mod_path(tag.name());
+  let name = deserialize_name(tag.name());
 
   let registration = reflection::get_type_registration_from_name(&name, type_registry)?;
   let reflect_component = registration
@@ -534,16 +548,21 @@ fn insert_attribute(
   type_registry: &TypeRegistry,
 ) -> Result {
   world.resource_scope(|world, vtables: Mut<UiVTables>| -> Result {
-    let name = template_to_mod_path(attr.to_string());
+    let name = deserialize_name(attr.to_string());
     let reg = reflection::get_type_registration_from_name(&name, type_registry)?;
     let reflect = reflection::deserialize_reflect(type_registry, reg, value, &vtables)?;
 
-    match vtables.attrs.get(&reg.type_id()) {
-      Some(fns) => {
-        (fns.insert)(world, entity, reflect)?;
-      }
-      None => {
-        Err(format!("Type {attr} was not registered as an attribute"))?;
+    if let Some(reflect_component) = reg.data::<ReflectComponent>() {
+      let mut entity = world.entity_mut(entity);
+      reflect_component.insert(&mut entity, &*reflect, type_registry);
+    } else {
+      match vtables.attrs.get(&reg.type_id()) {
+        Some(fns) => {
+          (fns.insert)(world, entity, reflect)?;
+        }
+        None => {
+          Err(format!("Type {attr} was not registered as an attribute"))?;
+        }
       }
     }
 
@@ -562,18 +581,19 @@ where
 {
   for (k, v) in events {
     let event_name = k.as_ref();
-    let event_type = template_to_mod_path(v);
+    let name = ron::de::from_str::<String>(v.as_ref())?;
+    let event_type = deserialize_name(name);
 
     match event_name {
-      "onclick" => {
+      ON_CLICK_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
         entity.insert((EventProducer, ClickEventType::new(t.type_id())));
       }
-      "onhover" => {
+      ON_HOVER_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
         entity.insert((EventProducer, HoverEventType::new(t.type_id())));
       }
-      "onleave" => {
+      ON_LEAVE_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
         entity.insert((EventProducer, LeaveEventType::new(t.type_id())));
       }
@@ -584,14 +604,14 @@ where
   Ok(())
 }
 
-fn template_to_mod_path(s: impl AsRef<str>) -> String {
-  // replace . with :: so full path lookup works
-  s.as_ref().replace(".", "::")
+fn deserialize_name(s: impl AsRef<str>) -> String {
+  s.as_ref()
+    .replace(XML_SCOPE_SEPARATOR, RUST_SCOPE_SEPARATOR)
 }
 
-fn mod_path_to_template(s: impl AsRef<str>) -> String {
-  // replace :: with . so it's xml compatible
-  s.as_ref().replace("::", ".")
+fn serialize_name(s: impl AsRef<str>) -> String {
+  s.as_ref()
+    .replace(RUST_SCOPE_SEPARATOR, XML_SCOPE_SEPARATOR)
 }
 
 fn result_string<O, E>(result: &Result<O, E>) -> &str

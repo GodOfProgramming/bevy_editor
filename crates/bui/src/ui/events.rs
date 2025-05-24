@@ -1,6 +1,5 @@
 use bevy::{ecs::system::SystemId, prelude::*, utils::TypeIdMap};
 use derive_new::new;
-use serde::{Deserialize, Serialize};
 use std::any::TypeId;
 
 #[derive(Component)]

@@ -1,7 +1,7 @@
 use crate::{
-  EVENT_PREFIX, Overrides, PrimaryType, SELF_PREFIX, mod_path_to_template,
+  EVENT_PREFIX, Overrides, PrimaryType, SELF_PREFIX,
   reflection::{self, TypeRegistryExt},
-  result_string,
+  result_string, serialize_name,
 };
 use bevy::{
   ecs::component::ComponentId, platform::collections::HashSet, prelude::*, reflect::TypeRegistry,
@@ -123,7 +123,8 @@ impl TryInto<String> for &Node {
   fn try_into(self) -> Result<String> {
     let events: Vec<WXmlEvent> = self.into();
     let writer = BufWriter::new(Vec::new());
-    let mut writer = xml::EventWriter::new(writer);
+    let config = xml::EmitterConfig::default().write_document_declaration(false);
+    let mut writer = xml::EventWriter::new_with_config(writer, config);
 
     for event in events {
       writer.write(event)?;
@@ -232,7 +233,7 @@ impl Tag {
       .unwrap_or_default();
 
     Ok(Self {
-      name: mod_path_to_template(base_type_name),
+      name: serialize_name(base_type_name),
       attrs,
       children,
     })
@@ -398,7 +399,7 @@ impl Attr {
 
     Ok(Self {
       prefix: None,
-      name: mod_path_to_template(type_info.type_path()),
+      name: serialize_name(type_info.type_path()),
     })
   }
 

@@ -20,7 +20,7 @@ pub trait Attribute: 'static {
     Item<'world, 'system> = Self::Params<'world, 'system>,
   >;
 
-  fn construct(&self, params: Self::Params<'_, '_>) -> impl Bundle;
+  fn construct(self, params: Self::Params<'_, '_>) -> impl Bundle;
 }
 
 impl<T> Attribute for T
@@ -29,15 +29,15 @@ where
 {
   type Params<'w, 's> = NoParams;
 
-  fn construct(&self, _params: Self::Params<'_, '_>) -> impl Bundle {
-    self.clone()
+  fn construct(self, _params: Self::Params<'_, '_>) -> impl Bundle {
+    self
   }
 }
 
 pub trait SerializableAttribute: 'static {
   type Out<'de>: Serialize + Deserialize<'de> + Reflect;
 
-  fn transform(&self) -> Self::Out<'_>;
+  fn serialize(&self) -> Self::Out<'_>;
 }
 
 pub(super) type AttrParams<'w, 's, T> = AttrState<<T as Attribute>::Params<'w, 's>>;

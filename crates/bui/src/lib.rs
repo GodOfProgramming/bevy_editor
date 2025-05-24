@@ -75,10 +75,10 @@ impl BuiPlugin {
           let world = app.world_mut();
           A::register_params(world);
         },
-        insert: |world, entity, value| {
-          let value = value.downcast_ref::<A>().ok_or_else(|| {
+        insert: |world, entity, value: Box<dyn Reflect + 'static>| {
+          let value = value.take::<A>().map_err(|_| {
             let tp = A::get_type_registration().type_info().type_path();
-            format!("Could not downcast {tp} to an Attribute")
+            format!("Could not downcast {tp} to its underlying type")
           })?;
 
           world.resource_scope(|world, mut params: Mut<AttrParams<A>>| {
@@ -157,7 +157,7 @@ impl BuiPlugin {
       let from = input
         .downcast_ref::<O>()
         .expect("From type should match input");
-      Box::new(O::transform(from))
+      Box::new(O::serialize(from))
     });
     self
   }
@@ -296,7 +296,7 @@ struct ElementVTable {
 #[derive(Clone)]
 struct AttrVTable {
   register: fn(&mut App),
-  insert: fn(world: &mut World, entity: Entity, value: &dyn Reflect) -> Result,
+  insert: fn(world: &mut World, entity: Entity, value: Box<dyn Reflect>) -> Result,
 }
 
 #[derive(Clone)]
@@ -426,15 +426,8 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
       Ok(reflect)
     },
     |data: &str| -> Result<Box<dyn Reflect>> {
-      // else then use its ron value for component creation
-      let data = if data.starts_with('(') {
-        Cow::Borrowed(data)
-      } else {
-        Cow::Owned(format!("({data})"))
-      };
-
       let reflect = world.resource_scope(|_, vtables: Mut<UiVTables>| {
-        reflection::deserialize_reflect(type_registry, registration, &*data, &vtables)
+        reflection::deserialize_reflect(type_registry, registration, data, &vtables)
       })?;
 
       Ok(reflect)
@@ -481,12 +474,7 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
 
   // the world is free again and now the attributes can be created
   for (attr, value) in components {
-    let value = if value.starts_with('(') {
-      Cow::Borrowed(value)
-    } else {
-      Cow::Owned(format!("({value})"))
-    };
-    if let Err(err) = insert_attribute(attr, &value, world, entity, type_registry) {
+    if let Err(err) = insert_attribute(attr, value, world, entity, type_registry) {
       world.despawn(entity);
       return Err(err);
     }
@@ -536,7 +524,7 @@ fn insert_attribute(
 
     match vtables.attrs.get(&reg.type_id()) {
       Some(fns) => {
-        (fns.insert)(world, entity, &*reflect)?;
+        (fns.insert)(world, entity, reflect)?;
       }
       None => {
         Err(format!("Type {attr} was not registered as an attribute"))?;

@@ -12,11 +12,11 @@
             height: Px(65.0),
             justify_content: Center,
             align_items: Center)'
-          BackgroundColor='LinearRgba((
+          BackgroundColor='(LinearRgba((
             red:1.0,
             green:0.0,
             blue:0.0,
-            alpha:1.0))'
+            alpha:1.0)))'
           BorderColor='(LinearRgba((
             red:0.0,
             green:0.0,
@@ -27,11 +27,11 @@
             top_right: Px(3.4028235e38),
             bottom_left: Px(3.4028235e38),
             bottom_right: Px(3.4028235e38))'>
-    Hello world <Text self='"Ui Button"'
-          TextColor='Srgba((
+    <Text self='("Ui Button")'
+          TextColor='(Srgba((
             red:0.0,
             green:0.0,
             blue:1.0,
-            alpha:1.0))' />
+            alpha:1.0)))' />
   </Button>
 </Zone>

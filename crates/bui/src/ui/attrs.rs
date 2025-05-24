@@ -73,9 +73,9 @@ pub struct Style {
 
 impl Attribute for Style {
   type Params<'w, 's> = NoParams;
-  fn construct(&self, _params: Self::Params<'_, '_>) -> impl Bundle {
+  fn construct(self, _params: Self::Params<'_, '_>) -> impl Bundle {
     let mut node = Node::default();
-    reflection::patch_reflect(self, &mut node);
+    reflection::patch_reflect(&self, &mut node);
     node
   }
 }
@@ -98,12 +98,12 @@ pub struct FontParams<'w, 's> {
 
 impl Attribute for Font {
   type Params<'w, 's> = FontParams<'w, 's>;
-  fn construct(&self, params: Self::Params<'_, '_>) -> impl Bundle {
+  fn construct(self, params: Self::Params<'_, '_>) -> impl Bundle {
     let font: Handle<text::Font> = self
       .font
-      .as_ref()
-      .map(|font| params.assets.load(font.clone()))
+      .map(|font| params.assets.load(font))
       .unwrap_or_default();
+
     TextFont::from_font(font)
       .with_font_size(self.size)
       .with_line_height(self.line_height.into())
@@ -114,7 +114,7 @@ impl Attribute for Font {
 impl SerializableAttribute for TextFont {
   type Out<'de> = Font;
 
-  fn transform(&self) -> Self::Out<'_> {
+  fn serialize(&self) -> Self::Out<'_> {
     Font {
       font: self.font.path().map(|path| path.path().to_path_buf()),
       size: self.font_size,

@@ -1,4 +1,4 @@
-use super::{Attribute, NoParams};
+use super::{Attribute, NoParams, SerializableAttribute};
 use crate::{BuiPlugin, PrimaryType, reflection};
 use bevy::{
   ecs::system::SystemParam,
@@ -11,8 +11,10 @@ use std::{marker::PhantomData, path::PathBuf};
 
 pub fn register_all(plugin: &mut BuiPlugin) {
   super::generated::attrs::register_all(plugin);
-  plugin.register_attr::<Style>();
   plugin
+    .register_attr::<Style>()
+    .register_attr::<Font>()
+    .serialize_override::<TextFont>()
     .blacklist::<PrimaryType>()
     .blacklist::<ComputedNode>()
     .blacklist::<ComputedNodeTarget>()
@@ -82,7 +84,7 @@ impl Attribute for Style {
 #[reflect(Serialize, Deserialize)]
 #[serde(default)]
 pub struct Font {
-  pub font: PathBuf,
+  pub font: Option<PathBuf>,
   pub size: f32,
   pub line_height: LineHeight,
   pub smoothing: FontSmoothing,
@@ -97,11 +99,28 @@ pub struct FontParams<'w, 's> {
 impl Attribute for Font {
   type Params<'w, 's> = FontParams<'w, 's>;
   fn construct(&self, params: Self::Params<'_, '_>) -> impl Bundle {
-    let font: Handle<text::Font> = params.assets.load(self.font.clone());
+    let font: Handle<text::Font> = self
+      .font
+      .as_ref()
+      .map(|font| params.assets.load(font.clone()))
+      .unwrap_or_default();
     TextFont::from_font(font)
       .with_font_size(self.size)
       .with_line_height(self.line_height.into())
       .with_font_smoothing(self.smoothing)
+  }
+}
+
+impl SerializableAttribute for TextFont {
+  type Out<'de> = Font;
+
+  fn transform(&self) -> Self::Out<'_> {
+    Font {
+      font: self.font.path().map(|path| path.path().to_path_buf()),
+      size: self.font_size,
+      line_height: self.line_height.into(),
+      smoothing: self.font_smoothing,
+    }
   }
 }
 
@@ -125,6 +144,15 @@ impl From<LineHeight> for text::LineHeight {
     match value {
       LineHeight::Px(px) => text::LineHeight::Px(px),
       LineHeight::RelativeToFont(rel) => text::LineHeight::RelativeToFont(rel),
+    }
+  }
+}
+
+impl From<text::LineHeight> for LineHeight {
+  fn from(value: text::LineHeight) -> Self {
+    match value {
+      text::LineHeight::Px(px) => LineHeight::Px(px),
+      text::LineHeight::RelativeToFont(rel) => LineHeight::RelativeToFont(rel),
     }
   }
 }

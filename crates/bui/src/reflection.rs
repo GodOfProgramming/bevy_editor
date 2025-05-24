@@ -1,12 +1,13 @@
 use std::any::TypeId;
 
-use crate::{UiVTables, result_string};
+use crate::{OverrideFn, UiVTables, result_string};
 use bevy::{
   prelude::*,
   reflect::{
     ReflectMut, ReflectRef, TypeRegistration, TypeRegistry,
     serde::{TypedReflectDeserializer, TypedReflectSerializer},
   },
+  utils::TypeIdMap,
 };
 use serde::de::DeserializeSeed;
 
@@ -38,6 +39,16 @@ pub fn get_type_registration_from_name<'t>(
 pub fn serialize_reflect(reflect: &dyn PartialReflect, registry: &TypeRegistry) -> Result<String> {
   let ser = TypedReflectSerializer::new(reflect, registry);
   let out = ron::to_string(&ser)?;
+  Ok(out)
+}
+
+pub fn serialize_reflect_with_options(
+  reflect: &dyn PartialReflect,
+  registry: &TypeRegistry,
+  config: impl Into<ron::ser::PrettyConfig>,
+) -> Result<String> {
+  let ser = TypedReflectSerializer::new(reflect, registry);
+  let out = ron::ser::to_string_pretty(&ser, config.into())?;
   Ok(out)
 }
 

@@ -1,10 +1,11 @@
 use crate::{
-  EVENT_PREFIX, PrimaryType, SELF_PREFIX, mod_path_to_template,
+  EVENT_PREFIX, OverrideFn, PrimaryType, SELF_PREFIX, mod_path_to_template,
   reflection::{self, TypeRegistryExt},
   result_string,
 };
 use bevy::{
   ecs::component::ComponentId, platform::collections::HashSet, prelude::*, reflect::TypeRegistry,
+  utils::TypeIdMap,
 };
 use std::{
   any::TypeId,
@@ -66,6 +67,7 @@ impl Node {
     entity: Entity,
     world: &World,
     blacklist: Option<&HashSet<TypeId>>,
+    overrides: Option<&TypeIdMap<OverrideFn>>,
   ) -> Result<Self> {
     let app_type_registry = world
       .get_resource::<AppTypeRegistry>()
@@ -80,20 +82,30 @@ impl Node {
 
     let primary_type_id = primary_type.type_id();
 
-    let reflect = reflection::reflect_component(&entity_ref, primary_type_id, &type_registry)?;
+    let mut reflect = reflection::reflect_component(&entity_ref, primary_type_id, &type_registry)?;
+
+    let reflect_override =
+      overrides.and_then(|overrides| overrides.get(&primary_type_id).map(|f| (f)(reflect)));
+
+    if let Some(reflect_override) = &reflect_override {
+      reflect = &**reflect_override;
+    }
 
     let num_components = entity_ref.archetype().component_count();
 
-    let node = if let Some(text) = reflect.downcast_ref::<Text>() {
-      if num_components == 1 {
-        Node::Text(text.0.clone())
-      } else {
-        let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world, blacklist)?;
+    let node = match (reflect.downcast_ref::<Text>(), num_components) {
+      (Some(text), 1) => Node::Text(text.0.clone()),
+      _ => {
+        let tag = Tag::from_entity(
+          reflect,
+          entity_ref,
+          &type_registry,
+          world,
+          blacklist,
+          overrides,
+        )?;
         Node::Tag(tag)
       }
-    } else {
-      let tag = Tag::from_entity(reflect, entity_ref, &type_registry, world, blacklist)?;
-      Node::Tag(tag)
     };
 
     Ok(node)
@@ -182,6 +194,7 @@ impl Tag {
     type_registry: &TypeRegistry,
     world: &World,
     blacklist: Option<&HashSet<TypeId>>,
+    overrides: Option<&TypeIdMap<OverrideFn>>,
   ) -> Result<Self> {
     let base_type_info = base
       .get_represented_type_info()
@@ -195,13 +208,20 @@ impl Tag {
       format!("Type {tp} has no component id")
     })?;
 
-    let mut attrs = Self::serialize_attrs(&entity, world, type_registry, base_comp_id, blacklist)?;
+    let mut attrs = Self::serialize_attrs(
+      &entity,
+      world,
+      type_registry,
+      base_comp_id,
+      blacklist,
+      overrides,
+    )?;
     attrs.insert(
       Attr::named("self"),
       reflection::serialize_reflect(base, type_registry)?,
     );
 
-    let children = Self::serialize_children(&entity, world, blacklist)
+    let children = Self::serialize_children(&entity, world, blacklist, overrides)
       .transpose()?
       .unwrap_or_default();
 
@@ -218,6 +238,7 @@ impl Tag {
     type_registry: &TypeRegistry,
     base_component_id: ComponentId,
     blacklist: Option<&HashSet<TypeId>>,
+    overrides: Option<&TypeIdMap<OverrideFn>>,
   ) -> Result<BTreeMap<Attr, String>> {
     let components = world.components();
 
@@ -237,11 +258,22 @@ impl Tag {
           .unwrap_or(Some((component_info, type_id)))
       })
       .map(|(component_info, component_type_id)| {
-        let attr = Attr::from_type(component_type_id, type_registry)
+        let mut reflect = reflection::reflect_component(entity, component_type_id, type_registry)
           .map_err(|err| format!("{err}: {}", component_info.name()))?;
 
-        let reflect = reflection::reflect_component(entity, component_type_id, type_registry)
-          .map_err(|err| format!("{err}: {}", component_info.name()))?;
+        let reflect_override =
+          overrides.and_then(|overrides| overrides.get(&component_type_id).map(|f| (f)(reflect)));
+
+        if let Some(reflect_override) = &reflect_override {
+          reflect = &**reflect_override;
+        }
+
+        let ti = reflect.reflect_type_info();
+        let type_id = ti.type_id();
+        let attr = Attr::from_type(type_id, type_registry).map_err(|err| {
+          let tp = ti.type_path();
+          format!("{err}: {}", tp)
+        })?;
 
         let value = reflection::serialize_reflect(reflect, type_registry)?;
 
@@ -254,11 +286,12 @@ impl Tag {
     entity: &EntityRef,
     world: &World,
     blacklist: Option<&HashSet<TypeId>>,
+    overrides: Option<&TypeIdMap<OverrideFn>>,
   ) -> Option<Result<Vec<Node>>> {
     entity.get::<Children>().map(|children| {
       children
         .iter()
-        .map(|child| Node::serialize(child, world, blacklist))
+        .map(|child| Node::serialize(child, world, blacklist, overrides))
         .collect()
     })
   }

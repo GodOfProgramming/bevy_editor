@@ -12,7 +12,7 @@ use derive_more::derive::From;
 use itertools::{Either, Itertools};
 use std::{any::TypeId, borrow::Cow};
 use ui::{
-  AttrParams, Attribute, AttributeExtensions,
+  AttrParams, Attribute, AttributeExtensions, SerializableAttribute,
   attrs::{self},
   elements,
   events::{ClickEventType, HoverEventType, Interactable, LeaveEventType, UiEvent, UiEvents},
@@ -25,6 +25,7 @@ const SELF_PREFIX: &str = "self";
 pub struct BuiPlugin {
   vtables: UiVTables,
   blacklist: SerializationBlacklist,
+  overrides: SerializationOverrides,
 }
 
 impl Default for BuiPlugin {
@@ -42,6 +43,7 @@ impl BuiPlugin {
     let mut this = Self {
       vtables: default(),
       blacklist: default(),
+      overrides: default(),
     };
     elements::register_all(&mut this);
     attrs::register_all(&mut this);
@@ -145,6 +147,21 @@ impl BuiPlugin {
     self
   }
 
+  pub fn serialize_override<O>(&mut self) -> &mut Self
+  where
+    O: SerializableAttribute + 'static,
+  {
+    info!("Registering type id {:?}", TypeId::of::<O>());
+    self.overrides.insert(TypeId::of::<O>(), |input| {
+      info!("Overriding {:?}", TypeId::of::<O>());
+      let from = input
+        .downcast_ref::<O>()
+        .expect("From type should match input");
+      Box::new(O::transform(from))
+    });
+    self
+  }
+
   fn interaction_system(
     mut commands: Commands,
     ui_events: Res<UiEvents>,
@@ -219,6 +236,7 @@ impl Plugin for BuiPlugin {
     app.insert_resource(self.vtables.clone());
     app.insert_resource(events);
     app.insert_resource(self.blacklist.clone());
+    app.insert_resource(self.overrides.clone());
 
     app.add_systems(Update, Self::interaction_system);
   }
@@ -246,6 +264,14 @@ impl BuiPluginBuilder {
 
   pub fn blacklist<T: 'static>(mut self) -> Self {
     self.inner.blacklist::<T>();
+    self
+  }
+
+  pub fn serialize_override<O>(mut self) -> Self
+  where
+    O: SerializableAttribute + 'static,
+  {
+    self.inner.serialize_override::<O>();
     self
   }
 
@@ -287,6 +313,11 @@ struct ReflectionVTable {
 #[derive(Resource, Default, Deref, DerefMut, Clone)]
 struct SerializationBlacklist(HashSet<TypeId>);
 
+type OverrideFn = fn(&dyn Reflect) -> Box<dyn Reflect>;
+
+#[derive(Resource, Default, Deref, DerefMut, Clone)]
+struct SerializationOverrides(TypeIdMap<OverrideFn>);
+
 pub struct Bui {
   node: xml::Node,
 }
@@ -301,8 +332,14 @@ impl Bui {
   }
 
   pub fn serialize(entity: Entity, world: &World) -> Result<Self> {
-    let blacklist = world.get_resource::<SerializationBlacklist>();
-    xml::Node::serialize(entity, world, blacklist.map(|i| &**i)).map(|node| Self { node })
+    let blacklist = world
+      .get_resource::<SerializationBlacklist>()
+      .map(|bl| &**bl);
+    let overrides = world
+      .get_resource::<SerializationOverrides>()
+      .map(|ovrds| &**ovrds);
+
+    xml::Node::serialize(entity, world, blacklist, overrides).map(|node| Self { node })
   }
 }
 

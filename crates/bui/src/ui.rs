@@ -6,8 +6,9 @@ mod generated;
 use bevy::{
   ecs::system::{SystemParam, SystemState},
   prelude::*,
-  reflect::Reflectable,
+  reflect::{Reflectable, erased_serde::Serialize},
 };
+use serde::Deserialize;
 
 #[derive(SystemParam)]
 pub struct NoParams;
@@ -31,6 +32,12 @@ where
   fn construct(&self, _params: Self::Params<'_, '_>) -> impl Bundle {
     self.clone()
   }
+}
+
+pub trait SerializableAttribute: 'static {
+  type Out<'de>: Serialize + Deserialize<'de> + Reflect;
+
+  fn transform(&self) -> Self::Out<'_>;
 }
 
 pub(super) type AttrParams<'w, 's, T> = AttrState<<T as Attribute>::Params<'w, 's>>;

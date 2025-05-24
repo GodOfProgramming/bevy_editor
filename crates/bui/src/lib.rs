@@ -10,12 +10,14 @@ use bevy::{
 };
 use derive_more::derive::From;
 use itertools::{Either, Itertools};
-use std::any::TypeId;
+use std::{any::TypeId, borrow::Cow};
 use ui::{
   AttrParams, Attribute, AttributeExtensions, Resources, SerializableAttribute,
   attrs::{self},
   elements,
-  events::{ClickEventType, EventProducer, HoverEventType, LeaveEventType, UiEvent, UiEvents},
+  events::{
+    BuiEvent, ClickEventType, EntityEvent, EventProducer, HoverEventType, LeaveEventType, UiEvents,
+  },
 };
 use xml::Attr;
 
@@ -106,15 +108,15 @@ impl BuiPlugin {
     self
   }
 
-  pub fn register_event<E: Reflectable + FromReflect + FromWorld>(&mut self) -> &mut Self {
+  pub fn register_event<E: Reflectable + FromReflect + BuiEvent>(&mut self) -> &mut Self {
     self.register_reflect::<E>();
     self.initializers.push(|app| {
       app.register_type::<E>();
-      app.add_event::<UiEvent<E>>();
+      app.add_event::<EntityEvent<E>>();
 
       let world = app.world_mut();
       let sys_id = world.register_system(
-        |data: In<(Entity, Box<dyn Reflect>)>, mut writer: EventWriter<UiEvent<E>>| -> Result {
+        |data: In<(Entity, Box<dyn Reflect>)>, mut writer: EventWriter<EntityEvent<E>>| -> Result {
           let (entity, reflect) = &*data;
           let event = E::from_reflect(&**reflect).ok_or_else(|| {
             let registration = E::get_type_registration();
@@ -126,7 +128,7 @@ impl BuiPlugin {
             }
           })?;
 
-          writer.write(UiEvent::new(*entity, event));
+          writer.write(EntityEvent::new(*entity, event));
 
           Ok(())
         },
@@ -139,7 +141,12 @@ impl BuiPlugin {
     self.vtables.events.insert(
       TypeId::of::<E>(),
       EventVTable {
-        create: |world| Box::new(E::from_world(world)) as Box<dyn Reflect>,
+        create: |world, default_value| {
+          let default_value = default_value
+            .as_deref()
+            .and_then(|default_value| E::from_reflect(default_value));
+          Box::new(E::create(world, default_value)) as Box<dyn Reflect>
+        },
       },
     );
     self
@@ -212,45 +219,71 @@ impl BuiPlugin {
       ),
       (Changed<Interaction>, With<EventProducer>),
     >,
-  ) {
+  ) -> Result {
     for (entity, interaction, maybe_click, maybe_hover, maybe_leave) in &q_interactions {
       match interaction {
         Interaction::Pressed => {
           if let Some(click_type) = maybe_click {
-            Self::fire_untyped_event(&mut commands, entity, **click_type, &ui_events);
+            Self::fire_untyped_event(
+              &mut commands,
+              entity,
+              click_type.type_id(),
+              click_type.initializer(),
+              &ui_events,
+            )?;
           }
         }
         Interaction::Hovered => {
           if let Some(hover_type) = maybe_hover {
-            Self::fire_untyped_event(&mut commands, entity, **hover_type, &ui_events);
+            Self::fire_untyped_event(
+              &mut commands,
+              entity,
+              hover_type.type_id(),
+              hover_type.initializer(),
+              &ui_events,
+            )?;
           }
         }
         Interaction::None => {
           if let Some(leave_type) = maybe_leave {
-            Self::fire_untyped_event(&mut commands, entity, **leave_type, &ui_events);
+            Self::fire_untyped_event(
+              &mut commands,
+              entity,
+              leave_type.type_id(),
+              leave_type.initializer(),
+              &ui_events,
+            )?;
           }
         }
       }
     }
+
+    Ok(())
   }
 
   fn fire_untyped_event(
     commands: &mut Commands,
     entity: Entity,
     event_type: TypeId,
+    default_value: Option<&dyn Reflect>,
     ui_events: &UiEvents,
-  ) {
+  ) -> Result {
     if let Some(sys) = ui_events.get(&event_type.clone()).cloned() {
+      let default_value = default_value
+        .map(|reflect| reflect.reflect_clone())
+        .transpose()?;
       commands.queue(move |world: &mut World| -> Result {
         world.resource_scope(|world, vtables: Mut<UiVTables>| {
           if let Some(vtable) = vtables.events.get(&event_type) {
-            let event = (vtable.create)(world);
+            let event = (vtable.create)(world, default_value);
             world.run_system_with(sys, (entity, event))??;
           }
           Ok(())
         })
       });
     }
+
+    Ok(())
   }
 }
 
@@ -284,7 +317,7 @@ impl BuiPluginBuilder {
     self
   }
 
-  pub fn register_event<E: Reflectable + FromReflect + FromWorld>(mut self) -> Self {
+  pub fn register_event<E: Reflectable + FromReflect + BuiEvent>(mut self) -> Self {
     self.inner.register_event::<E>();
     self
   }
@@ -323,9 +356,11 @@ struct AttrVTable {
   insert: fn(world: &mut World, entity: Entity, value: Box<dyn Reflect>) -> Result,
 }
 
+type EventCreatorFn = fn(&mut World, Option<Box<dyn Reflect>>) -> Box<dyn Reflect>;
+
 #[derive(Clone)]
 struct EventVTable {
-  create: fn(&mut World) -> Box<dyn Reflect>,
+  create: EventCreatorFn,
 }
 
 #[derive(Clone)]
@@ -484,23 +519,27 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
   // create children first, as they need the world
   let children = create_child_entities(tag.children(), world)?;
 
-  // then the actual entity for this element
-  let mut entity = world.spawn(PrimaryType::from(registration.type_id()));
+  let entity = world.resource_scope(|world, vtables: Mut<UiVTables>| {
+    // vtables is needed for events which comes far below, but because
+    // entity_ref requires mutable world access this whole process has to be scoped
+    let mut entity = world.spawn(PrimaryType::from(registration.type_id()));
 
-  // add the reflected value to this entity
-  reflect_component.insert(&mut entity, &*reflect, type_registry);
+    // add the reflected value to this entity
+    reflect_component.insert(&mut entity, &*reflect, type_registry);
 
-  // then add all children
-  entity.add_children(&children);
+    // then add all children
+    entity.add_children(&children);
 
-  // add all events
-  if let Err(err) = bind_events(events, &mut entity, type_registry) {
-    let id = entity.id();
-    world.despawn(id);
-    return Err(err);
-  }
+    // add all events
 
-  let entity = entity.id();
+    if let Err(err) = bind_events(events, &mut entity, type_registry, &vtables) {
+      let id = entity.id();
+      world.despawn(id);
+      return Err(err);
+    }
+
+    Ok(entity.id())
+  })?;
 
   // the world is free again and now the attributes can be created
   for (attr, value) in components {
@@ -574,6 +613,7 @@ fn bind_events<K, V>(
   events: impl IntoIterator<Item = (K, V)>,
   entity: &mut EntityWorldMut,
   type_registry: &TypeRegistry,
+  vtables: &UiVTables,
 ) -> Result
 where
   K: AsRef<str>,
@@ -581,21 +621,43 @@ where
 {
   for (k, v) in events {
     let event_name = k.as_ref();
-    let name = ron::de::from_str::<String>(v.as_ref())?;
-    let event_type = deserialize_name(name);
+
+    // parse the type name and possible default value
+    let type_name = v.as_ref();
+    let (type_name, type_value) = if let Some((type_name, type_value)) = type_name.split_once('=') {
+      (type_name, Some(type_value))
+    } else {
+      (type_name, None)
+    };
+
+    let type_name = if type_name.starts_with('"') {
+      Cow::Borrowed(type_name)
+    } else {
+      Cow::Owned(format!("\"{type_name}\""))
+    };
+
+    let type_name = ron::de::from_str::<String>(&type_name)?;
+    let event_type = deserialize_name(type_name);
+
+    let type_value = type_value
+      .map(|type_value| {
+        let registration = reflection::get_type_registration_from_name(&event_type, type_registry)?;
+        reflection::deserialize_reflect(type_registry, registration, type_value, vtables)
+      })
+      .transpose()?;
 
     match event_name {
       ON_CLICK_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((EventProducer, ClickEventType::new(t.type_id())));
+        entity.insert((EventProducer, ClickEventType::new(t.type_id(), type_value)));
       }
       ON_HOVER_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((EventProducer, HoverEventType::new(t.type_id())));
+        entity.insert((EventProducer, HoverEventType::new(t.type_id(), type_value)));
       }
       ON_LEAVE_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((EventProducer, LeaveEventType::new(t.type_id())));
+        entity.insert((EventProducer, LeaveEventType::new(t.type_id(), type_value)));
       }
       evt => return Err(format!("Invalid event type {evt}"))?,
     }

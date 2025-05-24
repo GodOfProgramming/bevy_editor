@@ -25,7 +25,7 @@ pub trait Attribute: 'static {
 
 impl<T> Attribute for T
 where
-  T: Component + Clone,
+  T: Component,
 {
   type Params<'w, 's> = NoParams;
 

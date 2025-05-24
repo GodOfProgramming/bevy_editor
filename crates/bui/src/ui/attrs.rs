@@ -182,7 +182,7 @@ impl SerializableAttribute for ClickEventType {
   fn serialize(&self, app_type_registry: Self::Resources<'_>) -> Result<Self::Out<'_>> {
     let type_registry = app_type_registry.read();
     let inner_type = type_registry
-      .get(**self)
+      .get(self.type_id())
       .ok_or_else(|| ReflectionError::UnregisteredType("ClickEventType".to_string()))?;
     Ok(inner_type.type_info().type_path().to_string())
   }
@@ -203,7 +203,7 @@ impl SerializableAttribute for HoverEventType {
   fn serialize(&self, app_type_registry: Self::Resources<'_>) -> Result<Self::Out<'_>> {
     let type_registry = app_type_registry.read();
     let inner_type = type_registry
-      .get(**self)
+      .get(self.type_id())
       .ok_or_else(|| ReflectionError::UnregisteredType("HoverEventType".to_string()))?;
     Ok(inner_type.type_info().type_path().to_string())
   }
@@ -224,7 +224,7 @@ impl SerializableAttribute for LeaveEventType {
   fn serialize(&self, app_type_registry: Self::Resources<'_>) -> Result<Self::Out<'_>> {
     let type_registry = app_type_registry.read();
     let inner_type = type_registry
-      .get(**self)
+      .get(self.type_id())
       .ok_or_else(|| ReflectionError::UnregisteredType("LeaveEventType".to_string()))?;
     Ok(inner_type.type_info().type_path().to_string())
   }

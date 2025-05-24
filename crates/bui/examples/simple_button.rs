@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bui::{BuiPlugin, ui::events::UiEvent};
+use bui::{BuiPlugin, ui::events::EntityEvent};
 
 const UI: &str = include_str!("./ui/simple_button.xml");
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
@@ -38,7 +38,7 @@ fn startup(world: &mut World) -> Result {
 }
 
 #[derive(Reflect, Default)]
-struct ClickEvent;
+struct ClickEvent(i32);
 
 #[derive(Reflect, Default)]
 struct HoverEvent;
@@ -47,9 +47,9 @@ struct HoverEvent;
 struct LeaveEvent;
 
 fn button_event_system(
-  mut click_reader: EventReader<UiEvent<ClickEvent>>,
-  mut hover_reader: EventReader<UiEvent<HoverEvent>>,
-  mut leave_reader: EventReader<UiEvent<LeaveEvent>>,
+  mut click_reader: EventReader<EntityEvent<ClickEvent>>,
+  mut hover_reader: EventReader<EntityEvent<HoverEvent>>,
+  mut leave_reader: EventReader<EntityEvent<LeaveEvent>>,
   mut q_bg_colors: Query<&mut BackgroundColor>,
 ) {
   for event in click_reader.read() {
@@ -59,6 +59,8 @@ fn button_event_system(
     };
 
     *bg = BackgroundColor(PRESSED_BUTTON);
+
+    info!("Click on {}", event.0);
   }
 
   for event in hover_reader.read() {

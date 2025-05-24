@@ -5,15 +5,28 @@ use std::any::TypeId;
 #[derive(Component)]
 pub struct EventProducer;
 
+pub trait BuiEvent: Sized {
+  fn create(world: &mut World, default_value: Option<Self>) -> Self;
+}
+
+impl<T> BuiEvent for T
+where
+  T: FromWorld,
+{
+  fn create(world: &mut World, default_value: Option<Self>) -> Self {
+    default_value.unwrap_or_else(|| T::from_world(world))
+  }
+}
+
 #[derive(Event, Deref, DerefMut)]
-pub struct UiEvent<T> {
+pub struct EntityEvent<T> {
   entity: Entity,
 
   #[deref]
   inner: T,
 }
 
-impl<T> UiEvent<T> {
+impl<T> EntityEvent<T> {
   pub fn new(entity: Entity, event: T) -> Self {
     Self {
       entity,
@@ -26,17 +39,47 @@ impl<T> UiEvent<T> {
   }
 }
 
-#[derive(new, Deref, Component, Clone, Copy, Reflect)]
+#[derive(new, Component, Reflect)]
 #[reflect(Component)]
-pub struct ClickEventType(TypeId);
+pub struct ClickEventType(TypeId, #[reflect(ignore)] Option<Box<dyn Reflect>>);
 
-#[derive(new, Deref, Component, Clone, Copy, Reflect)]
-#[reflect(Component)]
-pub struct HoverEventType(TypeId);
+impl ClickEventType {
+  pub fn type_id(&self) -> TypeId {
+    self.0
+  }
 
-#[derive(new, Deref, Component, Clone, Copy, Reflect)]
+  pub fn initializer(&self) -> Option<&dyn Reflect> {
+    self.1.as_deref()
+  }
+}
+
+#[derive(new, Component, Reflect)]
 #[reflect(Component)]
-pub struct LeaveEventType(TypeId);
+pub struct HoverEventType(TypeId, #[reflect(ignore)] Option<Box<dyn Reflect>>);
+
+impl HoverEventType {
+  pub fn type_id(&self) -> TypeId {
+    self.0
+  }
+
+  pub fn initializer(&self) -> Option<&dyn Reflect> {
+    self.1.as_deref()
+  }
+}
+
+#[derive(new, Component, Reflect)]
+#[reflect(Component)]
+pub struct LeaveEventType(TypeId, #[reflect(ignore)] Option<Box<dyn Reflect>>);
+
+impl LeaveEventType {
+  pub fn type_id(&self) -> TypeId {
+    self.0
+  }
+
+  pub fn initializer(&self) -> Option<&dyn Reflect> {
+    self.1.as_deref()
+  }
+}
 
 type EventSystemIdType = SystemId<In<(Entity, Box<dyn Reflect>)>, Result>;
 

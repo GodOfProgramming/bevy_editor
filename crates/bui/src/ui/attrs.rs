@@ -1,4 +1,7 @@
-use super::{Attribute, NoParams, SerializableAttribute};
+use super::{
+  Attribute, NoParams, SerializableAttribute,
+  events::{ClickEventType, EventProducer, HoverEventType, LeaveEventType},
+};
 use crate::{BuiPlugin, PrimaryType, reflection};
 use bevy::{
   ecs::system::SystemParam,
@@ -14,8 +17,15 @@ pub fn register_all(plugin: &mut BuiPlugin) {
   plugin
     .register_attr::<Style>()
     .register_attr::<Font>()
+    .register_attr::<ClickEventType>()
+    .register_attr::<HoverEventType>()
+    .register_attr::<LeaveEventType>()
     .serialize_override::<TextFont>()
+    .serialize_override::<ClickEventType>()
+    .serialize_override::<HoverEventType>()
+    .serialize_override::<LeaveEventType>()
     .blacklist::<PrimaryType>()
+    .blacklist::<EventProducer>()
     .blacklist::<ComputedNode>()
     .blacklist::<ComputedNodeTarget>()
     .blacklist::<ComputedTextBlock>()
@@ -73,10 +83,10 @@ pub struct Style {
 
 impl Attribute for Style {
   type Params<'w, 's> = NoParams;
-  fn construct(self, _params: Self::Params<'_, '_>) -> impl Bundle {
+  fn construct(self, _params: Self::Params<'_, '_>) -> Result<impl Bundle> {
     let mut node = Node::default();
     reflection::patch_reflect(&self, &mut node);
-    node
+    Ok(node)
   }
 }
 
@@ -98,29 +108,33 @@ pub struct FontParams<'w, 's> {
 
 impl Attribute for Font {
   type Params<'w, 's> = FontParams<'w, 's>;
-  fn construct(self, params: Self::Params<'_, '_>) -> impl Bundle {
+  fn construct(self, params: Self::Params<'_, '_>) -> Result<impl Bundle> {
     let font: Handle<text::Font> = self
       .font
       .map(|font| params.assets.load(font))
       .unwrap_or_default();
 
-    TextFont::from_font(font)
+    let text_font = TextFont::from_font(font)
       .with_font_size(self.size)
       .with_line_height(self.line_height.into())
-      .with_font_smoothing(self.smoothing)
+      .with_font_smoothing(self.smoothing);
+
+    Ok(text_font)
   }
 }
 
 impl SerializableAttribute for TextFont {
+  type Resources<'w> = ();
+
   type Out<'de> = Font;
 
-  fn serialize(&self) -> Self::Out<'_> {
-    Font {
+  fn serialize(&self, _resources: Self::Resources<'_>) -> Result<Self::Out<'_>> {
+    Ok(Font {
       font: self.font.path().map(|path| path.path().to_path_buf()),
       size: self.font_size,
       line_height: self.line_height.into(),
       smoothing: self.font_smoothing,
-    }
+    })
   }
 }
 
@@ -154,5 +168,68 @@ impl From<text::LineHeight> for LineHeight {
       text::LineHeight::Px(px) => LineHeight::Px(px),
       text::LineHeight::RelativeToFont(rel) => LineHeight::RelativeToFont(rel),
     }
+  }
+}
+
+impl SerializableAttribute for ClickEventType {
+  type Resources<'w> = &'w AppTypeRegistry;
+  type Out<'de> = String;
+
+  fn serialize(&self, app_type_registry: Self::Resources<'_>) -> Result<Self::Out<'_>> {
+    let type_registry = app_type_registry.read();
+    let inner_type = type_registry
+      .get(**self)
+      .ok_or("ClickEventType inner type is not registered")?;
+    Ok(inner_type.type_info().type_path().to_string())
+  }
+
+  fn name_override(&self) -> Option<String> {
+    Some(String::from("onclick"))
+  }
+
+  fn prefix_override(&self) -> Option<String> {
+    Some(String::from("event"))
+  }
+}
+
+impl SerializableAttribute for HoverEventType {
+  type Resources<'w> = &'w AppTypeRegistry;
+  type Out<'de> = String;
+
+  fn serialize(&self, app_type_registry: Self::Resources<'_>) -> Result<Self::Out<'_>> {
+    let type_registry = app_type_registry.read();
+    let inner_type = type_registry
+      .get(**self)
+      .ok_or("HoverEventType inner type is not registered")?;
+    Ok(inner_type.type_info().type_path().to_string())
+  }
+
+  fn name_override(&self) -> Option<String> {
+    Some(String::from("onhover"))
+  }
+
+  fn prefix_override(&self) -> Option<String> {
+    Some(String::from("event"))
+  }
+}
+
+impl SerializableAttribute for LeaveEventType {
+  type Resources<'w> = &'w AppTypeRegistry;
+  type Out<'de> = String;
+
+  fn serialize(&self, app_type_registry: Self::Resources<'_>) -> Result<Self::Out<'_>> {
+    let type_registry = app_type_registry.read();
+    let inner_type = type_registry
+      .get(**self)
+      .ok_or("LeaveEventType inner type is not registered")?;
+    Ok(inner_type.type_info().type_path().to_string())
+  }
+
+  fn name_override(&self) -> Option<String> {
+    Some(String::from("onleave"))
+  }
+
+  fn prefix_override(&self) -> Option<String> {
+    Some(String::from("event"))
   }
 }

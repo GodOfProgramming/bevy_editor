@@ -10,12 +10,12 @@ use bevy::{
 };
 use derive_more::derive::From;
 use itertools::{Either, Itertools};
-use std::{any::TypeId, borrow::Cow};
+use std::any::TypeId;
 use ui::{
-  AttrParams, Attribute, AttributeExtensions, SerializableAttribute,
+  AttrParams, Attribute, AttributeExtensions, Resources, SerializableAttribute,
   attrs::{self},
   elements,
-  events::{ClickEventType, HoverEventType, Interactable, LeaveEventType, UiEvent, UiEvents},
+  events::{ClickEventType, EventProducer, HoverEventType, LeaveEventType, UiEvent, UiEvents},
 };
 use xml::Attr;
 
@@ -24,6 +24,7 @@ const SELF_PREFIX: &str = "self";
 
 pub struct BuiPlugin {
   vtables: UiVTables,
+  initializers: Vec<fn(&mut App)>,
   blacklist: SerializationBlacklist,
   overrides: SerializationOverrides,
 }
@@ -42,6 +43,7 @@ impl BuiPlugin {
   fn new() -> Self {
     let mut this = Self {
       vtables: default(),
+      initializers: default(),
       blacklist: default(),
       overrides: default(),
     };
@@ -52,40 +54,42 @@ impl BuiPlugin {
 
   pub fn register_element<E: Reflectable + FromReflect>(&mut self) -> &mut Self {
     self.register_reflect::<E>();
-    self.vtables.elements.insert(
-      TypeId::of::<E>(),
-      ElementVTable {
-        register: |app| {
-          app.register_type::<E>();
-        },
-      },
-    );
+    self.initializers.push(|app| {
+      app.register_type::<E>();
+    });
+
+    self
+      .vtables
+      .elements
+      .insert(TypeId::of::<E>(), ElementVTable {});
 
     self
   }
 
   pub fn register_attr<A: Attribute + Reflectable + FromReflect>(&mut self) -> &mut Self {
     self.register_reflect::<A>();
+    self.initializers.push(|app| {
+      app.register_type::<A>();
+
+      let world = app.world_mut();
+      A::register_params(world);
+    });
+
     self.vtables.attrs.insert(
       TypeId::of::<A>(),
       AttrVTable {
-        register: |app| {
-          app.register_type::<A>();
-
-          let world = app.world_mut();
-          A::register_params(world);
-        },
         insert: |world, entity, value: Box<dyn Reflect + 'static>| {
           let value = value.take::<A>().map_err(|_| {
             let tp = A::get_type_registration().type_info().type_path();
             format!("Could not downcast {tp} to its underlying type")
           })?;
 
-          world.resource_scope(|world, mut params: Mut<AttrParams<A>>| {
+          world.resource_scope(|world, mut params: Mut<AttrParams<A>>| -> Result {
             let params = params.get_mut(world);
-            let bundle = value.construct(params);
+            let bundle = value.construct(params)?;
             world.entity_mut(entity).insert(bundle);
-          });
+            Ok(())
+          })?;
 
           Ok(())
         },
@@ -97,35 +101,37 @@ impl BuiPlugin {
 
   pub fn register_event<E: Reflectable + FromReflect + FromWorld>(&mut self) -> &mut Self {
     self.register_reflect::<E>();
+    self.initializers.push(|app| {
+      app.register_type::<E>();
+      app.add_event::<UiEvent<E>>();
+
+      let world = app.world_mut();
+      let sys_id = world.register_system(
+        |data: In<(Entity, Box<dyn Reflect>)>, mut writer: EventWriter<UiEvent<E>>| -> Result {
+          let (entity, reflect) = &*data;
+          let event = E::from_reflect(&**reflect).ok_or_else(|| {
+            let registration = E::get_type_registration();
+            let tp = registration.type_info().type_path();
+            if let Some(ti) = reflect.get_represented_type_info() {
+              format!("Could not make {tp} from {}", ti.type_path())
+            } else {
+              format!("Could not make {tp} from Reflect")
+            }
+          })?;
+
+          writer.write(UiEvent::new(*entity, event));
+
+          Ok(())
+        },
+      );
+
+      if let Some(mut events) = app.world_mut().get_resource_mut::<UiEvents>() {
+        events.add::<E>(sys_id)
+      }
+    });
     self.vtables.events.insert(
       TypeId::of::<E>(),
       EventVTable {
-        register: |app, events| {
-          app.register_type::<E>();
-          app.add_event::<UiEvent<E>>();
-
-          let world = app.world_mut();
-          let sys_id = world.register_system(
-            |data: In<(Entity, Box<dyn Reflect>)>, mut writer: EventWriter<UiEvent<E>>| -> Result {
-              let (entity, reflect) = &*data;
-              let event = E::from_reflect(&**reflect).ok_or_else(|| {
-                let registration = E::get_type_registration();
-                let tp = registration.type_info().type_path();
-                if let Some(ti) = reflect.get_represented_type_info() {
-                  format!("Could not make {tp} from {}", ti.type_path())
-                } else {
-                  format!("Could not make {tp} from Reflect")
-                }
-              })?;
-
-              writer.write(UiEvent::new(*entity, event));
-
-              Ok(())
-            },
-          );
-
-          events.add::<E>(sys_id);
-        },
         create: |world| Box::new(E::from_world(world)) as Box<dyn Reflect>,
       },
     );
@@ -147,18 +153,35 @@ impl BuiPlugin {
     self
   }
 
-  pub fn serialize_override<O>(&mut self) -> &mut Self
+  pub fn serialize_override<A>(&mut self) -> &mut Self
   where
-    O: SerializableAttribute + 'static,
+    A: SerializableAttribute + 'static,
   {
-    info!("Registering type id {:?}", TypeId::of::<O>());
-    self.overrides.insert(TypeId::of::<O>(), |input| {
-      info!("Overriding {:?}", TypeId::of::<O>());
-      let from = input
-        .downcast_ref::<O>()
-        .expect("From type should match input");
-      Box::new(O::serialize(from))
-    });
+    self.overrides.insert(
+      TypeId::of::<A>(),
+      Overrides {
+        el: |input, world| {
+          let attr = input.downcast_ref::<A>().ok_or("")?;
+
+          let resources = A::Resources::from_world(world).ok_or("")?;
+          let serialized = A::serialize(attr, resources)?;
+
+          Ok(Box::new(serialized))
+        },
+        attr: |input, world| {
+          let attr = input.downcast_ref::<A>().ok_or("")?;
+
+          let resources = A::Resources::from_world(world).ok_or("")?;
+          let serialized = A::serialize(attr, resources)?;
+
+          let attr = attr
+            .name_override()
+            .map(|name_override| Attr::named(name_override).with_prefix(attr.prefix_override()));
+
+          Ok((attr, Box::new(serialized)))
+        },
+      },
+    );
     self
   }
 
@@ -173,7 +196,7 @@ impl BuiPlugin {
         Option<&HoverEventType>,
         Option<&LeaveEventType>,
       ),
-      (Changed<Interaction>, With<Interactable>),
+      (Changed<Interaction>, With<EventProducer>),
     >,
   ) {
     for (entity, interaction, maybe_click, maybe_hover, maybe_leave) in &q_interactions {
@@ -219,24 +242,14 @@ impl BuiPlugin {
 
 impl Plugin for BuiPlugin {
   fn build(&self, app: &mut App) {
-    let mut events = UiEvents::default();
-
-    for vtable in self.vtables.elements.values() {
-      (vtable.register)(app);
-    }
-
-    for vtable in self.vtables.attrs.values() {
-      (vtable.register)(app);
-    }
-
-    for vtable in self.vtables.events.values() {
-      (vtable.register)(app, &mut events);
-    }
-
+    app.init_resource::<UiEvents>();
     app.insert_resource(self.vtables.clone());
-    app.insert_resource(events);
     app.insert_resource(self.blacklist.clone());
     app.insert_resource(self.overrides.clone());
+
+    for init in &self.initializers {
+      (init)(app);
+    }
 
     app.add_systems(Update, Self::interaction_system);
   }
@@ -289,19 +302,15 @@ struct UiVTables {
 }
 
 #[derive(Clone)]
-struct ElementVTable {
-  register: fn(&mut App),
-}
+struct ElementVTable {}
 
 #[derive(Clone)]
 struct AttrVTable {
-  register: fn(&mut App),
   insert: fn(world: &mut World, entity: Entity, value: Box<dyn Reflect>) -> Result,
 }
 
 #[derive(Clone)]
 struct EventVTable {
-  register: fn(&mut App, &mut UiEvents),
   create: fn(&mut World) -> Box<dyn Reflect>,
 }
 
@@ -313,10 +322,17 @@ struct ReflectionVTable {
 #[derive(Resource, Default, Deref, DerefMut, Clone)]
 struct SerializationBlacklist(HashSet<TypeId>);
 
-type OverrideFn = fn(&dyn Reflect) -> Box<dyn Reflect>;
+type ElOverrideFn = fn(&dyn Reflect, &World) -> Result<(Box<dyn Reflect>)>;
+type AttrOverrideFn = fn(&dyn Reflect, &World) -> Result<(Option<Attr>, Box<dyn Reflect>)>;
+
+#[derive(Clone)]
+struct Overrides {
+  el: ElOverrideFn,
+  attr: AttrOverrideFn,
+}
 
 #[derive(Resource, Default, Deref, DerefMut, Clone)]
-struct SerializationOverrides(TypeIdMap<OverrideFn>);
+struct SerializationOverrides(TypeIdMap<Overrides>);
 
 pub struct Bui {
   node: xml::Node,
@@ -551,15 +567,15 @@ where
     match event_name {
       "onclick" => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((Interactable, ClickEventType::new(t.type_id())));
+        entity.insert((EventProducer, ClickEventType::new(t.type_id())));
       }
       "onhover" => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((Interactable, HoverEventType::new(t.type_id())));
+        entity.insert((EventProducer, HoverEventType::new(t.type_id())));
       }
       "onleave" => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((Interactable, LeaveEventType::new(t.type_id())));
+        entity.insert((EventProducer, LeaveEventType::new(t.type_id())));
       }
       evt => return Err(format!("Invalid event type {evt}"))?,
     }

@@ -1,13 +1,12 @@
 use std::any::TypeId;
 
-use crate::{OverrideFn, UiVTables, result_string};
+use crate::{UiVTables, result_string};
 use bevy::{
   prelude::*,
   reflect::{
     ReflectMut, ReflectRef, TypeRegistration, TypeRegistry,
     serde::{TypedReflectDeserializer, TypedReflectSerializer},
   },
-  utils::TypeIdMap,
 };
 use serde::de::DeserializeSeed;
 

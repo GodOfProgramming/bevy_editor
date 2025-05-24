@@ -1,4 +1,4 @@
-use bevy::{color::palettes::css::RED, prelude::*};
+use bevy::prelude::*;
 use bui::{BuiPlugin, ui::events::UiEvent};
 
 const UI: &str = include_str!("./ui/simple_button.xml");
@@ -22,15 +22,19 @@ fn main() {
     .run();
 }
 
-fn startup(world: &mut World) {
+fn startup(world: &mut World) -> Result {
   world.spawn(Camera2d);
 
   let nodes = bui::Bui::parse_all(UI).unwrap();
   let node = nodes.first().unwrap();
 
-  if let Err(err) = node.spawn(world) {
-    error!("failed to create ui: {err}");
-  }
+  let entity = node.spawn(world)?;
+
+  let ui = bui::Bui::serialize(entity, world)?;
+  let str: String = (&ui).try_into()?;
+  println!("{str}");
+
+  Ok(())
 }
 
 #[derive(Reflect, Default)]

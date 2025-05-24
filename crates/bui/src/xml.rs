@@ -1,5 +1,5 @@
 use crate::{
-  EVENT_PREFIX, OverrideFn, PrimaryType, SELF_PREFIX, mod_path_to_template,
+  EVENT_PREFIX, Overrides, PrimaryType, SELF_PREFIX, mod_path_to_template,
   reflection::{self, TypeRegistryExt},
   result_string,
 };
@@ -7,6 +7,7 @@ use bevy::{
   ecs::component::ComponentId, platform::collections::HashSet, prelude::*, reflect::TypeRegistry,
   utils::TypeIdMap,
 };
+use core::cmp::Ordering;
 use std::{
   any::TypeId,
   borrow::Cow,
@@ -63,11 +64,11 @@ pub enum Node {
 }
 
 impl Node {
-  pub fn serialize(
+  pub(crate) fn serialize(
     entity: Entity,
     world: &World,
     blacklist: Option<&HashSet<TypeId>>,
-    overrides: Option<&TypeIdMap<OverrideFn>>,
+    overrides: Option<&TypeIdMap<Overrides>>,
   ) -> Result<Self> {
     let app_type_registry = world
       .get_resource::<AppTypeRegistry>()
@@ -84,8 +85,13 @@ impl Node {
 
     let mut reflect = reflection::reflect_component(&entity_ref, primary_type_id, &type_registry)?;
 
-    let reflect_override =
-      overrides.and_then(|overrides| overrides.get(&primary_type_id).map(|f| (f)(reflect)));
+    let reflect_override = overrides
+      .and_then(|overrides| {
+        overrides
+          .get(&primary_type_id)
+          .map(|f| (f.el)(reflect, world))
+      })
+      .transpose()?;
 
     if let Some(reflect_override) = &reflect_override {
       reflect = &**reflect_override;
@@ -188,13 +194,13 @@ impl Tag {
     }
   }
 
-  pub fn from_entity(
+  fn from_entity(
     base: &dyn Reflect,
     entity: EntityRef,
     type_registry: &TypeRegistry,
     world: &World,
     blacklist: Option<&HashSet<TypeId>>,
-    overrides: Option<&TypeIdMap<OverrideFn>>,
+    overrides: Option<&TypeIdMap<Overrides>>,
   ) -> Result<Self> {
     let base_type_info = base
       .get_represented_type_info()
@@ -238,7 +244,7 @@ impl Tag {
     type_registry: &TypeRegistry,
     base_component_id: ComponentId,
     blacklist: Option<&HashSet<TypeId>>,
-    overrides: Option<&TypeIdMap<OverrideFn>>,
+    overrides: Option<&TypeIdMap<Overrides>>,
   ) -> Result<BTreeMap<Attr, String>> {
     let components = world.components();
 
@@ -261,18 +267,26 @@ impl Tag {
         let mut reflect = reflection::reflect_component(entity, component_type_id, type_registry)
           .map_err(|err| format!("{err}: {}", component_info.name()))?;
 
-        let reflect_override =
-          overrides.and_then(|overrides| overrides.get(&component_type_id).map(|f| (f)(reflect)));
+        let (attr_override, reflect_override) = overrides
+          .and_then(|overrides| {
+            overrides
+              .get(&component_type_id)
+              .map(|f| (f.attr)(reflect, world))
+          })
+          .transpose()?
+          .unzip();
 
         if let Some(reflect_override) = &reflect_override {
           reflect = &**reflect_override;
         }
 
-        let ti = reflect.reflect_type_info();
-        let type_id = ti.type_id();
-        let attr = Attr::from_type(type_id, type_registry).map_err(|err| {
-          let tp = ti.type_path();
-          format!("{err}: {}", tp)
+        let attr = attr_override.flatten().map(Ok).unwrap_or_else(|| {
+          let ti = reflect.reflect_type_info();
+          let type_id = ti.type_id();
+          Attr::from_type(type_id, type_registry).map_err(|err| {
+            let tp = ti.type_path();
+            format!("{err}: {}", tp)
+          })
         })?;
 
         let value = reflection::serialize_reflect(reflect, type_registry)?;
@@ -286,7 +300,7 @@ impl Tag {
     entity: &EntityRef,
     world: &World,
     blacklist: Option<&HashSet<TypeId>>,
-    overrides: Option<&TypeIdMap<OverrideFn>>,
+    overrides: Option<&TypeIdMap<Overrides>>,
   ) -> Option<Result<Vec<Node>>> {
     entity.get::<Children>().map(|children| {
       children
@@ -370,7 +384,7 @@ impl Index<&Attr> for Tag {
   }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Attr {
   prefix: Option<String>,
   name: String,
@@ -402,6 +416,11 @@ impl Attr {
     }
   }
 
+  pub fn with_prefix(mut self, prefix: Option<impl ToString>) -> Self {
+    self.prefix = prefix.map(|ts| ts.to_string());
+    self
+  }
+
   pub fn name(&self) -> &str {
     &self.name
   }
@@ -417,6 +436,26 @@ impl Display for Attr {
       write!(f, "{}:", prefix)?;
     }
     write!(f, "{}", self.name)
+  }
+}
+
+impl PartialOrd for Attr {
+  fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+    Some(self.cmp(other))
+  }
+}
+
+impl Ord for Attr {
+  fn cmp(&self, other: &Self) -> Ordering {
+    match (self.name.as_ref(), other.name.as_ref()) {
+      ("self", "self") => self.prefix.cmp(&other.prefix),
+      ("self", _) => Ordering::Less,
+      (_, "self") => Ordering::Greater,
+      _ => match self.prefix.cmp(&other.prefix) {
+        Ordering::Equal => self.name.cmp(&other.name),
+        ord => ord,
+      },
+    }
   }
 }
 

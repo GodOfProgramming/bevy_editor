@@ -89,6 +89,7 @@ impl UiManager {
       .frame(
         egui::Frame::central_panel(&ctx.style())
           .inner_margin(0.0)
+          // this allows the game to be rendered behind egui
           .fill(egui::Color32::TRANSPARENT),
       )
       .show(&ctx, |ui| {

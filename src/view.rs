@@ -4,6 +4,7 @@ pub mod view3d;
 use crate::{
   Editing,
   cache::{Cache, Saveable},
+  input,
   ui::{
     misc::UiInfo,
     prebuilt::{editor_view::EditorView, game_view::GameView},
@@ -33,7 +34,6 @@ impl Plugin for EditorViewPlugin {
       .configure_sets(
         Update,
         (
-          CameraInput::Keyboard.in_set(Editing),
           CameraInput::Mouse
             .run_if(CameraInput::mouse_hovered)
             .in_set(Editing),
@@ -46,6 +46,9 @@ impl Plugin for EditorViewPlugin {
           OrbitSet.run_if(in_state(OrbitState::Active)),
           PanSet.run_if(in_state(PanState::Active)),
           ZoomSet.in_set(CameraInput::Mouse),
+          CameraInput::Keyboard
+            .in_set(input::Unfocused)
+            .run_if(mouse_movement_active),
         ),
       )
       .register_type::<ActiveEditorCamera>()
@@ -217,6 +220,10 @@ fn show_camera(transform: Transform, scaler: f32, gizmos: &mut Gizmos) {
   for corner in rect_corners {
     gizmos.line(start, corner, GAME_CAMERA_COLOR);
   }
+}
+
+fn mouse_movement_active(orbit: Res<State<OrbitState>>, pan: Res<State<PanState>>) -> bool {
+  *orbit == OrbitState::Active || *pan == PanState::Active
 }
 
 #[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]

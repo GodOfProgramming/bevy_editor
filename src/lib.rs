@@ -314,7 +314,7 @@ impl Editor {
       )
       .add_systems(
         Update,
-        (
+        ((
           scenes::check_for_saves,
           scenes::check_for_loads,
           Self::on_close_requested,
@@ -322,9 +322,8 @@ impl Editor {
           Self::auto_register_picking_targets,
           Self::handle_pick_events,
         )
-          .in_set(Editing),
+          .in_set(Editing),),
       )
-      .add_systems(Update, input::global_input_actions.in_set(EditorGlobal))
       .add_systems(
         OnEnter(EditorState::Exiting),
         (

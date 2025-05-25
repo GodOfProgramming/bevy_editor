@@ -51,6 +51,7 @@ impl Plugin for UiPlugin {
       .add_event::<RemoveUiEvent>()
       .add_event::<SaveLayoutEvent>()
       .init_resource::<InspectorSelection>()
+      .init_state::<KeyboardFocus>()
       .add_plugins(EguiPlugin {
         enable_multipass_for_primary_context: false,
       })
@@ -58,19 +59,22 @@ impl Plugin for UiPlugin {
       .add_systems(
         Update,
         (
-          RemoveUiEvent::on_event,
+          KeyboardFocus::set_state,
           (
+            RemoveUiEvent::on_event,
             (
-              Self::dispatch_render_events,
-              Self::reset_ui_info,
-              Self::render,
-            )
-              .chain(),
-            AddUiEvent::on_event,
-          ),
-        )
-          .chain()
-          .run_if(|editor_settings: Res<EditorSettings>| editor_settings.render_ui),
+              (
+                Self::dispatch_render_events,
+                Self::reset_ui_info,
+                Self::render,
+              )
+                .chain(),
+              AddUiEvent::on_event,
+            ),
+          )
+            .chain()
+            .run_if(|editor_settings: Res<EditorSettings>| editor_settings.render_ui),
+        ),
       )
       .add_systems(FixedUpdate, SaveLayoutEvent::on_event);
   }
@@ -626,3 +630,23 @@ pub struct SelectedEntities(bevy_inspector::hierarchy::SelectedEntities);
 /// Component that stores all ui components as children for organization
 #[derive(Component)]
 pub struct UiPanels;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, States, Default)]
+pub enum KeyboardFocus {
+  #[default]
+  Unfocused,
+  Focused(egui::Id),
+}
+
+impl KeyboardFocus {
+  fn set_state(
+    mut q_contexts: Query<&mut bevy_egui::EguiContext>,
+    mut keyboard_focus: ResMut<NextState<Self>>,
+  ) {
+    let focus = q_contexts
+      .iter_mut()
+      .find_map(|mut ctx| ctx.get_mut().memory(|memory| memory.focused()));
+
+    keyboard_focus.set(focus.map(Self::Focused).unwrap_or(Self::Unfocused))
+  }
+}

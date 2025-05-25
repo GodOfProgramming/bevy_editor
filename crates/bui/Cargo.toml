@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 anyhow = { workspace = true }
 bevy = { workspace = true, features = ["serialize", "ghost_nodes"] }
+derive-ctor = { workspace = true }
 derive-new = { workspace = true }
 derive_more = { workspace = true }
 itertools = { workspace = true }

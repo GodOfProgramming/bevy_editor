@@ -1,5 +1,5 @@
 use crate::{
-  EVENT_PREFIX, Overrides, PrimaryType, SELF_PREFIX,
+  EVENT_PREFIX, Overrides, PrimaryType, SELF,
   reflection::{self, TypeRegistryExt},
   result_string, serialize_name,
 };
@@ -440,6 +440,18 @@ impl Display for Attr {
   }
 }
 
+impl From<Attr> for String {
+  fn from(value: Attr) -> Self {
+    value.to_string()
+  }
+}
+
+impl From<&Attr> for String {
+  fn from(value: &Attr) -> Self {
+    value.to_string()
+  }
+}
+
 impl PartialOrd for Attr {
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
     Some(self.cmp(other))
@@ -475,7 +487,7 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
   let data = format!(
     "<{NAMESPACE_ELEMENT}
       xmlns:{EVENT_PREFIX}='{EVENT_PREFIX}'
-      xmlns:{SELF_PREFIX}='{SELF_PREFIX}'>
+      xmlns:{SELF}='{SELF}'>
         {data}
       </{NAMESPACE_ELEMENT}>"
   );

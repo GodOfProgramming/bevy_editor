@@ -14,6 +14,26 @@ use serde::de::DeserializeSeed;
 pub enum ReflectionError {
   #[error("Type {0} was not registered in the TypeRegistry")]
   UnregisteredType(String),
+
+  #[error("Type {0} does not have {1}")]
+  MissingTypeData(String, String),
+
+  #[error("Could not downcast {0} to {1}")]
+  InvalidCast(String, String),
+}
+
+impl ReflectionError {
+  pub fn unregistered_type(t: impl Into<String>) -> Self {
+    Self::UnregisteredType(t.into())
+  }
+
+  pub fn missing_type_data(t: impl Into<String>, data: impl Into<String>) -> Self {
+    Self::MissingTypeData(t.into(), data.into())
+  }
+
+  pub fn invalid_cast(from: impl Into<String>, to: impl Into<String>) -> Self {
+    Self::InvalidCast(from.into(), to.into())
+  }
 }
 
 pub trait TypeRegistryExt {
@@ -36,7 +56,7 @@ pub fn get_type_registration_from_name<'t>(
   let registration = type_registry
     .get_with_short_type_path(name)
     .or_else(|| type_registry.get_with_type_path(name))
-    .ok_or_else(|| ReflectionError::UnregisteredType(name.to_string()))?;
+    .ok_or_else(|| ReflectionError::unregistered_type(name))?;
 
   Ok(registration)
 }

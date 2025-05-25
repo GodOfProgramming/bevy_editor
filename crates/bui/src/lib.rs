@@ -10,6 +10,7 @@ use bevy::{
 };
 use derive_more::derive::From;
 use itertools::{Either, Itertools};
+use reflection::ReflectionError;
 use std::{any::TypeId, borrow::Cow};
 use ui::{
   AttrParams, Attribute, AttributeExtensions, Resources, SerializableAttribute,
@@ -22,7 +23,7 @@ use ui::{
 use xml::Attr;
 
 const EVENT_PREFIX: &str = "event";
-const SELF_PREFIX: &str = "self";
+const SELF: &str = "self";
 
 const ON_CLICK_EVENT: &str = "onclick";
 const ON_HOVER_EVENT: &str = "onhover";
@@ -30,6 +31,14 @@ const ON_LEAVE_EVENT: &str = "onleave";
 
 const XML_SCOPE_SEPARATOR: &str = ".";
 const RUST_SCOPE_SEPARATOR: &str = "::";
+
+type InteractionQuery<'w> = (
+  Entity,
+  &'w Interaction,
+  Option<&'w ClickEventType>,
+  Option<&'w HoverEventType>,
+  Option<&'w LeaveEventType>,
+);
 
 pub struct BuiPlugin {
   vtables: UiVTables,
@@ -88,9 +97,13 @@ impl BuiPlugin {
       TypeId::of::<A>(),
       AttrVTable {
         insert: |world, entity, value: Box<dyn Reflect + 'static>| {
-          let value = value.take::<A>().map_err(|_| {
+          let value = value.take::<A>().map_err(|value| {
+            let value_type = value
+              .get_represented_type_info()
+              .map(|ti| ti.type_path())
+              .unwrap_or("<Unknown Type>");
             let tp = A::get_type_registration().type_info().type_path();
-            format!("Could not downcast {tp} to its underlying type")
+            ReflectionError::invalid_cast(value_type, tp)
           })?;
 
           world.resource_scope(|world, mut params: Mut<AttrParams<A>>| -> Result {
@@ -117,18 +130,17 @@ impl BuiPlugin {
       let world = app.world_mut();
       let sys_id = world.register_system(
         |data: In<(Entity, Box<dyn Reflect>)>, mut writer: EventWriter<EntityEvent<E>>| -> Result {
-          let (entity, reflect) = &*data;
-          let event = E::from_reflect(&**reflect).ok_or_else(|| {
-            let registration = E::get_type_registration();
-            let tp = registration.type_info().type_path();
-            if let Some(ti) = reflect.get_represented_type_info() {
-              format!("Could not make {tp} from {}", ti.type_path())
-            } else {
-              format!("Could not make {tp} from Reflect")
-            }
+          let (entity, reflect) = data.0;
+          let event = reflect.take::<E>().map_err(|reflect| {
+            let reflect_type = reflect
+              .get_represented_type_info()
+              .map(|ti| ti.type_path())
+              .unwrap_or("<Unknown Type>");
+            let tp = E::get_type_registration().type_info().type_path();
+            ReflectionError::invalid_cast(reflect_type, tp)
           })?;
 
-          writer.write(EntityEvent::new(*entity, event));
+          writer.write(EntityEvent::new(entity, event));
 
           Ok(())
         },
@@ -209,16 +221,7 @@ impl BuiPlugin {
   fn interaction_system(
     mut commands: Commands,
     ui_events: Res<UiEvents>,
-    q_interactions: Query<
-      (
-        Entity,
-        &Interaction,
-        Option<&ClickEventType>,
-        Option<&HoverEventType>,
-        Option<&LeaveEventType>,
-      ),
-      (Changed<Interaction>, With<EventProducer>),
-    >,
+    q_interactions: Query<InteractionQuery, (Changed<Interaction>, With<EventProducer>)>,
   ) -> Result {
     for (entity, interaction, maybe_click, maybe_hover, maybe_leave) in &q_interactions {
       match interaction {
@@ -337,6 +340,24 @@ impl BuiPluginBuilder {
 
   pub fn build(self) -> BuiPlugin {
     self.inner
+  }
+}
+
+#[derive(thiserror::Error, Debug)]
+enum BuiError {
+  #[error("Type {0} was not registered as an Attribute")]
+  UnregisteredAttribute(String),
+  #[error("Event {0} is not valid for use")]
+  UnregisteredEvent(String),
+}
+
+impl BuiError {
+  fn unregistered_attribute(t: impl Into<String>) -> Self {
+    Self::UnregisteredAttribute(t.into())
+  }
+
+  fn unregistered_event(t: impl Into<String>) -> Self {
+    Self::UnregisteredEvent(t.into())
   }
 }
 
@@ -478,15 +499,15 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
   let registration = reflection::get_type_registration_from_name(&name, type_registry)?;
   let reflect_component = registration
     .data::<ReflectComponent>()
-    .ok_or_else(|| format!("Type {name} does not have ReflectComponent"))?;
+    .ok_or_else(|| ReflectionError::missing_type_data(&name, stringify!(ReflectComponent)))?;
 
-  let mut reflect = tag.attr(Attr::named("self")).map_or_else(
+  let mut reflect = tag.attr(Attr::named(SELF)).map_or_else(
     || -> Result<Box<dyn Reflect>> {
       // use reflect default if there is no self attrib
       let reflect = registration
         .data::<ReflectDefault>()
         .map(|rd| rd.default())
-        .ok_or_else(|| format!("Type {name} does not have ReflectDefault"))?;
+        .ok_or_else(|| ReflectionError::missing_type_data(&name, stringify!(ReflectDefault)))?;
 
       Ok(reflect)
     },
@@ -502,10 +523,10 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
   // after creation, any attrs that use self. are set on the new struct
   let (fields, rest): (Vec<_>, Vec<_>) = tag
     .attr_iter()
-    .filter(|(k, _)| k.to_string() != SELF_PREFIX)
+    .filter(|(k, _)| k.to_string() != SELF)
     .partition_map(|(k, v)| {
       k.prefix()
-        .and_then(|prefix| (prefix == SELF_PREFIX).then_some(Either::Left((k.name(), v))))
+        .and_then(|prefix| (prefix == SELF).then_some(Either::Left((k.name(), v))))
         .unwrap_or(Either::Right((k, v)))
     });
   reflection::patch_struct_with_map(fields, &mut *reflect, type_registry)?;
@@ -600,7 +621,7 @@ fn insert_attribute(
           (fns.insert)(world, entity, reflect)?;
         }
         None => {
-          Err(format!("Type {attr} was not registered as an attribute"))?;
+          Err(BuiError::unregistered_attribute(attr))?;
         }
       }
     }
@@ -659,7 +680,7 @@ where
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
         entity.insert((EventProducer, LeaveEventType::new(t.type_id(), type_value)));
       }
-      evt => return Err(format!("Invalid event type {evt}"))?,
+      evt => return Err(BuiError::unregistered_event(evt))?,
     }
   }
 

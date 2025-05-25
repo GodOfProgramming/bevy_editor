@@ -615,15 +615,10 @@ fn insert_attribute(
     if let Some(reflect_component) = reg.data::<ReflectComponent>() {
       let mut entity = world.entity_mut(entity);
       reflect_component.insert(&mut entity, &*reflect, type_registry);
+    } else if let Some(fns) = vtables.attrs.get(&reg.type_id()) {
+      (fns.insert)(world, entity, reflect)?;
     } else {
-      match vtables.attrs.get(&reg.type_id()) {
-        Some(fns) => {
-          (fns.insert)(world, entity, reflect)?;
-        }
-        None => {
-          Err(BuiError::unregistered_attribute(attr))?;
-        }
-      }
+      Err(BuiError::unregistered_attribute(attr))?;
     }
 
     Ok(())

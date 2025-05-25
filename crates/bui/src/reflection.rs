@@ -20,6 +20,11 @@ pub enum ReflectionError {
 
   #[error("Could not downcast {0} to {1}")]
   InvalidCast(String, String),
+
+  #[error(
+    "Type {0} does not implement Reflect correctly. Missing #[reflect(Serialize, Deserialize, FromReflect)] or registering with the plugin builder?"
+  )]
+  FailedDeserialization(String),
 }
 
 impl ReflectionError {
@@ -33,6 +38,10 @@ impl ReflectionError {
 
   pub fn invalid_cast(from: impl Into<String>, to: impl Into<String>) -> Self {
     Self::InvalidCast(from.into(), to.into())
+  }
+
+  pub fn failed_deserialization(t: impl Into<String>) -> Self {
+    Self::FailedDeserialization(t.into())
   }
 }
 
@@ -78,28 +87,32 @@ pub fn deserialize_reflect(
   let value = de.deserialize(&mut rd)?;
 
   let reflect = value
-  // first try base reflect casting
-  .try_into_reflect()
-  // then try getting the reflect from reflect component
-  .or_else(|value: Box<dyn PartialReflect>| -> Result<Box<dyn Reflect>, Box<dyn PartialReflect>> {
-      let reflect = registration.data::<ReflectFromReflect>().and_then(|rfr| {
-      rfr.from_reflect(&*value)
-    }).ok_or(value)?;
-    Ok(reflect)
-  })
-  // if that fails, try the plugin registration
-  .map_or_else(|value| {
-    let vtable = vtables.reflection.get(&registration.type_id())?;
-    let reflect = (vtable.from_reflect)(&*value)?;
-    Some(reflect)
-  }, Some)
-  // if all else fails, this is an error
-  .ok_or_else(|| {
-    let tp = registration.type_info().type_path();
-    format!(
-      "Type {tp} does not implement Reflect correctly. Missing #[reflect(Serialize, Deserialize, FromReflect)] or registering with the plugin builder?"
+    // first try base reflect casting
+    .try_into_reflect()
+    // then try getting the reflect from reflect component
+    .or_else(
+      |value: Box<dyn PartialReflect>| -> Result<Box<dyn Reflect>, Box<dyn PartialReflect>> {
+        let reflect = registration
+          .data::<ReflectFromReflect>()
+          .and_then(|rfr| rfr.from_reflect(&*value))
+          .ok_or(value)?;
+        Ok(reflect)
+      },
     )
-  })?;
+    // if that fails, try the plugin registration
+    .map_or_else(
+      |value| {
+        let vtable = vtables.reflection.get(&registration.type_id())?;
+        let reflect = (vtable.from_reflect)(&*value)?;
+        Some(reflect)
+      },
+      Some,
+    )
+    // if all else fails, this is an error
+    .ok_or_else(|| {
+      let tp = registration.type_info().type_path();
+      ReflectionError::failed_deserialization(tp)
+    })?;
 
   Ok(reflect)
 }

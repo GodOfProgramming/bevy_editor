@@ -32,14 +32,6 @@ const ON_LEAVE_EVENT: &str = "onleave";
 const XML_SCOPE_SEPARATOR: &str = ".";
 const RUST_SCOPE_SEPARATOR: &str = "::";
 
-type InteractionQuery<'w> = (
-  Entity,
-  &'w Interaction,
-  Option<&'w ClickEventType>,
-  Option<&'w HoverEventType>,
-  Option<&'w LeaveEventType>,
-);
-
 pub struct BuiPlugin {
   vtables: UiVTables,
   initializers: Vec<fn(&mut App)>,
@@ -221,7 +213,16 @@ impl BuiPlugin {
   fn interaction_system(
     mut commands: Commands,
     ui_events: Res<UiEvents>,
-    q_interactions: Query<InteractionQuery, (Changed<Interaction>, With<EventProducer>)>,
+    q_interactions: Query<
+      (
+        Entity,
+        &Interaction,
+        Option<&ClickEventType>,
+        Option<&HoverEventType>,
+        Option<&LeaveEventType>,
+      ),
+      (Changed<Interaction>, With<EventProducer>),
+    >,
   ) -> Result {
     for (entity, interaction, maybe_click, maybe_hover, maybe_leave) in &q_interactions {
       match interaction {

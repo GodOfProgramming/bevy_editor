@@ -29,3 +29,6 @@ cargo_metadata = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
 type_extractor = { workspace = true }
+
+[lints.clippy]
+type_complexity = "allow"

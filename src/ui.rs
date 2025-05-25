@@ -18,18 +18,17 @@ use bevy::{
 use bevy_egui::{EguiPlugin, egui};
 use bevy_inspector_egui::bevy_inspector;
 use egui_dock::{DockState, NodeIndex, SurfaceIndex};
-use events::{AddUiEvent, RemoveUiEvent, SaveLayoutEvent};
+use events::{AddUiEvent, RemoveUiEvent};
 use itertools::{Either, Itertools};
-use managers::UiManager;
+use managers::{LayoutManager, UiManager};
 use misc::{MissingUi, UiExtensions, UiInfo};
 use persistent_id::PersistentId;
-use prebuilt::{
-  assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
-  hierarchy::Hierarchy, inspector::Inspector, prefabs::Prefabs, resources::Resources,
-};
 use serde::{Deserialize, Serialize};
 use std::{any::TypeId, cell::RefCell, collections::BTreeMap};
 use uuid::Uuid;
+
+#[derive(SystemSet, Hash, PartialEq, Eq, Clone, Debug)]
+struct EditorUi;
 
 pub(crate) struct UiPlugin;
 
@@ -38,23 +37,15 @@ impl Plugin for UiPlugin {
     debug!("Building UI Plugin");
 
     app
-      .register_type::<MissingUi>()
-      .register_type::<EditorView>()
-      .register_type::<Hierarchy>()
-      .register_type::<DebugMenu>()
-      .register_type::<Inspector>()
-      .register_type::<Prefabs>()
-      .register_type::<Resources>()
-      .register_type::<Assets>()
-      .register_type::<Components>()
-      .add_event::<AddUiEvent>()
-      .add_event::<RemoveUiEvent>()
-      .add_event::<SaveLayoutEvent>()
-      .init_resource::<InspectorSelection>()
-      .init_state::<KeyboardFocus>()
       .add_plugins(EguiPlugin {
         enable_multipass_for_primary_context: false,
       })
+      .add_event::<AddUiEvent>()
+      .add_event::<RemoveUiEvent>()
+      .init_resource::<InspectorSelection>()
+      .init_resource::<LayoutManager>()
+      .init_state::<KeyboardFocus>()
+      .configure_sets(Update, EditorUi)
       .add_systems(Startup, (Self::init_resources, Self::setup_ctx))
       .add_systems(
         Update,
@@ -74,17 +65,17 @@ impl Plugin for UiPlugin {
           )
             .chain()
             .run_if(|editor_settings: Res<EditorSettings>| editor_settings.render_ui),
-        ),
-      )
-      .add_systems(FixedUpdate, SaveLayoutEvent::on_event);
+        )
+          .in_set(EditorUi),
+      );
   }
 }
 
 impl UiPlugin {
   fn init_resources(world: &mut World) {
     world.spawn((Name::new("Editor Ui Panels"), UiPanels));
-    world.resource_scope(|world, mut layout: Mut<UiManager>| {
-      layout.restore_or_init(world);
+    world.resource_scope(|world, mut ui_manager: Mut<UiManager>| {
+      ui_manager.restore_or_init(world);
     });
   }
 
@@ -137,13 +128,14 @@ impl UiPlugin {
   pub fn on_app_exit(
     mut cache: ResMut<Cache>,
     ui_manager: Res<UiManager>,
+    layout_manager: Res<LayoutManager>,
     q_uuids: Query<&PersistentId, Without<MissingUi>>,
     q_missing: Query<&MissingUi>,
   ) {
     let new_state = ui_manager.save_current_layout(&q_uuids, &q_missing);
     cache.store(&LayoutState {
       dock: new_state,
-      layouts: ui_manager.saved_layouts().clone(),
+      layouts: layout_manager.clone(),
     });
   }
 }
@@ -375,7 +367,7 @@ where
 }
 
 #[derive(Clone)]
-struct VTable {
+pub(crate) struct VTable {
   name: &'static str,
   spawn: fn(&mut World) -> Entity,
   despawn: fn(Entity, &mut World),

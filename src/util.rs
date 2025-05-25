@@ -12,7 +12,7 @@ use bevy::{
   prelude::*,
   reflect::GetTypeRegistration,
   state::state::FreelyMutableState,
-  window::{CursorGrabMode, PrimaryWindow, SystemCursorIcon},
+  window::{CursorGrabMode, PrimaryWindow},
   winit::cursor::CursorIcon,
 };
 use profiling::tracing::level_filters::LevelFilter;

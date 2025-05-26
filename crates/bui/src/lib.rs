@@ -293,16 +293,17 @@ impl BuiPlugin {
 
 impl Plugin for BuiPlugin {
   fn build(&self, app: &mut App) {
-    app.init_resource::<UiEvents>();
-    app.insert_resource(self.vtables.clone());
-    app.insert_resource(self.blacklist.clone());
-    app.insert_resource(self.overrides.clone());
+    app
+      .register_type::<PrimaryType>()
+      .init_resource::<UiEvents>()
+      .insert_resource(self.vtables.clone())
+      .insert_resource(self.blacklist.clone())
+      .insert_resource(self.overrides.clone())
+      .add_systems(Update, Self::interaction_system);
 
     for init in &self.initializers {
       (init)(app);
     }
-
-    app.add_systems(Update, Self::interaction_system);
   }
 }
 
@@ -428,6 +429,10 @@ impl Bui {
 
     xml::Node::serialize(entity, world, blacklist, overrides).map(|node| Self { node })
   }
+
+  pub fn try_into_string(&self) -> Result<String> {
+    self.try_into()
+  }
 }
 
 impl TryInto<String> for &Bui {
@@ -437,48 +442,21 @@ impl TryInto<String> for &Bui {
   }
 }
 
-#[derive(Bundle)]
-pub struct BuiPrime<T>
-where
-  T: Component,
-{
-  inner: T,
-  primary_type: PrimaryType,
-}
+#[derive(Component, From, Reflect)]
+pub struct PrimaryType(TypeId);
 
-impl<T> BuiPrime<T>
-where
-  T: Component,
-{
-  pub fn new(component: T) -> Self {
-    Self {
-      inner: component,
-      primary_type: PrimaryType::new::<T>(),
-    }
-  }
-}
-
-impl<T> Default for BuiPrime<T>
-where
-  T: Component + Default,
-{
+impl Default for PrimaryType {
   fn default() -> Self {
-    Self {
-      inner: T::default(),
-      primary_type: PrimaryType::new::<T>(),
-    }
+    Self::new::<()>()
   }
 }
-
-#[derive(Component, From)]
-struct PrimaryType(TypeId);
 
 impl PrimaryType {
-  fn new<T: 'static>() -> Self {
+  pub fn new<T: 'static>() -> Self {
     Self(TypeId::of::<T>())
   }
 
-  fn type_id(&self) -> TypeId {
+  pub fn type_id(&self) -> TypeId {
     self.0
   }
 }

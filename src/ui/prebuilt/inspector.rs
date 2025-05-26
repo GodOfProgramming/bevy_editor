@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use bevy_egui::egui;
 use bevy_inspector_egui::bevy_inspector::{
   by_type_id::{ui_for_asset, ui_for_resource},
-  ui_for_entities_shared_components, ui_for_entity_with_children,
+  ui_for_entities_shared_components, ui_for_entity,
 };
 use uuid::{Uuid, uuid};
 
@@ -83,7 +83,7 @@ impl RawUi for Inspector {
         InspectorSelection::Entities(selected_entities) => match selected_entities.as_slice() {
           &[entity] => {
             Self::dnd_drop_ui([entity], world, ui, |world, ui| {
-              ui_for_entity_with_children(world, entity, ui);
+              ui_for_entity(world, entity, ui);
             });
           }
           entities => {

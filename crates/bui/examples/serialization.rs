@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bui::{BuiPlugin, BuiPrime};
+use bui::{BuiPlugin, PrimaryType};
 
 fn main() -> Result {
   let mut app = App::new();
@@ -16,14 +16,16 @@ fn main() -> Result {
 fn setup(mut commands: Commands) {
   let entity = commands
     .spawn((
-      BuiPrime::new(Button),
+      PrimaryType::new::<Button>(),
+      Button,
       Node {
         width: Val::Px(150.0),
         height: Val::Px(100.0),
         ..default()
       },
       children![(
-        BuiPrime::new(Text::new("Hello World")),
+        PrimaryType::new::<Text>(),
+        Text::new("Hello World"),
         TextColor(Color::WHITE)
       )],
     ))

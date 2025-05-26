@@ -4,7 +4,7 @@ use super::{
   prebuilt::{
     assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
     hierarchy::Hierarchy, inspector::Inspector, menu_bar::MenuBar, prefabs::Prefabs,
-    resources::Resources,
+    resources::Resources, type_browser::TypeBrowser,
   },
 };
 use crate::cache::Cache;
@@ -43,6 +43,7 @@ impl UiManager {
     this.register::<MenuBar>(app);
     this.register::<Prefabs>(app);
     this.register::<Resources>(app);
+    this.register::<TypeBrowser>(app);
 
     this
   }
@@ -109,28 +110,31 @@ impl UiManager {
     self.state.decouple(self, q_uuids, q_missing)
   }
 
-  // pub fn save_layout(&mut self, name: impl Into<String>, dock: DockState<LayoutInfo>) {
-  //   self.layout_manager.insert(name.into(), dock);
-  // }
-
   pub fn surface_mut(&mut self, index: SurfaceIndex) -> Option<&mut Surface<Entity>> {
     self.state.get_surface_mut(index)
   }
 
-  pub(super) fn vtable_of(&self, entity: Entity, world: &mut World) -> &VTable {
+  pub(crate) fn vtables(&self) -> &HashMap<PersistentId, VTable> {
+    &self.vtables
+  }
+
+  pub(super) fn vtable_of(&self, entity: Entity, world: &mut World) -> Option<&VTable> {
     let mut q_ids = world.query::<&PersistentId>();
     let id = q_ids.get(world, entity).unwrap();
     self.get_vtable_by_id(id)
   }
 
-  pub(super) fn get_vtable_by_id(&self, id: &PersistentId) -> &VTable {
-    &self.vtables[id]
+  pub(super) fn get_vtable_by_id(&self, id: &PersistentId) -> Option<&VTable> {
+    self.vtables.get(id)
   }
 
   pub(crate) fn switch_state(&mut self, new_state: DockState<Entity>, world: &mut World) {
     for entity in self.state.iter_all_tabs().map(|(_, entity)| *entity) {
-      let vtable = self.vtable_of(entity, world);
-      (vtable.despawn)(entity, world);
+      if let Some(vtable) = self.vtable_of(entity, world) {
+        (vtable.despawn)(entity, world);
+      } else {
+        world.despawn(entity);
+      }
     }
     self.state = new_state;
   }
@@ -175,10 +179,6 @@ impl UiManager {
 
   pub fn state(&self) -> &DockState<Entity> {
     &self.state
-  }
-
-  pub(crate) fn vtables(&self) -> &HashMap<PersistentId, VTable> {
-    &self.vtables
   }
 }
 

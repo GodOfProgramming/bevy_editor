@@ -9,6 +9,7 @@ mod view;
 
 pub use bevy_egui;
 pub use bevy_egui::egui;
+pub use bui;
 use persistent_id::Identifiable;
 use registry::components::{ComponentRegistry, RegisterableComponent, RegisterableComponents};
 pub use serde;

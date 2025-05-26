@@ -181,13 +181,16 @@ impl DockExtensions for DockState<Entity> {
     self.map_tabs(|tab| {
       let id;
       let name;
+
       if let Ok(missing_uuid) = q_missing.get(*tab) {
         id = *missing_uuid.id();
         name = missing_uuid.name.clone();
       } else {
         id = *q_persistent_ids.get(*tab).unwrap();
-        let vtable = ui_manager.get_vtable_by_id(&id);
-        name = vtable.name.into();
+        name = ui_manager
+          .get_vtable_by_id(&id)
+          .map(|vt| vt.name.to_string())
+          .unwrap_or_default();
       }
 
       LayoutInfo { id, name }

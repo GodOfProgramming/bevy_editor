@@ -15,6 +15,8 @@ pub struct MenuBar;
 
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
+  commands: Commands<'w, 's>,
+
   editor_state: Res<'w, State<EditorState>>,
   next_editor_state: ResMut<'w, NextState<EditorState>>,
   active_camera_state: Res<'w, State<ActiveEditorCamera>>,
@@ -61,7 +63,7 @@ impl Ui for MenuBar {
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
     egui::menu::bar(ui, |ui| {
-      self.tools_menu(ui);
+      self.tools_menu(ui, &mut params);
       self.view_menu(ui, &mut params);
       self.game_control(ui, &mut params);
     });
@@ -73,9 +75,13 @@ impl Ui for MenuBar {
 }
 
 impl MenuBar {
-  fn tools_menu(&self, ui: &mut egui::Ui) {
+  fn tools_menu(&self, ui: &mut egui::Ui, params: &mut Params) {
     ui.menu_button("Tools", |ui| {
-      if ui.button("Generate UUID").clicked() {
+      if ui.button("Spawn Empty Entity").clicked() {
+        params.commands.spawn_empty();
+      }
+
+      if ui.button("Copy New UUID").clicked() {
         ui.output_mut(|output| {
           output
             .commands
@@ -267,14 +273,11 @@ impl SaveLayoutEvent {
         ui.text_edit_singleline(save_name_text);
       });
       ui.horizontal(|ui| {
-        components::Button::new("Save")
-          .show(ui)
-          .filter(|response| response.clicked())
-          .then(|| {
-            let dock = ui_manager.state().decouple(ui_manager, q_uuids, q_missing);
-            layout_manager.insert(save_name_text.take(), dock);
-            save_clicked = true;
-          });
+        if ui.button("Save").clicked() {
+          let dock = ui_manager.state().decouple(ui_manager, q_uuids, q_missing);
+          layout_manager.insert(save_name_text.take(), dock);
+          save_clicked = true;
+        }
       });
     });
 

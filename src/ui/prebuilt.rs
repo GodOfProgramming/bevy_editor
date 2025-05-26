@@ -8,3 +8,4 @@ pub mod inspector;
 pub mod menu_bar;
 pub mod prefabs;
 pub mod resources;
+pub mod type_browser;

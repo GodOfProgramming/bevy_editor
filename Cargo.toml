@@ -20,6 +20,7 @@ async-std = "1.13.0"
 bevy = "0.16.0"
 bevy-inspector-egui = "0.31.0"
 bevy_egui = "0.34.1"
+bui = { path = "./crates/bui" }
 cargo_metadata = "0.19.2"
 const-str = "0.6.2"
 const_format = "0.2.34"
@@ -31,6 +32,7 @@ egui-file-dialog = "0.9.0"
 egui-phosphor = "0.9.0"
 egui_demo_lib = "0.31.1"
 egui_dock = "0.16.0"
+fuzzy-matcher = "0.3.7"
 itertools = "0.14.0"
 lazy_static = "1.5.0"
 leafwing-input-manager = "0.17.0"
@@ -60,16 +62,17 @@ xml-rs = "0.8.26"
 [dependencies]
 
 # exports
-uuid = { workspace = true, features = ["serde"] }
 bevy_egui = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
+bui = { workspace = true }
 macros = { workspace = true }
 persistent-id = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+uuid = { workspace = true, features = ["serde"] }
 
 # internal
 async-std = { workspace = true }
 bevy = { workspace = true, features = ["default", "serialize"] }
-bevy-inspector-egui = { workspace = true }
+bevy-inspector-egui = { workspace = true, features = ["highlight_changes"] }
 const-str = { workspace = true }
 const_format = { workspace = true }
 derive-new = { workspace = true }
@@ -77,6 +80,7 @@ derive_more = { workspace = true, features = ["full"] }
 egui-file-dialog = { workspace = true }
 egui-phosphor = { workspace = true }
 egui_dock = { workspace = true, features = ["serde"] }
+fuzzy-matcher = { workspace = true }
 itertools = { workspace = true }
 leafwing-input-manager = { workspace = true }
 nucleo = { workspace = true }

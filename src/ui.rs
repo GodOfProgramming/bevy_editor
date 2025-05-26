@@ -114,12 +114,16 @@ impl UiPlugin {
 
     world.resource_scope(|world, ui_manager: Mut<UiManager>| {
       for entity in rendered {
-        let vtable = ui_manager.vtable_of(entity, world);
+        let Some(vtable) = ui_manager.vtable_of(entity, world) else {
+          continue;
+        };
         (vtable.when_rendered)(entity, world);
       }
 
       for entity in unrendered {
-        let vtable = ui_manager.vtable_of(entity, world);
+        let Some(vtable) = ui_manager.vtable_of(entity, world) else {
+          continue;
+        };
         (vtable.when_not_rendered)(entity, world);
       }
     });

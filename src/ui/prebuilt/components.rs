@@ -8,6 +8,8 @@ use bevy_egui::egui::{self};
 use std::marker::PhantomData;
 use uuid::uuid;
 
+use super::InspectorDnd;
+
 #[derive(Component, Reflect)]
 pub struct Components {
   components_per_row: usize,
@@ -61,7 +63,7 @@ impl Ui for Components {
       let card_height = card_width;
 
       let id = **id;
-      ui.dnd_drag_source(egui::Id::new(id), id, |ui| {
+      ui.dnd_drag_source(egui::Id::new(id), InspectorDnd::AddComponent(id), |ui| {
         Card::new((card_width, card_height))
           .with_label(comp.name())
           .show(ui, |ui| {

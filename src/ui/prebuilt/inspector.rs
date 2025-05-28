@@ -10,7 +10,10 @@ use bevy_inspector_egui::bevy_inspector::{
   by_type_id::{ui_for_asset, ui_for_resource},
   ui_for_entities_shared_components, ui_for_entity,
 };
+use bui::PrimaryType;
 use uuid::{Uuid, uuid};
+
+use super::InspectorDnd;
 
 #[derive(Default, Component, Reflect)]
 pub struct Inspector;
@@ -32,13 +35,20 @@ impl Inspector {
     let bg_fill = ui.style().visuals.window_fill();
     ui.style_mut().visuals.widgets.inactive.bg_fill = bg_fill;
 
-    let (_, component_id) = ui.dnd_drop_zone::<TypeId, ()>(frame, |ui| {
+    let (_, component_id) = ui.dnd_drop_zone::<InspectorDnd, ()>(frame, |ui| {
       ui.set_min_size(available_rect.size());
       render_fn(world, ui);
     });
 
-    if let Some(component_id) = component_id {
-      Self::spawn_components_on(&component_id, entities.as_ref(), world);
+    if let Some(dnd) = component_id {
+      match *dnd {
+        InspectorDnd::AddComponent(type_id) => {
+          Self::spawn_components_on(&type_id, entities.as_ref(), world);
+        }
+        InspectorDnd::SetPrimaryType(type_id) => {
+          Self::set_primary_type(type_id, entities.as_ref(), world);
+        }
+      }
     }
   }
 
@@ -58,6 +68,12 @@ impl Inspector {
       if world.get_by_id(*entity, component_id).is_none() {
         component.spawn(*entity, world);
       }
+    }
+  }
+
+  fn set_primary_type(type_id: TypeId, entities: &[Entity], world: &mut World) {
+    for entity in entities {
+      world.entity_mut(*entity).insert(PrimaryType::from(type_id));
     }
   }
 }

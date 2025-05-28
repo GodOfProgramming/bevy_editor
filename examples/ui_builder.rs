@@ -1,5 +1,6 @@
 use beditor::Editor;
 use bevy::prelude::*;
+use bui::BuiPlugin;
 
 fn main() {
   let mut editor = Editor::default();
@@ -8,7 +9,8 @@ fn main() {
     .register_component::<Name>()
     .register_component::<Node>()
     .register_component::<Text>()
-    .register_component::<Button>();
+    .register_component::<Button>()
+    .add_plugins(BuiPlugin::default());
 
   editor.run();
 }

@@ -58,24 +58,102 @@ impl BorderedBox {
     self
   }
 
-  pub fn draw(&self, ui: &mut egui::Ui, contents: impl FnOnce(&mut egui::Ui)) {
-    Self::ui(ui, self.pos, self.size, self.thickness, contents);
+  pub fn draw<R>(
+    &self,
+    ui: &mut egui::Ui,
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+  ) -> egui::InnerResponse<R> {
+    Self::ui(ui, self.pos, self.size, self.thickness, contents)
   }
 
-  fn ui(
+  fn ui<R>(
     ui: &mut egui::Ui,
     pos: egui::Pos2,
     size: egui::Vec2,
     thickness: f32,
-    contents: impl FnOnce(&mut egui::Ui),
-  ) {
+    contents: impl FnOnce(&mut egui::Ui) -> R,
+  ) -> egui::InnerResponse<R> {
     let rect = egui::Rect::from_min_size(pos, size);
     let stroke = egui::Stroke::new(thickness, ui.style().visuals.widgets.active.fg_stroke.color);
 
     egui::Frame::default().stroke(stroke).show(ui, |ui| {
       ui.set_min_size(rect.size());
       ui.set_max_size(rect.size());
-      (contents)(ui);
+      (contents)(ui)
+    })
+  }
+}
+
+pub struct Card {
+  size: egui::Vec2,
+  label: Option<egui::WidgetText>,
+  border_thickness: Option<f32>,
+  content_size: Option<f32>,
+}
+
+impl Card {
+  pub fn new(size: impl Into<egui::Vec2>) -> Self {
+    Self {
+      size: size.into(),
+      label: None,
+      border_thickness: None,
+      content_size: None,
+    }
+  }
+
+  pub fn with_label(mut self, text: impl Into<egui::WidgetText>) -> Self {
+    self.label = Some(text.into());
+    self
+  }
+
+  pub fn with_border_thickness(mut self, thickness: impl Into<f32>) -> Self {
+    self.border_thickness = Some(thickness.into());
+    self
+  }
+
+  pub fn with_content_size(mut self, size: impl Into<f32>) -> Self {
+    self.content_size = Some(size.into());
+    self
+  }
+
+  pub fn show<R>(
+    &self,
+    ui: &mut egui::Ui,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+  ) -> egui::InnerResponse<R> {
+    let border_thickness = self.border_thickness.unwrap_or_else(|| self.size.x / 25.0);
+    let cell_content_size = self.content_size.unwrap_or(self.size.x - border_thickness);
+
+    ui.vertical_centered(|ui| {
+      ui.set_width(self.size.x);
+      ui.set_height(self.size.y);
+
+      let resp = BorderedBox::new((0.0, 0.0), (cell_content_size, cell_content_size))
+        .with_thickness(border_thickness)
+        .draw(ui, |ui| {
+          ui.centered_and_justified(|ui| add_contents(ui)).inner
+        });
+
+      if let Some(text) = &self.label {
+        ui.label(text.clone());
+      }
+
+      resp.inner
+    })
+  }
+}
+
+pub fn horizontal_list<T>(
+  ui: &mut egui::Ui,
+  columns: usize,
+  iterable: impl AsRef<[T]>,
+  mut add_content: impl FnMut(&mut egui::Ui, &T),
+) {
+  for chunk in iterable.as_ref().chunks(columns) {
+    ui.columns(columns, |uis| {
+      for (ui, item) in uis.iter_mut().zip(chunk.iter()) {
+        add_content(ui, item);
+      }
     });
   }
 }

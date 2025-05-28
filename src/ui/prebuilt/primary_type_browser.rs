@@ -6,7 +6,7 @@ use itertools::Itertools;
 use uuid::uuid;
 
 #[derive(Default, Component, Reflect)]
-pub struct TypeBrowser;
+pub struct PrimaryTypeBrowser;
 
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
@@ -18,7 +18,7 @@ pub struct Params<'w, 's> {
   filter: Local<'s, String>,
 }
 
-impl Ui for TypeBrowser {
+impl Ui for PrimaryTypeBrowser {
   const NAME: &str = "Type Browser";
 
   const ID: uuid::Uuid = uuid!("3c1e4565-fd52-498f-892f-dfabbab3c7ef");
@@ -70,11 +70,11 @@ impl Ui for TypeBrowser {
     );
   }
 
-  fn handle_tab_response(&mut self, _params: Self::Params<'_, '_>, response: &egui::Response) {
-    response.clone().on_hover_text("Any selected entities from the Hierarchy panel will have a PrimaryType applied to them with the selected type. This makes them serializable UI");
-  }
-
   fn unique() -> bool {
     true
+  }
+
+  fn scroll_bars(&self, _params: Self::Params<'_, '_>) -> [bool; 2] {
+    [false, false]
   }
 }

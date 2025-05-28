@@ -4,7 +4,7 @@ use super::{
   prebuilt::{
     assets::Assets, components::Components, debug::DebugMenu, editor_view::EditorView,
     hierarchy::Hierarchy, inspector::Inspector, menu_bar::MenuBar, prefabs::Prefabs,
-    resources::Resources, type_browser::TypeBrowser,
+    primary_type_browser::PrimaryTypeBrowser, resources::Resources,
   },
 };
 use crate::cache::Cache;
@@ -43,7 +43,7 @@ impl UiManager {
     this.register::<MenuBar>(app);
     this.register::<Prefabs>(app);
     this.register::<Resources>(app);
-    this.register::<TypeBrowser>(app);
+    this.register::<PrimaryTypeBrowser>(app);
 
     this
   }

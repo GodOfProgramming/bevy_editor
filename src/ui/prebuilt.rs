@@ -7,5 +7,5 @@ pub mod hierarchy;
 pub mod inspector;
 pub mod menu_bar;
 pub mod prefabs;
+pub mod primary_type_browser;
 pub mod resources;
-pub mod type_browser;

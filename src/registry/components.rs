@@ -10,7 +10,10 @@ use bevy::{
 };
 use std::any::TypeId;
 
-use crate::Editor;
+use crate::{
+  Editor,
+  util::{VDir, VirtualItem},
+};
 
 macro_rules! impl_reg_comp {
   // Base case: stop recursion
@@ -41,6 +44,7 @@ macro_rules! impl_reg_comp {
 #[derive(Default, Resource)]
 pub struct ComponentRegistry {
   mapping: TypeIdMap<RegisteredComponent>,
+  root: VDir<RegisteredComponent>,
 }
 
 impl ComponentRegistry {
@@ -55,13 +59,26 @@ impl ComponentRegistry {
   pub fn iter(&self) -> impl Iterator<Item = (&TypeId, &RegisteredComponent)> {
     self.mapping.iter()
   }
+
+  pub fn root_dir(&self) -> &VDir<RegisteredComponent> {
+    &self.root
+  }
+
+  pub fn dir_iter(&self) -> impl Iterator<Item = (&String, &VDir<RegisteredComponent>)> {
+    self.root.subdirs()
+  }
+
+  pub fn item_iter(&self) -> impl Iterator<Item = (&String, &RegisteredComponent)> {
+    self.root.items()
+  }
 }
 
 #[derive(Clone)]
 pub struct RegisteredComponent {
   name: &'static str,
-  spawn_fn: fn(entity: Entity, &mut World),
+  type_id: TypeId,
   id: ComponentId,
+  spawn_fn: fn(entity: Entity, &mut World),
 }
 
 impl RegisteredComponent {
@@ -73,8 +90,20 @@ impl RegisteredComponent {
     (self.spawn_fn)(entity, world);
   }
 
+  pub fn type_id(&self) -> TypeId {
+    self.type_id
+  }
+
   pub fn id(&self) -> ComponentId {
     self.id
+  }
+}
+
+impl VirtualItem for RegisteredComponent {
+  const SEPARATOR: &str = "::";
+
+  fn path(&self) -> &str {
+    self.name()
   }
 }
 
@@ -87,18 +116,30 @@ where
   T: Reflect + GetTypeRegistration + FromWorld + Component,
 {
   fn register(world: &mut World, component_registry: &mut ComponentRegistry) {
+    let type_id = TypeId::of::<T>();
     let id = world.register_component::<T>();
     component_registry.mapping.insert(
-      TypeId::of::<T>(),
+      type_id,
       RegisteredComponent {
         name: T::get_type_registration().type_info().type_path(),
+        type_id,
+        id,
         spawn_fn: |entity, world| {
           let comp = T::from_world(world);
           world.entity_mut(entity).insert(comp);
         },
-        id,
       },
     );
+
+    component_registry.root.insert(RegisteredComponent {
+      name: T::get_type_registration().type_info().type_path(),
+      type_id,
+      id,
+      spawn_fn: |entity, world| {
+        let comp = T::from_world(world);
+        world.entity_mut(entity).insert(comp);
+      },
+    });
   }
 }
 

@@ -9,24 +9,35 @@ use walkdir::WalkDir;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub fn extract_structs(pkg: &Package) -> Result<Vec<syn::ItemStruct>> {
-  let mut structs = Vec::new();
+pub fn extract_if(pkg: &Package, condition: impl Fn(&syn::Item) -> bool) -> Result<Vec<syn::Item>> {
+  let mut items = Vec::new();
 
   let crate_path = find_crate_path(pkg)?;
-  for_each_file(&crate_path, |syntax| {
-    let s = syntax
+
+  for_each_file(&crate_path, |ast| {
+    let s = ast
       .items
       .into_iter()
-      .filter_map(|item| {
-        if let syn::Item::Struct(s) = item {
-          Some(s)
-        } else {
-          None
-        }
-      })
+      .filter(|item| condition(item))
       .collect::<Vec<_>>();
-    structs.extend(s);
+
+    items.extend(s);
   })?;
+
+  Ok(items)
+}
+
+pub fn extract_structs(pkg: &Package) -> Result<Vec<syn::ItemStruct>> {
+  let structs = extract_if(pkg, |ast| matches!(ast, syn::Item::Struct(_)))?
+    .into_iter()
+    .filter_map(|item| {
+      if let syn::Item::Struct(s) = item {
+        Some(s)
+      } else {
+        None
+      }
+    })
+    .collect();
 
   Ok(structs)
 }
@@ -72,8 +83,8 @@ where
     .filter(|e| e.path().extension().map(|ext| ext == "rs").unwrap_or(false))
   {
     let content = fs::read_to_string(entry.path())?;
-    if let Ok(syntax) = syn::parse_file(&content) {
-      (f)(syntax);
+    if let Ok(ast) = syn::parse_file(&content) {
+      (f)(ast);
     }
   }
 

@@ -1,5 +1,6 @@
 use bevy_egui::egui;
 use derive_new::new;
+use itertools::Itertools;
 
 #[derive(new)]
 pub struct Dialog<T>
@@ -58,7 +59,7 @@ impl BorderedBox {
     self
   }
 
-  pub fn draw<R>(
+  pub fn show<R>(
     &self,
     ui: &mut egui::Ui,
     contents: impl FnOnce(&mut egui::Ui) -> R,
@@ -116,11 +117,11 @@ impl Card {
     self
   }
 
-  pub fn show<R>(
+  pub fn show(
     &self,
     ui: &mut egui::Ui,
-    add_contents: impl FnOnce(&mut egui::Ui) -> R,
-  ) -> egui::InnerResponse<R> {
+    add_contents: impl FnOnce(&mut egui::Ui),
+  ) -> egui::Response {
     let border_thickness = self.border_thickness.unwrap_or_else(|| self.size.x / 25.0);
     let cell_content_size = self.content_size.unwrap_or(self.size.x - border_thickness);
 
@@ -128,30 +129,30 @@ impl Card {
       ui.set_width(self.size.x);
       ui.set_height(self.size.y);
 
-      let resp = BorderedBox::new((0.0, 0.0), (cell_content_size, cell_content_size))
+      BorderedBox::new((0.0, 0.0), (cell_content_size, cell_content_size))
         .with_thickness(border_thickness)
-        .draw(ui, |ui| {
-          ui.centered_and_justified(|ui| add_contents(ui)).inner
-        });
+        .show(ui, |ui| ui.centered_and_justified(|ui| add_contents(ui)));
 
       if let Some(text) = &self.label {
         ui.label(text.clone());
       }
-
-      resp.inner
     })
+    .response
   }
 }
 
-pub fn horizontal_list<T>(
+pub fn horizontal_list<I, T>(
   ui: &mut egui::Ui,
   columns: usize,
-  iterable: impl AsRef<[T]>,
-  mut add_content: impl FnMut(&mut egui::Ui, &T),
-) {
-  for chunk in iterable.as_ref().chunks(columns) {
+  iterable: I,
+  mut add_content: impl FnMut(&mut egui::Ui, T),
+) where
+  I: IntoIterator<Item = T> + Sized,
+{
+  let chunks = iterable.into_iter().chunks(columns);
+  for chunk in &chunks {
     ui.columns(columns, |uis| {
-      for (ui, item) in uis.iter_mut().zip(chunk.iter()) {
+      for (ui, item) in uis.iter_mut().zip(chunk) {
         add_content(ui, item);
       }
     });

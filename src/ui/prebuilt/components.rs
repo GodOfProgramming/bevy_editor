@@ -1,10 +1,12 @@
 use crate::{
   Ui,
-  registry::components::ComponentRegistry,
+  registry::components::{ComponentRegistry, RegisteredComponent},
   ui::components::{Card, horizontal_list},
+  util::VDir,
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{self};
+use itertools::Itertools;
 use std::marker::PhantomData;
 use uuid::uuid;
 
@@ -26,7 +28,11 @@ impl Default for Components {
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
   component_registry: Res<'w, ComponentRegistry>,
+
   filter: Local<'s, String>,
+
+  current_dir: Local<'s, Option<&'static VDir<RegisteredComponent>>>,
+
   _pd: PhantomData<&'s ()>,
 }
 
@@ -62,10 +68,52 @@ impl Ui for Components {
       let card_width = ui.available_width();
       let card_height = card_width;
 
-      let id = **id;
+      let id = *id;
       ui.dnd_drag_source(egui::Id::new(id), InspectorDnd::AddComponent(id), |ui| {
         Card::new((card_width, card_height))
           .with_label(comp.name())
+          .show(ui, |ui| {
+            let text =
+              egui::RichText::new(egui_phosphor::regular::PUZZLE_PIECE).size(card_width / 3.0);
+            ui.label(text);
+          });
+      });
+    });
+
+    let components = if let Some(current_dir) = &*params.current_dir {
+      current_dir
+    } else {
+      params.component_registry.root_dir()
+    };
+
+    horizontal_list(ui, num_columns, components.subdirs(), |ui, (name, comp)| {
+      let card_width = ui.available_width();
+      let card_height = card_width;
+
+      let resp = Card::new((card_width, card_height))
+        .with_label(name)
+        .show(ui, |ui| {
+          let text = egui::RichText::new(egui_phosphor::regular::FOLDER).size(card_width / 3.0);
+          ui.label(text);
+        });
+
+      if resp.clicked() {
+        info!("Clicked?");
+      }
+
+      if resp.double_clicked() {
+        info!("Enter new folder {name}");
+      }
+    });
+
+    horizontal_list(ui, num_columns, components.items(), |ui, (name, comp)| {
+      let card_width = ui.available_width();
+      let card_height = card_width;
+
+      let id = comp.type_id();
+      ui.dnd_drag_source(egui::Id::new(id), InspectorDnd::AddComponent(id), |ui| {
+        Card::new((card_width, card_height))
+          .with_label(name)
           .show(ui, |ui| {
             let text =
               egui::RichText::new(egui_phosphor::regular::PUZZLE_PIECE).size(card_width / 3.0);

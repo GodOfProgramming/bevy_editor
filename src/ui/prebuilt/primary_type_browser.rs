@@ -1,15 +1,10 @@
 use crate::{
   Ui,
   registry::components::ComponentRegistry,
-  ui::{
-    InspectorSelection,
-    components::{Card, horizontal_list},
-  },
+  ui::components::{Card, horizontal_list},
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui;
-use bui::PrimaryType;
-use itertools::Itertools;
 use uuid::uuid;
 
 use super::InspectorDnd;
@@ -21,16 +16,13 @@ pub struct PrimaryTypeBrowser {
 
 #[derive(SystemParam)]
 pub struct Params<'w, 's> {
-  commands: Commands<'w, 's>,
-
   component_registry: Res<'w, ComponentRegistry>,
-  selection: ResMut<'w, InspectorSelection>,
 
   filter: Local<'s, String>,
 }
 
 impl Ui for PrimaryTypeBrowser {
-  const NAME: &str = "Type Browser";
+  const NAME: &str = "Primary Type Browser";
 
   const ID: uuid::Uuid = uuid!("3c1e4565-fd52-498f-892f-dfabbab3c7ef");
 
@@ -63,7 +55,7 @@ impl Ui for PrimaryTypeBrowser {
       let card_width = ui.available_width();
       let card_height = card_width;
 
-      let id = **id;
+      let id = *id;
       ui.dnd_drag_source(egui::Id::new(id), InspectorDnd::SetPrimaryType(id), |ui| {
         Card::new((card_width, card_height))
           .with_label(comp.name())

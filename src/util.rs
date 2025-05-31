@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, marker::PhantomData};
 
 use bevy::{
   log::{
@@ -11,6 +11,7 @@ use bevy::{
   window::CursorGrabMode,
   winit::cursor::CursorIcon,
 };
+use itertools::Itertools;
 use profiling::tracing::level_filters::LevelFilter;
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -151,5 +152,86 @@ impl From<LogLevel> for LevelFilter {
       LogLevel::Warn => LevelFilter::WARN,
       LogLevel::Error => LevelFilter::ERROR,
     }
+  }
+}
+
+pub struct VDir<T>
+where
+  T: VirtualItem,
+{
+  parent: Option<Vec<String>>,
+  subdirs: BTreeMap<String, Self>,
+  items: BTreeMap<String, T>,
+}
+
+impl<T> Default for VDir<T>
+where
+  T: VirtualItem,
+{
+  fn default() -> Self {
+    Self {
+      parent: None,
+      subdirs: default(),
+      items: default(),
+    }
+  }
+}
+
+impl<T> VDir<T>
+where
+  T: VirtualItem,
+{
+  pub fn new_root() -> Self {
+    Self::default()
+  }
+
+  pub fn insert(&mut self, item: T) {
+    let path = item.path();
+    let mut path = path.split(T::SEPARATOR);
+
+    let count = path.clone().count();
+
+    let (path, Some(name)) = (if count == 0 {
+      (None, path.next())
+    } else {
+      (Some(path.clone().take(count - 1)), path.nth(count - 1))
+    }) else {
+      return;
+    };
+
+    let mut dir = self;
+
+    if let Some(path) = path {
+      for p in path {
+        dir = dir.subdirs.entry(String::from(p)).or_default();
+      }
+    }
+
+    dir.items.insert(String::from(name), item);
+  }
+
+  pub fn subdirs(&self) -> impl Iterator<Item = (&String, &Self)> {
+    self.subdirs.iter()
+  }
+
+  pub fn items(&self) -> impl Iterator<Item = (&String, &T)> {
+    self.items.iter()
+  }
+}
+
+pub trait VirtualItem {
+  const SEPARATOR: &str;
+
+  fn path(&self) -> &str;
+}
+
+impl<T> VirtualItem for T
+where
+  T: TypePath,
+{
+  const SEPARATOR: &str = "::";
+
+  fn path(&self) -> &str {
+    T::type_path()
   }
 }

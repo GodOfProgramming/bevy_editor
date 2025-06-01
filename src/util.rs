@@ -1,5 +1,4 @@
-use std::{collections::BTreeMap, marker::PhantomData};
-
+use crate::cache::{Cache, Saveable};
 use bevy::{
   log::{
     BoxedLayer, Level,
@@ -11,11 +10,10 @@ use bevy::{
   window::CursorGrabMode,
   winit::cursor::CursorIcon,
 };
-use itertools::Itertools;
+use derive_more::derive::{Deref, DerefMut};
 use profiling::tracing::level_filters::LevelFilter;
 use serde::{Deserialize, Serialize, Serializer};
-
-use crate::cache::{Cache, Saveable};
+use std::{collections::BTreeMap, hint::unreachable_unchecked, ops::Deref};
 
 #[macro_export]
 macro_rules! here {
@@ -155,39 +153,90 @@ impl From<LogLevel> for LevelFilter {
   }
 }
 
-pub struct VDir<T>
-where
-  T: VirtualItem,
-{
-  parent: Option<Vec<String>>,
-  subdirs: BTreeMap<String, Self>,
-  items: BTreeMap<String, T>,
+#[derive(Clone)]
+pub enum VfsNode<T> {
+  Directory(VfsDir<T>),
+  Item(T),
 }
 
-impl<T> Default for VDir<T>
-where
-  T: VirtualItem,
-{
-  fn default() -> Self {
-    Self {
-      parent: None,
-      subdirs: default(),
-      items: default(),
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub enum VfsIdent {
+  Dir(String),
+  Item(String),
+}
+
+impl Deref for VfsIdent {
+  type Target = String;
+
+  fn deref(&self) -> &Self::Target {
+    match self {
+      VfsIdent::Dir(s) => s,
+      VfsIdent::Item(s) => s,
     }
   }
 }
 
-impl<T> VDir<T>
+#[derive(Deref, DerefMut)]
+pub struct VfsDir<T> {
+  name: String,
+  parent: Option<Vec<String>>,
+
+  #[deref]
+  #[deref_mut]
+  entries: BTreeMap<VfsIdent, VfsNode<T>>,
+}
+
+impl<T> Default for VfsDir<T> {
+  fn default() -> Self {
+    Self {
+      name: String::new(),
+      parent: None,
+      entries: default(),
+    }
+  }
+}
+
+impl<T> Clone for VfsDir<T>
 where
-  T: VirtualItem,
+  T: Clone,
 {
+  fn clone(&self) -> Self {
+    Self {
+      name: self.name.clone(),
+      parent: self.parent.clone(),
+      entries: self.entries.clone(),
+    }
+  }
+}
+
+impl<T> VfsDir<T> {
   pub fn new_root() -> Self {
     Self::default()
   }
 
-  pub fn insert(&mut self, item: T) {
-    let path = item.path();
-    let mut path = path.split(T::SEPARATOR);
+  pub fn new_child(name: impl Into<String>, path: impl Into<Vec<String>>) -> Self {
+    Self {
+      name: name.into(),
+      parent: Some(path.into()),
+      entries: default(),
+    }
+  }
+
+  pub fn iter(&self) -> impl Iterator<Item = (&VfsIdent, &VfsNode<T>)> {
+    self.entries.iter()
+  }
+
+  pub fn add<I, S>(&mut self, path: I, name: impl Into<String>, item: T)
+  where
+    I: Iterator<Item = S>,
+    S: AsRef<str>,
+  {
+    let dir = self.get_dir(0, path);
+    dir.insert(VfsIdent::Item(name.into()), VfsNode::Item(item));
+  }
+
+  pub fn add_by_full_path(&mut self, full_path: impl AsRef<str>, separator: &str, item: T) {
+    let mut path = full_path.as_ref().split(separator);
 
     let count = path.clone().count();
 
@@ -199,23 +248,53 @@ where
       return;
     };
 
+    let dir = if let Some(path) = path {
+      self.get_dir(count, path)
+    } else {
+      self
+    };
+
+    dir
+      .entries
+      .insert(VfsIdent::Item(String::from(name)), VfsNode::Item(item));
+  }
+
+  fn get_dir<S>(&mut self, count: usize, path: impl Iterator<Item = S>) -> &mut Self
+  where
+    S: AsRef<str>,
+  {
     let mut dir = self;
 
-    if let Some(path) = path {
-      for p in path {
-        dir = dir.subdirs.entry(String::from(p)).or_default();
+    let mut path_builder = Vec::with_capacity(count.max(1) - 1);
+
+    for p in path {
+      let part = String::from(p.as_ref());
+      path_builder.push(part.clone());
+
+      let entry = dir
+        .entries
+        .entry(VfsIdent::Dir(part))
+        .or_insert_with(|| VfsNode::Directory(default()));
+
+      if let VfsNode::Directory(d) = entry {
+        dir = d
+      } else {
+        unsafe {
+          unreachable_unchecked();
+        }
       }
     }
 
-    dir.items.insert(String::from(name), item);
+    dir
   }
+}
 
-  pub fn subdirs(&self) -> impl Iterator<Item = (&String, &Self)> {
-    self.subdirs.iter()
-  }
-
-  pub fn items(&self) -> impl Iterator<Item = (&String, &T)> {
-    self.items.iter()
+impl<T> VfsDir<T>
+where
+  T: VirtualItem,
+{
+  pub fn insert(&mut self, item: T) {
+    self.add_by_full_path(String::from(item.path()), T::SEPARATOR, item);
   }
 }
 

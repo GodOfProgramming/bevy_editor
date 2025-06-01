@@ -51,7 +51,7 @@ impl Ui for PrimaryTypeBrowser {
       })
       .collect::<Vec<_>>();
 
-    horizontal_list(ui, num_columns, components, |ui, (id, comp)| {
+    horizontal_list(ui, num_columns, components, |ui, _, (id, comp)| {
       let card_width = ui.available_width();
       let card_height = card_width;
 

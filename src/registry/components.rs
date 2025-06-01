@@ -12,7 +12,7 @@ use std::any::TypeId;
 
 use crate::{
   Editor,
-  util::{VDir, VirtualItem},
+  util::{VfsDir, VfsNode, VirtualItem},
 };
 
 macro_rules! impl_reg_comp {
@@ -44,7 +44,7 @@ macro_rules! impl_reg_comp {
 #[derive(Default, Resource)]
 pub struct ComponentRegistry {
   mapping: TypeIdMap<RegisteredComponent>,
-  root: VDir<RegisteredComponent>,
+  vfs: VfsDir<TypeId>,
 }
 
 impl ComponentRegistry {
@@ -60,16 +60,8 @@ impl ComponentRegistry {
     self.mapping.iter()
   }
 
-  pub fn root_dir(&self) -> &VDir<RegisteredComponent> {
-    &self.root
-  }
-
-  pub fn dir_iter(&self) -> impl Iterator<Item = (&String, &VDir<RegisteredComponent>)> {
-    self.root.subdirs()
-  }
-
-  pub fn item_iter(&self) -> impl Iterator<Item = (&String, &RegisteredComponent)> {
-    self.root.items()
+  pub fn root_dir(&self) -> &VfsDir<TypeId> {
+    &self.vfs
   }
 }
 
@@ -99,14 +91,6 @@ impl RegisteredComponent {
   }
 }
 
-impl VirtualItem for RegisteredComponent {
-  const SEPARATOR: &str = "::";
-
-  fn path(&self) -> &str {
-    self.name()
-  }
-}
-
 pub trait RegisterableComponent: GetTypeRegistration + FromWorld + Component {
   fn register(world: &mut World, component_registry: &mut ComponentRegistry);
 }
@@ -116,12 +100,14 @@ where
   T: Reflect + GetTypeRegistration + FromWorld + Component,
 {
   fn register(world: &mut World, component_registry: &mut ComponentRegistry) {
+    let name = T::get_type_registration().type_info().type_path();
     let type_id = TypeId::of::<T>();
     let id = world.register_component::<T>();
+
     component_registry.mapping.insert(
       type_id,
       RegisteredComponent {
-        name: T::get_type_registration().type_info().type_path(),
+        name,
         type_id,
         id,
         spawn_fn: |entity, world| {
@@ -131,15 +117,7 @@ where
       },
     );
 
-    component_registry.root.insert(RegisteredComponent {
-      name: T::get_type_registration().type_info().type_path(),
-      type_id,
-      id,
-      spawn_fn: |entity, world| {
-        let comp = T::from_world(world);
-        world.entity_mut(entity).insert(comp);
-      },
-    });
+    component_registry.vfs.add_by_full_path(name, "::", type_id);
   }
 }
 

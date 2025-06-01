@@ -1,20 +1,61 @@
+use super::InspectorDnd;
 use crate::{
   Ui,
   registry::components::{ComponentRegistry, RegisteredComponent},
   ui::components::{Card, horizontal_list},
-  util::VDir,
+  util::{VfsDir, VfsNode},
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{self};
-use itertools::Itertools;
-use std::marker::PhantomData;
+use std::{any::TypeId, marker::PhantomData};
 use uuid::uuid;
-
-use super::InspectorDnd;
 
 #[derive(Component, Reflect)]
 pub struct Components {
   components_per_row: usize,
+}
+
+impl Components {
+  fn ui_for_dir(
+    current_dir: &mut Option<VfsDir<TypeId>>,
+    ui: &mut egui::Ui,
+    size: impl Into<egui::Vec2>,
+    label: &str,
+    i: usize,
+    dir: &VfsDir<TypeId>,
+  ) {
+    let size = size.into();
+    let response = Card::new(size)
+      .with_label(label)
+      .show(ui, |ui| {
+        let text = egui::RichText::new(egui_phosphor::regular::FOLDER).size(size.x / 3.0);
+        ui.label(text);
+
+        ui.interact(ui.min_rect(), ui.id().with(i), egui::Sense::click())
+      })
+      .inner
+      .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    if response.double_clicked() {
+      *current_dir = Some(dir.clone());
+    }
+  }
+
+  fn ui_for_item(
+    ui: &mut egui::Ui,
+    size: impl Into<egui::Vec2>,
+    label: &str,
+    component: &RegisteredComponent,
+  ) {
+    let size = size.into();
+    let id = component.type_id();
+    ui.dnd_drag_source(egui::Id::new(id), InspectorDnd::AddComponent(id), |ui| {
+      Card::new(size).with_label(label).show(ui, |ui| {
+        let text = egui::RichText::new(egui_phosphor::regular::PUZZLE_PIECE).size(size.x / 3.0);
+        ui.label(text);
+      });
+    });
+  }
 }
 
 impl Default for Components {
@@ -29,9 +70,9 @@ impl Default for Components {
 pub struct Params<'w, 's> {
   component_registry: Res<'w, ComponentRegistry>,
 
-  filter: Local<'s, String>,
+  current_dir: Local<'s, Option<VfsDir<TypeId>>>,
 
-  current_dir: Local<'s, Option<&'static VDir<RegisteredComponent>>>,
+  filter: Local<'s, String>,
 
   _pd: PhantomData<&'s ()>,
 }
@@ -54,72 +95,37 @@ impl Ui for Components {
 
     let components = params
       .component_registry
+      .root_dir()
       .iter()
-      .filter(|(_id, comp)| {
-        params.filter.is_empty()
-          || comp
-            .name()
+      .filter(|(ident, _)| {
+        params.filter.is_empty() || {
+          ident
             .to_lowercase()
             .contains(params.filter.to_lowercase().as_str())
-      })
-      .collect::<Vec<_>>();
-
-    horizontal_list(ui, num_columns, components, |ui, (id, comp)| {
-      let card_width = ui.available_width();
-      let card_height = card_width;
-
-      let id = *id;
-      ui.dnd_drag_source(egui::Id::new(id), InspectorDnd::AddComponent(id), |ui| {
-        Card::new((card_width, card_height))
-          .with_label(comp.name())
-          .show(ui, |ui| {
-            let text =
-              egui::RichText::new(egui_phosphor::regular::PUZZLE_PIECE).size(card_width / 3.0);
-            ui.label(text);
-          });
+        }
       });
-    });
 
-    let components = if let Some(current_dir) = &*params.current_dir {
-      current_dir
-    } else {
-      params.component_registry.root_dir()
-    };
-
-    horizontal_list(ui, num_columns, components.subdirs(), |ui, (name, comp)| {
+    horizontal_list(ui, num_columns, components, |ui, i, (name, vdir)| {
       let card_width = ui.available_width();
       let card_height = card_width;
 
-      let resp = Card::new((card_width, card_height))
-        .with_label(name)
-        .show(ui, |ui| {
-          let text = egui::RichText::new(egui_phosphor::regular::FOLDER).size(card_width / 3.0);
-          ui.label(text);
-        });
-
-      if resp.clicked() {
-        info!("Clicked?");
+      match vdir {
+        VfsNode::Directory(dir) => {
+          Self::ui_for_dir(
+            &mut params.current_dir,
+            ui,
+            (card_width, card_height),
+            name,
+            i,
+            dir,
+          );
+        }
+        VfsNode::Item(type_id) => {
+          if let Some(component) = params.component_registry.get(type_id) {
+            Self::ui_for_item(ui, (card_width, card_height), name, component);
+          }
+        }
       }
-
-      if resp.double_clicked() {
-        info!("Enter new folder {name}");
-      }
-    });
-
-    horizontal_list(ui, num_columns, components.items(), |ui, (name, comp)| {
-      let card_width = ui.available_width();
-      let card_height = card_width;
-
-      let id = comp.type_id();
-      ui.dnd_drag_source(egui::Id::new(id), InspectorDnd::AddComponent(id), |ui| {
-        Card::new((card_width, card_height))
-          .with_label(name)
-          .show(ui, |ui| {
-            let text =
-              egui::RichText::new(egui_phosphor::regular::PUZZLE_PIECE).size(card_width / 3.0);
-            ui.label(text);
-          });
-      });
     });
   }
 

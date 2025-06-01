@@ -1,4 +1,4 @@
-use bevy_egui::egui;
+use bevy_egui::egui::{self, UiBuilder};
 use derive_new::new;
 use itertools::Itertools;
 
@@ -117,27 +117,28 @@ impl Card {
     self
   }
 
-  pub fn show(
+  pub fn show<R>(
     &self,
     ui: &mut egui::Ui,
-    add_contents: impl FnOnce(&mut egui::Ui),
-  ) -> egui::Response {
-    let border_thickness = self.border_thickness.unwrap_or_else(|| self.size.x / 25.0);
-    let cell_content_size = self.content_size.unwrap_or(self.size.x - border_thickness);
-
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+  ) -> egui::InnerResponse<R> {
     ui.vertical_centered(|ui| {
       ui.set_width(self.size.x);
       ui.set_height(self.size.y);
 
-      BorderedBox::new((0.0, 0.0), (cell_content_size, cell_content_size))
+      let border_thickness = self.border_thickness.unwrap_or_else(|| self.size.x / 25.0);
+      let cell_content_size = self.content_size.unwrap_or(self.size.x - border_thickness);
+
+      let inner = BorderedBox::new((0.0, 0.0), (cell_content_size, cell_content_size))
         .with_thickness(border_thickness)
-        .show(ui, |ui| ui.centered_and_justified(|ui| add_contents(ui)));
+        .show(ui, |ui| ui.centered_and_justified(add_contents));
 
       if let Some(text) = &self.label {
         ui.label(text.clone());
       }
+
+      inner.inner.inner
     })
-    .response
   }
 }
 
@@ -145,15 +146,17 @@ pub fn horizontal_list<I, T>(
   ui: &mut egui::Ui,
   columns: usize,
   iterable: I,
-  mut add_content: impl FnMut(&mut egui::Ui, T),
+  mut add_content: impl FnMut(&mut egui::Ui, usize, T),
 ) where
   I: IntoIterator<Item = T> + Sized,
 {
+  let mut index = 0;
   let chunks = iterable.into_iter().chunks(columns);
   for chunk in &chunks {
     ui.columns(columns, |uis| {
       for (ui, item) in uis.iter_mut().zip(chunk) {
-        add_content(ui, item);
+        add_content(ui, index, item);
+        index += 1;
       }
     });
   }

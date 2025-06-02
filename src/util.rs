@@ -1,3 +1,5 @@
+pub mod vfs;
+
 use crate::cache::{Cache, Saveable};
 use bevy::{
   log::{

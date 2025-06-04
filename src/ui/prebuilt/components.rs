@@ -3,7 +3,7 @@ use crate::{
   Ui,
   registry::components::{ComponentRegistry, RegisteredComponent},
   ui::components::{Card, horizontal_list},
-  util::{VfsDir, VfsNode},
+  util::vfs::{VfsDir, VfsNode, VfsPath},
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{self};
@@ -17,13 +17,12 @@ pub struct Components {
 
 impl Components {
   fn ui_for_dir(
-    current_dir: &mut Option<VfsDir<TypeId>>,
+    current_path: &mut VfsPath,
     ui: &mut egui::Ui,
     size: impl Into<egui::Vec2>,
     label: &str,
     i: usize,
-    dir: &VfsDir<TypeId>,
-  ) {
+  ) -> bool {
     let size = size.into();
     let response = Card::new(size)
       .with_label(label)
@@ -37,7 +36,11 @@ impl Components {
       .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     if response.double_clicked() {
-      *current_dir = Some(dir.clone());
+      info!("here");
+      current_path.push(String::from(label));
+      true
+    } else {
+      false
     }
   }
 
@@ -71,6 +74,7 @@ pub struct Params<'w, 's> {
   component_registry: Res<'w, ComponentRegistry>,
 
   current_dir: Local<'s, Option<VfsDir<TypeId>>>,
+  current_path: Local<'s, VfsPath>,
 
   filter: Local<'s, String>,
 
@@ -93,40 +97,58 @@ impl Ui for Components {
 
     let num_columns = self.components_per_row.max(1);
 
-    let components = params
-      .component_registry
-      .root_dir()
-      .iter()
-      .filter(|(ident, _)| {
-        params.filter.is_empty() || {
-          ident
-            .to_lowercase()
-            .contains(params.filter.to_lowercase().as_str())
-        }
-      });
+    if params.current_dir.is_none() {
+      *params.current_dir = params
+        .component_registry
+        .vfs()
+        .get_dir(&*params.current_path)
+        .cloned();
+    }
 
-    horizontal_list(ui, num_columns, components, |ui, i, (name, vdir)| {
+    let Some(current_dir) = &*params.current_dir else {
+      return;
+    };
+
+    let components = current_dir.iter().filter(|node| {
+      params.filter.is_empty() || {
+        node
+          .name()
+          .to_lowercase()
+          .contains(params.filter.to_lowercase().as_str())
+      }
+    });
+
+    let mut clicked = false;
+
+    horizontal_list(ui, num_columns, components, |ui, i, node| {
       let card_width = ui.available_width();
       let card_height = card_width;
 
-      match vdir {
-        VfsNode::Directory(dir) => {
-          Self::ui_for_dir(
-            &mut params.current_dir,
+      match node {
+        VfsNode::Dir(dir) => {
+          clicked = Self::ui_for_dir(
+            &mut params.current_path,
             ui,
             (card_width, card_height),
-            name,
-            i,
             dir,
+            i,
           );
         }
-        VfsNode::Item(type_id) => {
-          if let Some(component) = params.component_registry.get(type_id) {
+        VfsNode::Item { name, value } => {
+          if let Some(component) = params.component_registry.get(value) {
             Self::ui_for_item(ui, (card_width, card_height), name, component);
           }
         }
       }
     });
+
+    if clicked {
+      *params.current_dir = params
+        .component_registry
+        .vfs()
+        .get_dir(&*params.current_path)
+        .cloned();
+    }
   }
 
   fn unique() -> bool {

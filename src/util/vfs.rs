@@ -8,6 +8,12 @@ pub struct Vfs<T> {
   inner: HashMap<VfsPath, VfsDir<T>>,
 }
 
+impl<T> Default for Vfs<T> {
+  fn default() -> Self {
+    Self { inner: default() }
+  }
+}
+
 impl<T> Vfs<T> {
   pub fn new() -> Self {
     Self { inner: default() }
@@ -47,7 +53,19 @@ pub struct VfsPath<T = String>(Vec<T>)
 where
   T: Eq + Hash;
 
-impl VfsPath {
+impl<T> VfsPath<T>
+where
+  T: Eq + Hash,
+{
+  pub fn push(&mut self, item: T) {
+    self.0.push(item);
+  }
+}
+
+impl<T> VfsPath<T>
+where
+  T: Eq + Hash + Clone,
+{
   pub fn parent(&self) -> Option<Self> {
     match self.0.len() {
       0 => None,
@@ -58,7 +76,9 @@ impl VfsPath {
       }
     }
   }
+}
 
+impl VfsPath {
   pub fn parent_ref(&self) -> Option<VfsPath<&str>> {
     match self.0.len() {
       0 => None,
@@ -71,6 +91,15 @@ impl VfsPath {
         Some(VfsPath(refs))
       }
     }
+  }
+}
+
+impl<T> Default for VfsPath<T>
+where
+  T: Eq + Hash,
+{
+  fn default() -> Self {
+    Self(Vec::new())
   }
 }
 
@@ -111,6 +140,12 @@ impl<'s, const N: usize> From<[&'s str; N]> for VfsPath<&'s str> {
   }
 }
 
+impl<'s> From<Vec<&'s str>> for VfsPath<&'s str> {
+  fn from(value: Vec<&'s str>) -> Self {
+    Self(value)
+  }
+}
+
 impl<const N: usize> Equivalent<VfsPath> for [&str; N] {
   fn equivalent(&self, key: &VfsPath) -> bool {
     key.0.as_slice() == self
@@ -129,9 +164,24 @@ impl Equivalent<VfsPath> for &VfsPath<&str> {
   }
 }
 
+impl Equivalent<VfsPath> for &VfsPath {
+  fn equivalent(&self, key: &VfsPath) -> bool {
+    self.0 == key.0
+  }
+}
+
 pub enum VfsNode<T> {
   Dir(String),
   Item { name: String, value: T },
+}
+
+impl<T> VfsNode<T> {
+  pub fn name(&self) -> &str {
+    match self {
+      VfsNode::Dir(name) => name,
+      VfsNode::Item { name, .. } => name,
+    }
+  }
 }
 
 impl<T> PartialEq for VfsNode<T> {
@@ -184,6 +234,21 @@ impl<T> Ord for VfsNode<T> {
   }
 }
 
+impl<T> Clone for VfsNode<T>
+where
+  T: Clone,
+{
+  fn clone(&self) -> Self {
+    match self {
+      Self::Dir(dir) => Self::Dir(dir.clone()),
+      Self::Item { name, value } => Self::Item {
+        name: name.clone(),
+        value: value.clone(),
+      },
+    }
+  }
+}
+
 pub struct VfsDir<T> {
   nodes: BTreeSet<VfsNode<T>>,
 }
@@ -211,9 +276,22 @@ impl<T> VfsDir<T> {
   }
 
   pub fn get(&self, item_name: &str) -> Option<&VfsNode<T>> {
-    self.nodes.iter().find(|n| match n {
-      VfsNode::Dir(name) | VfsNode::Item { name, .. } => name == item_name,
-    })
+    self.nodes.iter().find(|n| n.name() == item_name)
+  }
+
+  pub fn iter(&self) -> impl Iterator<Item = &VfsNode<T>> {
+    self.nodes.iter()
+  }
+}
+
+impl<T> Clone for VfsDir<T>
+where
+  T: Clone,
+{
+  fn clone(&self) -> Self {
+    Self {
+      nodes: self.nodes.clone(),
+    }
   }
 }
 

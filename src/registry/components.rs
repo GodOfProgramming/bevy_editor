@@ -12,7 +12,7 @@ use std::any::TypeId;
 
 use crate::{
   Editor,
-  util::{VfsDir, VfsNode, VirtualItem},
+  util::vfs::{Vfs, VfsPath},
 };
 
 macro_rules! impl_reg_comp {
@@ -44,7 +44,7 @@ macro_rules! impl_reg_comp {
 #[derive(Default, Resource)]
 pub struct ComponentRegistry {
   mapping: TypeIdMap<RegisteredComponent>,
-  vfs: VfsDir<TypeId>,
+  vfs: Vfs<TypeId>,
 }
 
 impl ComponentRegistry {
@@ -60,7 +60,7 @@ impl ComponentRegistry {
     self.mapping.iter()
   }
 
-  pub fn root_dir(&self) -> &VfsDir<TypeId> {
+  pub fn vfs(&self) -> &Vfs<TypeId> {
     &self.vfs
   }
 }
@@ -117,7 +117,24 @@ where
       },
     );
 
-    component_registry.vfs.add_by_full_path(name, "::", type_id);
+    let mut path = name.split("::");
+
+    let count = path.clone().count();
+
+    let (path, Some(name)) = (if count == 0 {
+      (Vec::new(), path.next())
+    } else {
+      (
+        path.clone().take(count - 1).collect::<Vec<_>>(),
+        path.nth(count - 1),
+      )
+    }) else {
+      return;
+    };
+
+    let path: VfsPath<&str> = path.into();
+    let dir = component_registry.vfs.create(path);
+    dir.add_item(name, type_id);
   }
 }
 

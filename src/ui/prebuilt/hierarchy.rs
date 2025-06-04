@@ -1,4 +1,4 @@
-use crate::ui::{InspectorSelection, RawUi, SelectedEntities, components};
+use crate::ui::{EditorUi, InspectorSelection, RawUi, SelectedEntities, components};
 use async_std::path::PathBuf;
 use bevy::{prelude::*, reflect::TypeRegistry, tasks::IoTaskPool};
 use bevy_egui::egui::{self, TextBuffer};
@@ -20,12 +20,9 @@ impl RawUi for Hierarchy {
       .add_event::<SerializeUiEvent>()
       .add_systems(
         FixedUpdate,
-        (
-          SelectEntityEvent::handle,
-          ReparentEvent::handle,
-          SerializeUiEvent::handle,
-        ),
-      );
+        (SelectEntityEvent::handle, ReparentEvent::handle),
+      )
+      .add_systems(Update, SerializeUiEvent::handle.after(EditorUi));
   }
 
   fn spawn(_entity: Entity, _world: &mut World) -> Self {

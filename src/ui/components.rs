@@ -17,25 +17,20 @@ where
   pub fn open(
     self,
     ctx: &egui::Context,
-    opened: bool,
+    mut opened: bool,
     contents: impl FnOnce(&mut egui::Ui),
   ) -> bool {
-    let mut opened = opened;
     if opened {
-      let window = egui::Window::new(self.title).open(&mut opened);
-      Self::ui(ctx, window, contents);
+      egui::Window::new(self.title)
+        .open(&mut opened)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .title_bar(true)
+        .resizable(false)
+        .movable(false)
+        .collapsible(false)
+        .show(ctx, contents);
     }
     opened
-  }
-
-  fn ui(ctx: &egui::Context, window: egui::Window, contents: impl FnOnce(&mut egui::Ui)) {
-    window
-      .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-      .title_bar(true)
-      .resizable(false)
-      .movable(false)
-      .collapsible(false)
-      .show(ctx, contents);
   }
 }
 

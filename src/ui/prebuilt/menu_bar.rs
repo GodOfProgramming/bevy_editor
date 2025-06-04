@@ -47,7 +47,7 @@ impl Ui for MenuBar {
       .add_event::<LoadLayoutEvent>()
       .add_event::<ResetLayoutEvent>()
       .add_systems(
-        FixedUpdate,
+        Update,
         (
           SaveLayoutEvent::handle,
           LoadLayoutEvent::handle,

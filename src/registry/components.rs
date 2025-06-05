@@ -135,6 +135,12 @@ where
     let path: VfsPath<&str> = path.into();
     let dir = component_registry.vfs.create(path);
     dir.add_item(name, type_id);
+
+    info!("==== Begin ====");
+    for (p, d) in component_registry.vfs.iter() {
+      info!("Registered path: {p:?}: {d:?}");
+    }
+    info!("==== End ====");
   }
 }
 

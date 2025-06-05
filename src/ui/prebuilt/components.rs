@@ -7,6 +7,7 @@ use crate::{
 };
 use bevy::{ecs::system::SystemParam, prelude::*};
 use bevy_egui::egui::{self};
+use itertools::Itertools;
 use std::{any::TypeId, marker::PhantomData};
 use uuid::uuid;
 
@@ -36,7 +37,6 @@ impl Components {
       .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     if response.double_clicked() {
-      info!("here");
       current_path.push(String::from(label));
       true
     } else {
@@ -93,7 +93,19 @@ impl Ui for Components {
   }
 
   fn render(&mut self, ui: &mut egui::Ui, mut params: Self::Params<'_, '_>) {
-    ui.text_edit_singleline(&mut *params.filter);
+    ui.horizontal(|ui| {
+      ui.text_edit_singleline(&mut *params.filter);
+      let text = egui::RichText::new(egui_phosphor::regular::ARROW_U_UP_LEFT);
+      if params.current_path.has_parent() && ui.button(text).clicked() {
+        if let Some(parent) = params.current_path.parent() {
+          *params.current_path = parent;
+          *params.current_dir = None;
+        }
+      }
+    });
+
+    let full_path = params.current_path.iter().join("/");
+    ui.label(full_path);
 
     let num_columns = self.components_per_row.max(1);
 

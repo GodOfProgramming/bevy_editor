@@ -1,7 +1,9 @@
 use bevy::platform::collections::{Equivalent, HashMap};
 use bevy::prelude::*;
+use bevy_inspector_egui::egui_utils::easymark::parser::Item;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
+use std::fmt::Debug;
 use std::hash::Hash;
 
 pub struct Vfs<T> {
@@ -22,9 +24,7 @@ impl<T> Vfs<T> {
   pub fn create(&mut self, path: impl Into<VfsPath>) -> &mut VfsDir<T> {
     let path = path.into();
     if let Some((parent_ref, basename)) = path.parent_ref().zip(path.basename()) {
-      if self.get_dir(&parent_ref).is_none() {
-        self.create(parent_ref).add_dir(basename);
-      }
+      self.create(parent_ref).add_dir(basename);
     }
     self.inner.entry(path).or_default()
   }
@@ -46,9 +46,13 @@ impl<T> Vfs<T> {
       .zip(path_ref.basename())
       .and_then(|(parent, item)| self.inner.get(&parent).and_then(|dir| dir.get(item)))
   }
+
+  pub fn iter(&self) -> impl Iterator<Item = (&VfsPath, &VfsDir<T>)> {
+    self.inner.iter()
+  }
 }
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct VfsPath<T = String>(Vec<T>)
 where
   T: Eq + Hash;
@@ -60,12 +64,20 @@ where
   pub fn push(&mut self, item: T) {
     self.0.push(item);
   }
+
+  pub fn iter(&self) -> impl Iterator<Item = &T> {
+    self.0.iter()
+  }
 }
 
 impl<T> VfsPath<T>
 where
   T: Eq + Hash + Clone,
 {
+  pub fn has_parent(&self) -> bool {
+    !self.0.is_empty()
+  }
+
   pub fn parent(&self) -> Option<Self> {
     match self.0.len() {
       0 => None,
@@ -249,6 +261,25 @@ where
   }
 }
 
+impl<T> Debug for VfsNode<T>
+where
+  T: Debug,
+{
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    match self {
+      VfsNode::Dir(dir) => f
+        .debug_tuple(std::any::type_name::<Self>())
+        .field(&dir)
+        .finish(),
+      VfsNode::Item { name, value } => f
+        .debug_struct(std::any::type_name::<Self>())
+        .field("name", name)
+        .field("value", value)
+        .finish(),
+    }
+  }
+}
+
 pub struct VfsDir<T> {
   nodes: BTreeSet<VfsNode<T>>,
 }
@@ -295,6 +326,17 @@ where
   }
 }
 
+impl<T> Debug for VfsDir<T>
+where
+  T: Debug,
+{
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct(std::any::type_name::<Self>())
+      .field("nodes", &self.nodes)
+      .finish()
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::{Vfs, VfsNode, VfsPath};
@@ -304,6 +346,7 @@ mod tests {
     let mut vfs = Vfs::new();
 
     vfs.create(["dir"]).add_item("item", 1);
+    vfs.create(["dir2"]);
 
     let VfsNode::Item { value, .. } = vfs.get_node(VfsPath::from(["dir", "item"])).unwrap() else {
       panic!("Item not an item");
@@ -318,5 +361,11 @@ mod tests {
     };
 
     assert_eq!(dir, "dir");
+
+    let VfsNode::Dir(dir) = root.get("dir2").unwrap() else {
+      panic!("Dir is not a dir")
+    };
+
+    assert_eq!(dir, "dir2");
   }
 }

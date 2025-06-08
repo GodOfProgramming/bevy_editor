@@ -3,6 +3,7 @@ pub mod ui;
 pub mod xml;
 
 use bevy::{
+  asset::{AssetLoader, LoadContext, io},
   platform::collections::HashSet,
   prelude::*,
   reflect::{Reflectable, TypeRegistry},
@@ -22,6 +23,8 @@ use ui::{
 };
 use xml::Attr;
 
+type GenericError = Box<dyn std::error::Error + Send + Sync>;
+
 const EVENT_PREFIX: &str = "event";
 const SELF: &str = "self";
 
@@ -33,7 +36,7 @@ const XML_SCOPE_SEPARATOR: &str = ".";
 const RUST_SCOPE_SEPARATOR: &str = "::";
 
 pub struct BuiPlugin {
-  vtables: UiVTables,
+  vtables: BuiResource,
   initializers: Vec<fn(&mut App)>,
   blacklist: SerializationBlacklist,
   overrides: SerializationOverrides,
@@ -85,8 +88,10 @@ impl BuiPlugin {
       A::register_params(world);
     });
 
+    let type_id = TypeId::of::<A>();
+
     self.vtables.attrs.insert(
-      TypeId::of::<A>(),
+      type_id,
       AttrVTable {
         insert: |world, entity, value: Box<dyn Reflect + 'static>| {
           let value = value.take::<A>().map_err(|value| {
@@ -277,7 +282,7 @@ impl BuiPlugin {
         .map(|reflect| reflect.reflect_clone())
         .transpose()?;
       commands.queue(move |world: &mut World| -> Result {
-        world.resource_scope(|world, vtables: Mut<UiVTables>| {
+        world.resource_scope(|world, vtables: Mut<BuiResource>| {
           if let Some(vtable) = vtables.events.get(&event_type) {
             let event = (vtable.create)(world, default_value);
             world.run_system_with(sys, (entity, event))??;
@@ -295,6 +300,8 @@ impl Plugin for BuiPlugin {
   fn build(&self, app: &mut App) {
     app
       .register_type::<PrimaryType>()
+      .register_asset_loader(BuiLoader)
+      .init_asset::<Bui>()
       .init_resource::<UiEvents>()
       .insert_resource(self.vtables.clone())
       .insert_resource(self.blacklist.clone())
@@ -364,7 +371,7 @@ impl BuiError {
 }
 
 #[derive(Default, Resource, Clone)]
-struct UiVTables {
+pub struct BuiResource {
   elements: TypeIdMap<ElementVTable>,
   attrs: TypeIdMap<AttrVTable>,
   events: TypeIdMap<EventVTable>,
@@ -406,17 +413,24 @@ struct Overrides {
 #[derive(Resource, Default, Deref, DerefMut, Clone)]
 struct SerializationOverrides(TypeIdMap<Overrides>);
 
+#[derive(Asset, Reflect, Default)]
 pub struct Bui {
+  #[reflect(ignore)]
   node: xml::Node,
 }
 
 impl Bui {
-  pub fn parse_all(ui_xml: &str) -> Result<Vec<Self>, xml::ParseError> {
-    xml::parse(ui_xml).map(|nodes| nodes.into_iter().map(|node| Self { node }).collect())
+  pub fn parse(ui_xml: &str) -> Result<Self, xml::ParseError> {
+    xml::parse(ui_xml).map(|node| Self { node })
   }
 
-  pub fn spawn(&self, world: &mut World) -> Result<Entity> {
-    spawn_node(&self.node, world)
+  pub fn spawn(
+    &self,
+    entity_manager: &mut impl EntityManager,
+    bui_resource: &BuiResource,
+    type_registry: &TypeRegistry,
+  ) -> Result<Entity> {
+    spawn_node(&self.node, entity_manager, bui_resource, type_registry)
   }
 
   pub fn serialize(entity: Entity, world: &World) -> Result<Self> {
@@ -442,6 +456,33 @@ impl TryInto<String> for &Bui {
   }
 }
 
+struct BuiLoader;
+
+impl AssetLoader for BuiLoader {
+  type Asset = Bui;
+
+  type Settings = ();
+
+  type Error = GenericError;
+
+  async fn load(
+    &self,
+    reader: &mut dyn io::Reader,
+    _settings: &Self::Settings,
+    _load_context: &mut LoadContext<'_>,
+  ) -> Result<Self::Asset, Self::Error> {
+    let mut bytes = Vec::new();
+    reader.read_to_end(&mut bytes).await?;
+    let xml = String::from_utf8(bytes)?;
+    let bui = Bui::parse(&xml)?;
+    Ok(bui)
+  }
+
+  fn extensions(&self) -> &[&str] {
+    &[".bui.xml"]
+  }
+}
+
 #[derive(Component, From, Reflect)]
 pub struct PrimaryType(TypeId);
 
@@ -461,26 +502,32 @@ impl PrimaryType {
   }
 }
 
-fn spawn_node(node: &xml::Node, world: &mut World) -> Result<Entity> {
+fn spawn_node(
+  node: &xml::Node,
+  entity_manager: &mut impl EntityManager,
+  bui_resource: &BuiResource,
+  type_registry: &TypeRegistry,
+) -> Result<Entity> {
   match node {
-    xml::Node::Tag(tag) => {
-      let type_registry = world.resource::<AppTypeRegistry>().clone();
-      let type_registry = type_registry.read();
-      spawn_tag(tag, world, &type_registry)
-    }
-    xml::Node::Text(text) => Ok(spawn_text(text, world)),
+    xml::Node::Tag(tag) => spawn_tag(tag, entity_manager, bui_resource, type_registry),
+    xml::Node::Text(text) => Ok(spawn_text(text, entity_manager)),
   }
 }
 
-fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) -> Result<Entity> {
+fn spawn_tag(
+  tag: &xml::Tag,
+  entity_manager: &mut impl EntityManager,
+  bui_resource: &BuiResource,
+  type_registry: &TypeRegistry,
+) -> Result<Entity> {
   let name = deserialize_name(tag.name());
 
   let registration = reflection::get_type_registration_from_name(&name, type_registry)?;
-  let reflect_component = registration
+  let reflect_component_data = registration
     .data::<ReflectComponent>()
     .ok_or_else(|| ReflectionError::missing_type_data(&name, stringify!(ReflectComponent)))?;
 
-  let mut reflect = tag.attr(Attr::named(SELF)).map_or_else(
+  let mut reflected_component_instance = tag.attr(Attr::named(SELF)).map_or_else(
     || -> Result<Box<dyn Reflect>> {
       // use reflect default if there is no self attrib
       let reflect = registration
@@ -491,9 +538,8 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
       Ok(reflect)
     },
     |data: &str| -> Result<Box<dyn Reflect>> {
-      let reflect = world.resource_scope(|_, vtables: Mut<UiVTables>| {
-        reflection::deserialize_reflect(type_registry, registration, data, &vtables)
-      })?;
+      let reflect =
+        reflection::deserialize_reflect(type_registry, registration, data, bui_resource)?;
 
       Ok(reflect)
     },
@@ -508,7 +554,7 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
         .and_then(|prefix| (prefix == SELF).then_some(Either::Left((k.name(), v))))
         .unwrap_or(Either::Right((k, v)))
     });
-  reflection::patch_struct_with_map(fields, &mut *reflect, type_registry)?;
+  reflection::patch_struct_with_map(fields, &mut *reflected_component_instance, type_registry)?;
 
   let (events, components): (Vec<_>, Vec<_>) = rest.into_iter().partition_map(|(k, v)| {
     k.prefix()
@@ -516,35 +562,37 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
       .unwrap_or(Either::Right((k, v)))
   });
 
-  // create children first, as they need the world
-  let children = create_child_entities(tag.children(), world)?;
+  let entity = entity_manager.spawn(PrimaryType::from(registration.type_id()));
 
-  let entity = world.resource_scope(|world, vtables: Mut<UiVTables>| {
-    // vtables is needed for events which comes far below, but because
-    // entity_ref requires mutable world access this whole process has to be scoped
-    let mut entity = world.spawn(PrimaryType::from(registration.type_id()));
+  entity_manager.insert_reflect(
+    entity,
+    reflect_component_data,
+    reflected_component_instance,
+    type_registry,
+  );
 
-    // add the reflected value to this entity
-    reflect_component.insert(&mut entity, &*reflect, type_registry);
+  // then add all children
+  let children =
+    create_child_entities(tag.children(), entity_manager, bui_resource, type_registry)?;
+  entity_manager.add_children(entity, children);
 
-    // then add all children
-    entity.add_children(&children);
-
-    // add all events
-
-    if let Err(err) = bind_events(events, &mut entity, type_registry, &vtables) {
-      let id = entity.id();
-      world.despawn(id);
-      return Err(err);
-    }
-
-    Ok(entity.id())
-  })?;
+  // add all events
+  if let Err(err) = bind_events(events, entity, entity_manager, type_registry, bui_resource) {
+    entity_manager.despawn(entity);
+    return Err(err);
+  }
 
   // the world is free again and now the attributes can be created
   for (attr, value) in components {
-    if let Err(err) = insert_attribute(attr, value, world, entity, type_registry) {
-      world.despawn(entity);
+    if let Err(err) = insert_attribute(
+      entity,
+      attr,
+      value,
+      entity_manager,
+      bui_resource,
+      type_registry,
+    ) {
+      entity_manager.despawn(entity);
       return Err(err);
     }
   }
@@ -552,24 +600,24 @@ fn spawn_tag(tag: &xml::Tag, world: &mut World, type_registry: &TypeRegistry) ->
   Ok(entity)
 }
 
-fn spawn_text(text: &str, world: &mut World) -> Entity {
-  world
-    .spawn((Text::new(text.to_string()), PrimaryType::new::<Text>()))
-    .id()
+fn spawn_text(text: &str, entity_manager: &mut impl EntityManager) -> Entity {
+  entity_manager.spawn((Text::new(text.to_string()), PrimaryType::new::<Text>()))
 }
 
 fn create_child_entities<'c>(
   child_elements: impl IntoIterator<Item = &'c xml::Node>,
-  world: &mut World,
+  entity_manager: &mut impl EntityManager,
+  bui_resource: &BuiResource,
+  type_registry: &TypeRegistry,
 ) -> Result<Vec<Entity>> {
   let mut children = Vec::new();
 
   for child in child_elements {
-    match spawn_node(child, world) {
+    match spawn_node(child, entity_manager, bui_resource, type_registry) {
       Ok(child) => children.push(child),
       Err(err) => {
         for child in children {
-          world.despawn(child);
+          entity_manager.despawn(child);
         }
         return Err(err);
       }
@@ -580,35 +628,49 @@ fn create_child_entities<'c>(
 }
 
 fn insert_attribute(
+  entity: Entity,
   attr: &xml::Attr,
   value: &str,
-  world: &mut World,
-  entity: Entity,
+  entity_manager: &mut impl EntityManager,
+  bui_resource: &BuiResource,
   type_registry: &TypeRegistry,
 ) -> Result {
-  world.resource_scope(|world, vtables: Mut<UiVTables>| -> Result {
-    let name = deserialize_name(attr.to_string());
-    let reg = reflection::get_type_registration_from_name(&name, type_registry)?;
-    let reflect = reflection::deserialize_reflect(type_registry, reg, value, &vtables)?;
+  let name = deserialize_name(attr.to_string());
+  let reg = reflection::get_type_registration_from_name(&name, type_registry)?;
 
-    if let Some(reflect_component) = reg.data::<ReflectComponent>() {
-      let mut entity = world.entity_mut(entity);
-      reflect_component.insert(&mut entity, &*reflect, type_registry);
-    } else if let Some(fns) = vtables.attrs.get(&reg.type_id()) {
-      (fns.insert)(world, entity, reflect)?;
-    } else {
-      Err(BuiError::unregistered_attribute(attr))?;
-    }
+  if let Some(reflect_component_data) = reg.data::<ReflectComponent>() {
+    let reflected_component_instance =
+      reflection::deserialize_reflect(type_registry, reg, value, bui_resource)?;
 
-    Ok(())
-  })
+    entity_manager.insert_reflect(
+      entity,
+      reflect_component_data,
+      reflected_component_instance,
+      type_registry,
+    );
+  } else if let Some(fns) = bui_resource.attrs.get(&reg.type_id()) {
+    let reflected_component_instance =
+      reflection::deserialize_reflect(type_registry, reg, value, bui_resource)?;
+
+    let insert = fns.insert;
+    entity_manager.with_world(move |world| {
+      if let Err(e) = (insert)(world, entity, reflected_component_instance) {
+        error!("{e}");
+      }
+    });
+  } else {
+    Err(BuiError::unregistered_attribute(attr))?;
+  }
+
+  Ok(())
 }
 
 fn bind_events<K, V>(
   events: impl IntoIterator<Item = (K, V)>,
-  entity: &mut EntityWorldMut,
+  entity: Entity,
+  entity_manager: &mut impl EntityManager,
   type_registry: &TypeRegistry,
-  vtables: &UiVTables,
+  bui_res: &BuiResource,
 ) -> Result
 where
   K: AsRef<str>,
@@ -637,22 +699,32 @@ where
     let type_value = type_value
       .map(|type_value| {
         let registration = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        reflection::deserialize_reflect(type_registry, registration, type_value, vtables)
+        reflection::deserialize_reflect(type_registry, registration, type_value, bui_res)
       })
       .transpose()?;
 
     match event_name {
       ON_CLICK_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((EventProducer, ClickEventType::new(t.type_id(), type_value)));
+
+        entity_manager.insert(
+          entity,
+          (EventProducer, ClickEventType::new(t.type_id(), type_value)),
+        );
       }
       ON_HOVER_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((EventProducer, HoverEventType::new(t.type_id(), type_value)));
+        entity_manager.insert(
+          entity,
+          (EventProducer, HoverEventType::new(t.type_id(), type_value)),
+        );
       }
       ON_LEAVE_EVENT => {
         let t = reflection::get_type_registration_from_name(&event_type, type_registry)?;
-        entity.insert((EventProducer, LeaveEventType::new(t.type_id(), type_value)));
+        entity_manager.insert(
+          entity,
+          (EventProducer, LeaveEventType::new(t.type_id(), type_value)),
+        );
       }
       evt => return Err(BuiError::unregistered_event(evt))?,
     }
@@ -682,9 +754,109 @@ where
   }
 }
 
+pub trait EntityManager {
+  fn spawn(&mut self, bundle: impl Bundle) -> Entity;
+
+  fn despawn(&mut self, entity: Entity);
+
+  fn add_children(&mut self, entity: Entity, children: impl AsRef<[Entity]>);
+
+  fn insert(&mut self, entity: Entity, bundle: impl Bundle);
+
+  fn insert_reflect(
+    &mut self,
+    entity: Entity,
+    reflect_component_data: &ReflectComponent,
+    reflected_instance: Box<dyn Reflect>,
+    type_registry: &TypeRegistry,
+  );
+
+  fn with_world(&mut self, f: impl FnOnce(&mut World) + Send + 'static);
+}
+
+impl EntityManager for Commands<'_, '_> {
+  fn spawn(&mut self, bundle: impl Bundle) -> Entity {
+    self.spawn(bundle).id()
+  }
+
+  fn despawn(&mut self, entity: Entity) {
+    self.entity(entity).despawn();
+  }
+
+  fn add_children(&mut self, entity: Entity, children: impl AsRef<[Entity]>) {
+    self.entity(entity).add_children(children.as_ref());
+  }
+
+  fn insert(&mut self, entity: Entity, bundle: impl Bundle) {
+    self.entity(entity).insert(bundle);
+  }
+
+  fn insert_reflect(
+    &mut self,
+    entity: Entity,
+    _reflect_component_data: &ReflectComponent,
+    reflected_instance: Box<dyn Reflect>,
+    _type_registry: &TypeRegistry,
+  ) {
+    let Some(ti) = reflected_instance.get_represented_type_info() else {
+      return;
+    };
+    let type_id = ti.type_id();
+
+    self.with_world(move |world| {
+      world.resource_scope(move |world, bui_resource: Mut<BuiResource>| {
+        let Some(avt) = bui_resource.attrs.get(&type_id) else {
+          return;
+        };
+
+        if let Err(err) = (avt.insert)(world, entity, reflected_instance) {
+          error!("{err}");
+        }
+      });
+    });
+  }
+
+  fn with_world(&mut self, f: impl FnOnce(&mut World) + Send + 'static) {
+    self.queue(f);
+  }
+}
+
+impl EntityManager for World {
+  fn spawn(&mut self, bundle: impl Bundle) -> Entity {
+    self.spawn(bundle).id()
+  }
+
+  fn despawn(&mut self, entity: Entity) {
+    self.entity_mut(entity).despawn();
+  }
+
+  fn add_children(&mut self, entity: Entity, children: impl AsRef<[Entity]>) {
+    self.entity_mut(entity).add_children(children.as_ref());
+  }
+
+  fn insert(&mut self, entity: Entity, bundle: impl Bundle) {
+    self.entity_mut(entity).insert(bundle);
+  }
+
+  fn insert_reflect(
+    &mut self,
+    entity: Entity,
+    reflect_component_data: &ReflectComponent,
+    reflected_instance: Box<dyn Reflect>,
+    type_registry: &TypeRegistry,
+  ) {
+    let mut entity = self.entity_mut(entity);
+    reflect_component_data.insert(&mut entity, &*reflected_instance, type_registry);
+  }
+
+  fn with_world(&mut self, f: impl FnOnce(&mut World) + Send + 'static) {
+    (f)(self)
+  }
+}
+
 #[cfg(test)]
 mod tests {
-  use crate::Bui;
+  use crate::{Bui, BuiResource};
   use bevy::prelude::*;
   use speculoos::prelude::*;
 
@@ -701,6 +873,7 @@ mod tests {
     }
 
     let mut world = World::default();
+    world.init_resource::<BuiResource>();
     {
       let app_type_registry = AppTypeRegistry::default();
       {
@@ -710,10 +883,14 @@ mod tests {
       world.insert_resource(app_type_registry);
     }
 
-    let uis = Bui::parse_all(EXAMPLE_UI).unwrap();
-    let ui = uis.first().unwrap();
+    let ui = Bui::parse(EXAMPLE_UI).unwrap();
 
-    let entity = ui.spawn(&mut world).unwrap();
+    let entity = world.resource_scope(|world, app_type_registry: Mut<AppTypeRegistry>| {
+      world.resource_scope(|world, bui_resource: Mut<BuiResource>| {
+        let type_registry = app_type_registry.read();
+        ui.spawn(world, &bui_resource, &type_registry).unwrap()
+      })
+    });
 
     let example_component = world.get::<Example>(entity).unwrap();
 

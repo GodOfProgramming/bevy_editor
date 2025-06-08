@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use crate::{UiVTables, result_string};
+use crate::{BuiResource, result_string};
 use bevy::{
   prelude::*,
   reflect::{
@@ -80,7 +80,7 @@ pub fn deserialize_reflect(
   registry: &TypeRegistry,
   registration: &TypeRegistration,
   ron: impl AsRef<str>,
-  vtables: &UiVTables,
+  vtables: &BuiResource,
 ) -> Result<Box<dyn Reflect>> {
   let de = TypedReflectDeserializer::new(registration, registry);
   let mut rd = ron::Deserializer::from_str(ron.as_ref())?;

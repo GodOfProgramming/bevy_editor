@@ -1,5 +1,5 @@
 use crate::{
-  EVENT_PREFIX, Overrides, PrimaryType, SELF,
+  EVENT_PREFIX, GenericError, Overrides, PrimaryType, SELF,
   reflection::{self, TypeRegistryExt},
   result_string, serialize_name,
 };
@@ -37,23 +37,18 @@ pub enum ParseError {
   ExpectedNode,
 
   #[error("{0}")]
-  General(Box<dyn std::error::Error>),
+  General(GenericError),
+
+  #[error("Multiple root start elements not allowed")]
+  MultipleRoots,
+
+  #[error("No root element found")]
+  NoRootElement,
 }
 
-impl From<Box<dyn std::error::Error>> for ParseError {
-  fn from(value: Box<dyn std::error::Error>) -> Self {
+impl From<GenericError> for ParseError {
+  fn from(value: GenericError) -> Self {
     Self::General(value)
-  }
-}
-
-#[derive(Deref, DerefMut)]
-pub struct Nodes(Vec<Node>);
-
-impl TryFrom<&str> for Nodes {
-  type Error = ParseError;
-
-  fn try_from(value: &str) -> Result<Self, Self::Error> {
-    parse(value).map(Self)
   }
 }
 
@@ -61,6 +56,12 @@ impl TryFrom<&str> for Nodes {
 pub enum Node {
   Tag(Tag),
   Text(String),
+}
+
+impl Default for Node {
+  fn default() -> Self {
+    Self::Tag(Tag::default())
+  }
 }
 
 impl Node {
@@ -120,6 +121,7 @@ impl Node {
 
 impl TryInto<String> for &Node {
   type Error = BevyError;
+
   fn try_into(self) -> Result<String> {
     let events: Vec<WXmlEvent> = self.into();
     let writer = BufWriter::new(Vec::new());
@@ -385,7 +387,7 @@ impl Index<&Attr> for Tag {
   }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Reflect, Debug, PartialEq, Eq)]
 pub struct Attr {
   prefix: Option<String>,
   name: String,
@@ -479,7 +481,7 @@ impl Hash for Attr {
   }
 }
 
-pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
+pub fn parse(data: &str) -> Result<Node, ParseError> {
   const NAMESPACE_ELEMENT: &str = "BUI...NAMESPACE";
 
   // inject namespaces into the overall doc
@@ -495,7 +497,7 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
   let reader = BufReader::new(data.as_bytes());
   let parser = EventReader::new(reader);
 
-  let mut roots = Vec::new();
+  let mut root = None;
   let mut stack = Vec::new();
 
   for event in parser {
@@ -506,6 +508,10 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
         // ignore injected namespace
         if name.local_name == NAMESPACE_ELEMENT {
           continue;
+        }
+
+        if root.is_some() {
+          return Err(ParseError::MultipleRoots);
         }
 
         let tag = Tag::new(name, attributes);
@@ -526,7 +532,7 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
             return Err(ParseError::ExpectedTag);
           };
 
-          roots.push(node);
+          root = Some(node);
         } else {
           let Some(node) = stack.pop() else {
             return Err(ParseError::ExpectedTag);
@@ -551,7 +557,7 @@ pub fn parse(data: &str) -> Result<Vec<Node>, ParseError> {
     }
   }
 
-  Ok(roots)
+  root.ok_or(ParseError::NoRootElement)
 }
 
 #[cfg(test)]
@@ -586,11 +592,9 @@ mod tests {
   fn parse_dummy_data() {
     const DUMMY_DATA: &str = include_str!("../test/dummy_data.xml");
 
-    let nodes = super::parse(DUMMY_DATA).unwrap();
+    let node = super::parse(DUMMY_DATA).unwrap();
 
-    assert_that(&nodes.len()).is_equal_to(1);
-
-    let Node::Tag(pane) = nodes.first().unwrap() else {
+    let Node::Tag(pane) = node else {
       panic!("Expected pane tag to be first")
     };
 

@@ -1,7 +1,6 @@
 use bevy::prelude::*;
-use bui::{BuiPlugin, ui::events::EntityEvent};
+use bui::{BuiPlugin, BuiResource, ui::events::EntityEvent};
 
-const UI: &str = include_str!("./ui/simple_button.xml");
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
 const PRESSED_BUTTON: Color = Color::srgb(0.35, 0.75, 0.35);
@@ -18,24 +17,41 @@ fn main() {
         .build(),
     ))
     .add_systems(Startup, startup)
-    .add_systems(Update, button_event_system)
+    .add_systems(Update, (button_event_system, spawn_ui))
     .run();
 }
 
-fn startup(world: &mut World) -> Result {
-  world.spawn(Camera2d);
+fn startup(mut commands: Commands, asset_server: Res<AssetServer>) -> Result {
+  commands.spawn(Camera2d);
 
-  let nodes = bui::Bui::parse_all(UI).unwrap();
-  let node = nodes.first().unwrap();
+  let handle = asset_server.load::<bui::Bui>("simple_button.bui.xml");
 
-  let entity = node.spawn(world)?;
-
-  let ui = bui::Bui::serialize(entity, world)?;
-  let str: String = (&ui).try_into()?;
-  println!("{str}");
+  commands.spawn(UiHandle(handle));
 
   Ok(())
 }
+
+fn spawn_ui(
+  mut commands: Commands,
+  q_uis: Query<(Entity, &UiHandle)>,
+  uis: Res<Assets<bui::Bui>>,
+  bui_resource: Res<BuiResource>,
+  app_type_registry: Res<AppTypeRegistry>,
+) {
+  let type_registry = app_type_registry.read();
+  for (entity, handle) in q_uis {
+    if let Some(bui) = uis.get(&handle.0) {
+      if let Err(err) = bui.spawn(&mut commands, &bui_resource, &type_registry) {
+        error!("{err}");
+      } else {
+        commands.entity(entity).despawn();
+      }
+    }
+  }
+}
+
+#[derive(Component)]
+struct UiHandle(Handle<bui::Bui>);
 
 #[derive(Reflect, Default)]
 struct ClickEvent(i32);

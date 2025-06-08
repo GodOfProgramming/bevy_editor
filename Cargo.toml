@@ -100,6 +100,7 @@ egui_demo_lib = { workspace = true }
 
 [features]
 profiling = ["bevy/trace_tracy"]
+watch = ["bevy/file_watcher"]
 
 [profile.dev]
 opt-level = 0

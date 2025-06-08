@@ -1,5 +1,6 @@
-use bevy::prelude::*;
-use bui::{BuiPlugin, BuiResource, ui::events::EntityEvent};
+use bevy::{platform::collections::HashMap, prelude::*};
+use bui::{BuiPlugin, BuiResource, PrimaryType, ui::events::EntityEvent};
+use std::fmt::Display;
 
 const NORMAL_BUTTON: Color = Color::srgb(0.15, 0.15, 0.15);
 const HOVERED_BUTTON: Color = Color::srgb(0.25, 0.25, 0.25);
@@ -11,47 +12,84 @@ fn main() {
       DefaultPlugins,
       BuiPlugin::builder()
         .register_element::<Zone>()
+        .register_attr::<Label>()
         .register_event::<ClickEvent>()
         .register_event::<HoverEvent>()
         .register_event::<LeaveEvent>()
         .build(),
     ))
+    .init_resource::<UiHandles>()
     .add_systems(Startup, startup)
-    .add_systems(Update, (button_event_system, spawn_ui))
+    .add_systems(Update, (button_event_system, on_ui_change))
     .run();
 }
 
-fn startup(mut commands: Commands, asset_server: Res<AssetServer>) -> Result {
+fn startup(
+  mut commands: Commands,
+  asset_server: Res<AssetServer>,
+  mut ui_handles: ResMut<UiHandles>,
+) -> Result {
   commands.spawn(Camera2d);
 
   let handle = asset_server.load::<bui::Bui>("simple_button.bui.xml");
 
-  commands.spawn(UiHandle(handle));
+  ui_handles.insert(handle.id(), handle);
 
   Ok(())
 }
 
-fn spawn_ui(
+fn on_ui_change(
   mut commands: Commands,
-  q_uis: Query<(Entity, &UiHandle)>,
+  mut events: EventReader<AssetEvent<bui::Bui>>,
+  q_spawned_uis: Query<(Entity, Option<&Label>), With<PrimaryType>>,
   uis: Res<Assets<bui::Bui>>,
   bui_resource: Res<BuiResource>,
   app_type_registry: Res<AppTypeRegistry>,
 ) {
-  let type_registry = app_type_registry.read();
-  for (entity, handle) in q_uis {
-    if let Some(bui) = uis.get(&handle.0) {
-      if let Err(err) = bui.spawn(&mut commands, &bui_resource, &type_registry) {
-        error!("{err}");
-      } else {
-        commands.entity(entity).despawn();
+  for event in events.read() {
+    match event {
+      AssetEvent::Added { .. } => {}
+      AssetEvent::Modified { id } => {
+        for (entity, name) in q_spawned_uis {
+          commands.entity(entity).despawn();
+          if let Some(name) = name {
+            info!("Despawned {name}");
+          }
+        }
+
+        if let Some(bui) = uis.get(*id) {
+          let type_registry = app_type_registry.read();
+          if let Err(err) = bui.spawn(&mut commands, &bui_resource, &type_registry) {
+            error!("{err}");
+          }
+        }
+      }
+      AssetEvent::Removed { .. } => {}
+      AssetEvent::Unused { .. } => {}
+      AssetEvent::LoadedWithDependencies { id } => {
+        if let Some(bui) = uis.get(*id) {
+          let type_registry = app_type_registry.read();
+          if let Err(err) = bui.spawn(&mut commands, &bui_resource, &type_registry) {
+            error!("{err}");
+          }
+        }
       }
     }
   }
 }
 
-#[derive(Component)]
-struct UiHandle(Handle<bui::Bui>);
+#[derive(Resource, Default, Deref, DerefMut)]
+struct UiHandles(HashMap<AssetId<bui::Bui>, Handle<bui::Bui>>);
+
+#[derive(Reflect, Default, Component)]
+#[reflect(Default, Component)]
+struct Label(String);
+
+impl Display for Label {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.0)
+  }
+}
 
 #[derive(Reflect, Default)]
 struct ClickEvent(i32);

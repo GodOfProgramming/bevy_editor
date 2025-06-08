@@ -32,3 +32,6 @@ type_extractor = { workspace = true }
 
 [lints.clippy]
 type_complexity = "allow"
+
+[features]
+watch = ["bevy/file_watcher"]

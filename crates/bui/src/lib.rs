@@ -40,6 +40,7 @@ pub struct BuiPlugin {
   initializers: Vec<fn(&mut App)>,
   blacklist: SerializationBlacklist,
   overrides: SerializationOverrides,
+  hot_reloader: Option<Box<dyn Fn(&mut App) + Send + Sync>>,
 }
 
 impl Default for BuiPlugin {
@@ -59,6 +60,7 @@ impl BuiPlugin {
       initializers: default(),
       blacklist: default(),
       overrides: default(),
+      hot_reloader: default(),
     };
     elements::register_all(&mut this);
     attrs::register_all(&mut this);
@@ -215,6 +217,16 @@ impl BuiPlugin {
     self
   }
 
+  #[cfg(feature = "watch")]
+  pub fn hot_reloader_notify<T, Marker>(&mut self, notify_system: T)
+  where
+    T: IntoSystem<In<Vec<Entity>>, (), Marker> + Send + Sync + Clone + 'static,
+  {
+    self.hot_reloader = Some(Box::new(move |app| {
+      app.add_systems(Update, hot_reloader.pipe(notify_system.clone()));
+    }));
+  }
+
   fn interaction_system(
     mut commands: Commands,
     ui_events: Res<UiEvents>,
@@ -308,6 +320,10 @@ impl Plugin for BuiPlugin {
       .insert_resource(self.overrides.clone())
       .add_systems(Update, Self::interaction_system);
 
+    if let Some(setup_notify) = &self.hot_reloader {
+      setup_notify(app);
+    }
+
     for init in &self.initializers {
       (init)(app);
     }
@@ -344,6 +360,15 @@ impl BuiPluginBuilder {
     O: SerializableAttribute + 'static,
   {
     self.inner.serialize_override::<O>();
+    self
+  }
+
+  #[cfg(feature = "watch")]
+  pub fn hot_reloader_notify<T, Marker>(mut self, notify_system: T) -> Self
+  where
+    T: IntoSystem<In<Vec<Entity>>, (), Marker> + Send + Sync + Clone + 'static,
+  {
+    self.inner.hot_reloader_notify(notify_system);
     self
   }
 
@@ -431,6 +456,7 @@ impl Bui {
     type_registry: &TypeRegistry,
   ) -> Result<Entity> {
     spawn_node(&self.node, entity_manager, bui_resource, type_registry)
+      .map(|entity| entity_manager.spawn(RootElement(entity)))
   }
 
   pub fn serialize(entity: Entity, world: &World) -> Result<Self> {
@@ -482,6 +508,9 @@ impl AssetLoader for BuiLoader {
     &[".bui.xml"]
   }
 }
+
+#[derive(Component, Deref, DerefMut)]
+struct RootElement(Entity);
 
 #[derive(Component, From, Reflect)]
 pub struct PrimaryType(TypeId);
@@ -545,7 +574,7 @@ fn spawn_tag(
     },
   )?;
 
-  // after creation, any attrs that use self. are set on the new struct
+  // parse primary component fields
   let (fields, rest): (Vec<_>, Vec<_>) = tag
     .attr_iter()
     .filter(|(k, _)| k.to_string() != SELF)
@@ -556,6 +585,7 @@ fn spawn_tag(
     });
   reflection::patch_struct_with_map(fields, &mut *reflected_component_instance, type_registry)?;
 
+  // parse events
   let (events, components): (Vec<_>, Vec<_>) = rest.into_iter().partition_map(|(k, v)| {
     k.prefix()
       .and_then(|prefix| (prefix == EVENT_PREFIX).then_some(Either::Left((k.name(), v))))
@@ -582,7 +612,7 @@ fn spawn_tag(
     return Err(err);
   }
 
-  // the world is free again and now the attributes can be created
+  // insert all attributes as other components
   for (attr, value) in components {
     if let Err(err) = insert_attribute(
       entity,
@@ -752,6 +782,27 @@ where
     Ok(s) => s.as_ref(),
     Err(s) => s.as_ref(),
   }
+}
+
+fn hot_reloader(
+  mut events: EventReader<AssetEvent<Bui>>,
+  q_spawned_uis: Query<Entity, With<RootElement>>,
+) -> Vec<Entity> {
+  let mut reloaded_entities = Vec::new();
+
+  for event in events.read() {
+    match event {
+      AssetEvent::Added { .. } => {}
+      AssetEvent::Modified { .. } => {
+        reloaded_entities.extend(q_spawned_uis.iter());
+      }
+      AssetEvent::Removed { .. } => {}
+      AssetEvent::Unused { .. } => {}
+      AssetEvent::LoadedWithDependencies { .. } => {}
+    }
+  }
+
+  reloaded_entities
 }
 
 pub trait EntityManager {

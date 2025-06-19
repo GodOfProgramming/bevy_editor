@@ -20,7 +20,7 @@ fn main() {
     ))
     .init_resource::<UiHandles>()
     .add_systems(Startup, startup)
-    .add_systems(Update, (button_event_system, on_ui_change))
+    .add_systems(FixedUpdate, button_event_system)
     .run();
 }
 
@@ -36,46 +36,6 @@ fn startup(
   ui_handles.insert(handle.id(), handle);
 
   Ok(())
-}
-
-fn on_ui_change(
-  mut commands: Commands,
-  mut events: EventReader<AssetEvent<bui::Bui>>,
-  q_spawned_uis: Query<(Entity, Option<&Label>), With<PrimaryType>>,
-  uis: Res<Assets<bui::Bui>>,
-  bui_resource: Res<BuiResource>,
-  app_type_registry: Res<AppTypeRegistry>,
-) {
-  for event in events.read() {
-    match event {
-      AssetEvent::Added { .. } => {}
-      AssetEvent::Modified { id } => {
-        for (entity, name) in q_spawned_uis {
-          commands.entity(entity).despawn();
-          if let Some(name) = name {
-            info!("Despawned {name}");
-          }
-        }
-
-        if let Some(bui) = uis.get(*id) {
-          let type_registry = app_type_registry.read();
-          if let Err(err) = bui.spawn(&mut commands, &bui_resource, &type_registry) {
-            error!("{err}");
-          }
-        }
-      }
-      AssetEvent::Removed { .. } => {}
-      AssetEvent::Unused { .. } => {}
-      AssetEvent::LoadedWithDependencies { id } => {
-        if let Some(bui) = uis.get(*id) {
-          let type_registry = app_type_registry.read();
-          if let Err(err) = bui.spawn(&mut commands, &bui_resource, &type_registry) {
-            error!("{err}");
-          }
-        }
-      }
-    }
-  }
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
